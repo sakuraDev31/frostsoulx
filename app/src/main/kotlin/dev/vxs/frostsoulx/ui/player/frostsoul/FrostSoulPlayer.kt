@@ -34,15 +34,18 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -105,6 +108,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -227,14 +233,13 @@ internal fun FrostSoulPlayer(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.systemBars),
+                    .windowInsetsPadding(
+                        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                    ),
         ) {
-            // Status bar is fully hidden (immersive) for this style while the player is
-            // expanded — see MainActivity.shouldHideStatusBars, which now also covers
-            // FROSTSOUL/ARTWORK_BLUR alongside V7. With the bar actually hidden (not just
-            // drawn behind), WindowInsets.systemBars collapses to ~0 here, so this Column and
-            // the artwork header below it already reach the true top edge of the screen with
-            // no extra offset/overlay tricks needed.
+            // The expanded player owns the top edge. Keep only horizontal and bottom safe areas;
+            // applying the top system-bar inset here shrinks the vinyl deck on devices where
+            // the status bar is still reported by WindowInsets.
             //
             // On the Immersive main player page this row drops to 0dp height so the pager
             // below reclaims the space (letting the artwork header start at the true y=0),
@@ -321,6 +326,7 @@ internal fun FrostSoulPlayer(
                                     onSearchTrack = onSearchTrack,
                                     onShowArtists = { showArtistDialog = true },
                                     onSeekDraggingChanged = { isSeekbarDragging = it },
+                                    onOpenLyrics = { scope.launch { pagerState.animateScrollToPage(2) } },
                                 )
                             } else {
                                 FrostSoulAlbumPage(
@@ -446,118 +452,91 @@ internal fun FSMiniPlayer(
     onQueueClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val rawProgress =
-        if (durationMs > 0L) {
-            (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-        } else {
-            0f
-        }
-    val progress by animateFloatAsState(
-        targetValue = rawProgress,
-        animationSpec = tween(220),
-        label = "frostsoul-mini-player-progress",
-    )
-    val isLightTheme = FrostSoulTheme.colors.background.luminance() > 0.5f
-    val backgroundColor = FrostSoulTheme.colors.surface
-    val primaryTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurface else FrostSoulOnSurface
-    val mutedTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurfaceMuted else FrostSoulOnSurfaceMuted
+    val progress = if (durationMs > 0L) {
+        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val colors = FrostSoulTheme.colors
+    val isLightTheme = colors.background.luminance() > 0.5f
+    val surface = lerp(colors.surface, palette.artworkPrimary, if (isLightTheme) 0.10f else 0.22f)
+    val accent = if (isLightTheme) colors.onSurface else lerp(palette.artworkPrimary, Color.White, 0.72f)
+    val wash = remember(surface, palette.artworkSecondary) {
+        Brush.horizontalGradient(listOf(surface, lerp(surface, palette.artworkSecondary, 0.12f)))
+    }
 
-    Box(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .height(height)
-                .graphicsLayer {
-                    shadowElevation = if (isPlaying) 18.dp.toPx() else 8.dp.toPx()
-                    this.shape = shape
-                    clip = false
-                }
-                .clip(shape)
-                .background(backgroundColor.copy(alpha = 0.94f))
-                .border(1.dp, Color(0xFFB09A78).copy(alpha = if (isPlaying) 0.60f else 0.30f), shape)
-                .combinedClickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onCardClick,
-                    onLongClick = onLongPress,
-                ),
+    // Tinted glass, not backdrop blur: one cached brush, no elevated/offscreen layer.
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth().height(height).clip(shape)
+            .background(wash)
+            .border(1.dp, accent.copy(alpha = 0.16f), shape)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.material3.ripple(),
+                role = Role.Button,
+                onClickLabel = "Open full player",
+                onLongClickLabel = "Track actions",
+                onClick = onCardClick,
+                onLongClick = onLongPress,
+            ),
     ) {
-        Box(Modifier.align(Alignment.TopStart).fillMaxWidth(progress).height(1.dp).background(Color(0xFFF7DEAF)))
+        // Keep the title usable on narrow displays; favorite remains in Track actions.
+        val showFavorite = maxWidth >= 360.dp
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxSize().padding(start = 10.dp, end = 6.dp, top = 5.dp, bottom = 8.dp),
         ) {
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.size(artworkSize),
+                modifier = Modifier.size(artworkSize).clip(RoundedCornerShape(12.dp))
+                    .background(colors.surfaceRaised),
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(artworkSize).clip(RoundedCornerShape(8.dp)).background(FrostSoulSurface),
-                ) {
-                    AsyncImage(
-                        model = track.artworkUrl,
-                        contentDescription = "Album artwork for ${track.title}",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    if (track.artworkUrl.isNullOrBlank()) {
-                        Icon(
-                            painter = painterResource(R.drawable.music_note),
-                            contentDescription = null,
-                            tint = mutedTextColor,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(track.title, color = primaryTextColor, fontSize = 12.sp, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
-                Text(track.artist, color = mutedTextColor, fontSize = 10.sp, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-            }
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(42.dp).zIndex(1f).clickable(onClick = onToggleLike),
-            ) {
-                Icon(
-                    painter = painterResource(if (track.isLiked) R.drawable.favorite else R.drawable.favorite_border),
-                    contentDescription = if (track.isLiked) "Remove from favorites" else "Add to favorites",
-                    tint = if (track.isLiked) Color(0xFFFF3B4D) else primaryTextColor,
-                    modifier = Modifier.size(24.dp),
+                AsyncImage(
+                    model = track.artworkUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
+                if (track.artworkUrl.isNullOrBlank()) {
+                    Icon(painterResource(R.drawable.music_note), null, tint = colors.onSurfaceMuted,
+                        modifier = Modifier.size(24.dp))
+                }
             }
-            FSIconButton(
-                painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                onClick = onTogglePlayPause,
-                active = false,
-                buttonSize = 42.dp,
-                iconSize = 24.dp,
-                showContainer = false,
-                dimBackdrop = false,
-                tintOverride = if (isLightTheme) Color.Black else Color.White,
-                modifier = Modifier.zIndex(1f).border(1.dp, mutedTextColor.copy(alpha = 0.45f), CircleShape),
-            )
-            onQueueClick?.let { openQueue ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier =
-                        Modifier
-                            .size(48.dp)
-                            .zIndex(2f)
-                            .clickable(onClick = openQueue),
-                ) {
+            Column(modifier = Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(track.title, color = colors.onSurface, fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(track.artist, color = colors.onSurfaceMuted, fontSize = 11.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
+            }
+            if (showFavorite) {
+                androidx.compose.material3.IconButton(onClick = onToggleLike, modifier = Modifier.size(48.dp)) {
                     Icon(
-                        painter = painterResource(R.drawable.queue_music),
-                        contentDescription = "Open queue",
-                        tint = if (isLightTheme) Color.Black else Color.White,
-                        modifier = Modifier.size(24.dp),
+                        painterResource(if (track.isLiked) R.drawable.favorite else R.drawable.favorite_border),
+                        if (track.isLiked) "Remove from favorites" else "Add to favorites",
+                        tint = if (track.isLiked) Color(0xFFF08D9C) else colors.onSurface,
+                        modifier = Modifier.size(23.dp),
                     )
                 }
             }
+            androidx.compose.material3.IconButton(
+                onClick = onTogglePlayPause,
+                modifier = Modifier.size(48.dp).clip(CircleShape).background(accent),
+            ) {
+                Icon(painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
+                    if (isPlaying) "Pause" else "Play",
+                    tint = if (isLightTheme) colors.surface else Color(0xFF131318),
+                    modifier = Modifier.size(26.dp))
+            }
+            onQueueClick?.let { openQueue ->
+                androidx.compose.material3.IconButton(onClick = openQueue, modifier = Modifier.size(48.dp)) {
+                    Icon(painterResource(R.drawable.queue_music), "Open queue", tint = colors.onSurface,
+                        modifier = Modifier.size(23.dp))
+                }
+            }
+        }
+        Canvas(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp)) {
+            drawRect(accent.copy(alpha = 0.14f))
+            drawRect(accent, size = size.copy(width = size.width * progress))
         }
     }
 }
@@ -1111,146 +1090,218 @@ private fun FrostSoulArtworkBlurAlbumPage(
     onSearchTrack: () -> Unit,
     onShowArtists: () -> Unit,
     onSeekDraggingChanged: (Boolean) -> Unit = {},
+    onOpenLyrics: () -> Unit = {},
 ) {
-    val titleScrollState = rememberScrollState()
-    val artworkHeaderBlur =
-        if (uiState.blurRadius > 0f) {
-            (uiState.blurRadius + 18f).coerceIn(18f, 120f)
-        } else {
-            0f
-        }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(bottom = 8.dp),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Full-bleed artwork header: the image spans the whole width with no card
-       // inset, and fades edge-to-edge into the page background so the thumbnail
-            // reads as one seamless surface (QQ Music "immersive cover" behaviour).
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(PlayerLayoutTokens.ArtworkBlurHeaderHeight)
-                    .clipToBounds(),
-            ) {
-                if (!uiState.track.artworkUrl.isNullOrBlank()) {
-                    // The blurred artwork is already rendered full-screen underneath this header.
-                    // Mask the sharp cover at its lower edge instead of painting a black fade over
-                    // it; this lets the two layers actually dissolve into one another like the
-                    // original ArchiveTune Immersive Extended player.
-                    AsyncImage(
-                        model = uiState.track.artworkUrl,
-                        contentDescription = "Album artwork",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            // FS-BUG-IMMERSIVE-BORDER: BlendMode.DstIn only combines correctly
-                            // with what's *already inside this composable's own layer*. Without
-                            // an explicit offscreen layer here, this image shares the pager
-                            // page's layer, and DstIn ends up cutting into whatever else is
-                            // already drawn there instead of just fading this image's own alpha
-                            // to transparent — which is exactly why the header shows a hard
-                            // rectangular edge (the "border line square") while settled on the
-                            // current page. It only looked fixed mid-drag because the pager's
-                            // own alpha-fade on adjacent pages happened to force an offscreen
-                            // layer at that moment. Forcing it here directly makes the fade
-                            // isolated and consistent regardless of pager/drag state.
-                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        0.00f to Color.White,
-                                        0.48f to Color.White,
-                                        0.68f to Color.White.copy(alpha = 0.96f),
-                                        0.82f to Color.White.copy(alpha = 0.72f),
-                                        0.93f to Color.White.copy(alpha = 0.28f),
-                                        1.00f to Color.Transparent,
-                                    ),
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            },
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().background(
-                            Brush.verticalGradient(
-                                colors = listOf(uiState.palette.artworkPrimary, uiState.palette.artworkSecondary),
-                            ),
-                        ),
-                    )
-                }
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = PlayerLayoutTokens.MasterHorizontalPadding,
-                        end = PlayerLayoutTokens.MasterHorizontalPadding,
-                        top = 14.dp,
-                        bottom = 12.dp,
-                    ),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(titleScrollState)
-                            .clickable(onClick = onSearchTrack),
-                    ) {
-                        Text(
-                            text = uiState.track.title,
-                            color = FrostSoulOnSurface,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false,
-                        )
-                    }
-                    Text(
-                        text = uiState.track.artist,
-                        color = FrostSoulOnSurfaceMuted,
-                        fontSize = 15.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 4.dp).clickable(onClick = onShowArtists),
-                    )
-                }
-                FrostSoulFullPlayerLikeButton(
-                    videoId = uiState.track.id,
-                    isLiked = uiState.track.isLiked,
-                    onClick = actions.onToggleLike,
-                    modifier = Modifier.padding(start = 8.dp),
+    val base = remember(uiState.palette) { lerp(Color(0xFF0D0F14), uiState.palette.artworkPrimary, 0.10f) }
+    val accent = remember(uiState.palette) { lerp(uiState.palette.artworkPrimary, Color.White, 0.72f) }
+    val backdrop = remember(base, uiState.palette) {
+        Brush.verticalGradient(listOf(lerp(base, uiState.palette.artworkSecondary, 0.16f), base))
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(backdrop)) {
+        val landscape = maxWidth > maxHeight
+        val viewportHeight = maxHeight
+        val artworkHeight = (maxHeight * 0.43f).coerceIn(180.dp, 440.dp)
+        val artwork: @Composable (Modifier) -> Unit = { artworkModifier ->
+            Box(modifier = artworkModifier.clipToBounds(), contentAlignment = Alignment.Center) {
+                AsyncImage(
+                    model = uiState.track.artworkUrl,
+                    contentDescription = "Album artwork for ${uiState.track.title}",
+                    contentScale = if (landscape) ContentScale.Fit else ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
+                if (uiState.track.artworkUrl.isNullOrBlank()) {
+                    Icon(painterResource(R.drawable.music_note), null, tint = accent, modifier = Modifier.size(72.dp))
+                }
+                // An ordinary scrim dissolves into the exact surface color. No DstIn,
+                // RenderEffect or full-screen offscreen texture is needed for this fade.
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.24f),
+                    0.50f to Color.Transparent,
+                    1f to base,
+                )))
             }
-
-            FrostSoulMainLyricPreview(
-                uiState = uiState,
-                showExtraPreviewLines = true,
-                maxLinesPerLyric = 2,
-                modifier = Modifier
-                    .heightIn(min = 60.dp)
-                    .padding(top = 14.dp),
-            )
         }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        FSPlayerControls(
-            state = uiState,
-            actions = actions,
-            onOpenQueue = onOpenQueue,
-            modifier = Modifier
-                .padding(horizontal = PlayerLayoutTokens.MasterHorizontalPadding)
-                .padding(top = 18.dp)
-                .graphicsLayer { translationY = -12.dp.toPx() },
-            immersive = true,
-            onSeekDraggingChanged = onSeekDraggingChanged,
-        )
+        val details: @Composable () -> Unit = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = when {
+                                uiState.isBuffering -> "BUFFERING"
+                                uiState.isPlaying -> "NOW PLAYING"
+                                else -> "PAUSED"
+                            },
+                            color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp,
+                        )
+                        Text(uiState.track.title, color = Color.White, fontSize = 25.sp, lineHeight = 30.sp,
+                            fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 6.dp).clickable(onClick = onSearchTrack))
+                        Text(uiState.track.artist, color = Color.White.copy(alpha = 0.70f), fontSize = 14.sp,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable(onClick = onShowArtists).padding(vertical = 8.dp))
+                    }
+                    androidx.compose.material3.IconButton(onClick = actions.onToggleLike, modifier = Modifier.size(48.dp)) {
+                        Icon(painterResource(if (uiState.track.isLiked) R.drawable.favorite else R.drawable.favorite_border),
+                            if (uiState.track.isLiked) "Remove from favorites" else "Add to favorites",
+                            tint = if (uiState.track.isLiked) Color(0xFFF08D9C) else Color.White,
+                            modifier = Modifier.size(26.dp))
+                    }
+                }
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                        .background(Color.White.copy(alpha = 0.05f))
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                        .clickable(role = Role.Button, onClickLabel = "Open lyrics", onClick = onOpenLyrics)
+                        .padding(16.dp),
+                ) {
+                    Text("LYRICS  /  OPEN", color = accent, fontSize = 10.sp,
+                        letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
+                    Text(uiState.currentLyricLine?.takeIf { it.isNotBlank() }
+                        ?: uiState.lyricPreviewLines.firstOrNull()?.takeIf { it.isNotBlank() }
+                        ?: "Follow the words", color = Color.White, fontSize = 18.sp,
+                        lineHeight = 24.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    uiState.nextLyricLine?.takeIf { it.isNotBlank() }?.let { next ->
+                        Text(next, color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                // Separate controls preserve the vinyl player's existing layout exactly.
+                FrostSoulImmersiveControls(uiState, actions, accent, onOpenQueue, onOpenOptions, onSeekDraggingChanged)
+                val next = uiState.queue.dropWhile { !it.isCurrent }.drop(1).firstOrNull()
+                if (next != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(alpha = 0.05f))
+                            .clickable(role = Role.Button, onClick = onOpenQueue).padding(12.dp),
+                    ) {
+                        AsyncImage(model = next.artworkUrl, contentDescription = null, contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("UP NEXT", color = accent, fontSize = 9.sp, letterSpacing = 1.sp)
+                            Text(next.title, color = Color.White, fontSize = 13.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Icon(painterResource(R.drawable.queue_music), "Open queue", tint = accent, modifier = Modifier.size(22.dp))
+                    }
+                }
+            }
+        }
+        if (landscape) {
+            Row(modifier = Modifier.fillMaxSize().padding(top = 42.dp)) {
+                artwork(Modifier.weight(0.44f).fillMaxHeight())
+                Column(modifier = Modifier.weight(0.56f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    details()
+                }
+            }
+        } else {
+            // Small screens and large fonts can scroll; tall screens distribute the space.
+            Column(
+                verticalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).heightIn(min = viewportHeight),
+            ) {
+                artwork(Modifier.fillMaxWidth().height(artworkHeight))
+                details()
+            }
+        }
     }
 }
 
+@Composable
+private fun FrostSoulImmersiveControls(
+    state: FrostSoulPlayerUiState,
+    actions: FrostSoulPlayerActions,
+    accent: Color,
+    onOpenQueue: () -> Unit,
+    onOpenOptions: () -> Unit,
+    onSeekDraggingChanged: (Boolean) -> Unit,
+) {
+    var seekPreview by remember(state.track.id) { mutableStateOf<Float?>(null) }
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val dragging by interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(dragging) { onSeekDraggingChanged(dragging) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { onSeekDraggingChanged(false) }
+    }
+    Column {
+        androidx.compose.material3.Slider(
+            value = seekPreview ?: state.progress,
+            onValueChange = { seekPreview = it },
+            onValueChangeFinished = {
+                seekPreview?.let { actions.onSeek((state.safeDurationMs * it).toLong()) }
+                seekPreview = null
+            },
+            enabled = state.safeDurationMs > 0L,
+            interactionSource = interactionSource,
+            colors = androidx.compose.material3.SliderDefaults.colors(
+                thumbColor = accent, activeTrackColor = accent,
+                inactiveTrackColor = Color.White.copy(alpha = 0.14f),
+            ),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Playback position" },
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text((seekPreview?.let { (state.safeDurationMs * it).toLong() } ?: state.positionMs).asFrostSoulTime(),
+                color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
+            Text(state.safeDurationMs.asFrostSoulTime(), color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val repeatActive = state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF
+            androidx.compose.material3.IconButton(onClick = actions.onToggleRepeat, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(if (state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) R.drawable.repeat_one else R.drawable.repeat),
+                    when (state.repeatMode) {
+                        androidx.media3.common.Player.REPEAT_MODE_ONE -> "Repeat one; change repeat mode"
+                        androidx.media3.common.Player.REPEAT_MODE_ALL -> "Repeat all; change repeat mode"
+                        else -> "Repeat off; change repeat mode"
+                    }, tint = if (repeatActive) accent else Color.White.copy(alpha = 0.45f), modifier = Modifier.size(22.dp))
+            }
+            androidx.compose.material3.IconButton(onClick = actions.onSkipPrevious, enabled = state.canSkipPrevious, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.skip_previous), "Previous track",
+                    tint = Color.White.copy(alpha = if (state.canSkipPrevious) 1f else 0.3f), modifier = Modifier.size(32.dp))
+            }
+            androidx.compose.material3.IconButton(
+                onClick = actions.onTogglePlayPause,
+                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(24.dp)).background(accent),
+            ) {
+                Icon(painterResource(if (state.isPlaying) R.drawable.pause else R.drawable.play),
+                    if (state.isPlaying) "Pause" else "Play", tint = Color(0xFF131318), modifier = Modifier.size(32.dp))
+            }
+            androidx.compose.material3.IconButton(onClick = actions.onSkipNext, enabled = state.canSkipNext, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.skip_next), "Next track",
+                    tint = Color.White.copy(alpha = if (state.canSkipNext) 1f else 0.3f), modifier = Modifier.size(32.dp))
+            }
+            androidx.compose.material3.IconButton(onClick = onOpenQueue, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.queue_music), "Open queue", tint = Color.White, modifier = Modifier.size(22.dp))
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                    .background(Color.White.copy(alpha = 0.06f)).heightIn(min = 48.dp)
+                    .clickable(role = Role.Button, onClick = actions.onOpenAudioOutput).padding(horizontal = 12.dp),
+            ) {
+                androidx.compose.material3.Icon(state.outputDevice.type.imageVector, null, tint = accent, modifier = Modifier.size(20.dp))
+                Text(state.outputDevice.name, color = accent, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f))
+            }
+            androidx.compose.material3.IconButton(onClick = actions.onOpenSleepTimer, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.bedtime), if (state.sleepTimerActive) "Sleep timer active" else "Set sleep timer",
+                    tint = if (state.sleepTimerActive) accent else Color.White.copy(alpha = 0.65f), modifier = Modifier.size(22.dp))
+            }
+            androidx.compose.material3.IconButton(onClick = onOpenOptions, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.more_horiz), "More track actions", tint = Color.White.copy(alpha = 0.65f), modifier = Modifier.size(24.dp))
+            }
+        }
+    }
+}
 
 @Composable
 private fun FrostSoulFullPlayerLikeButton(

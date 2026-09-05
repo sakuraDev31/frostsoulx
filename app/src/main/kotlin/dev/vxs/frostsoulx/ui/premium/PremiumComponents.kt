@@ -27,15 +27,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +50,7 @@ import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.ui.frostsoul.FSAlbumArt
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlow
+import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
 
 @Composable
 fun PremiumTopBar(
@@ -259,92 +262,91 @@ fun PremiumHeroBanner(
     positionLabel: String? = null,
     durationLabel: String? = null,
     onPlayPause: (() -> Unit)? = null,
+    onNext: (() -> Unit)? = null,
+    canSkipNext: Boolean = false,
+    hasTrack: Boolean = true,
 ) {
-    PremiumCard(
-        modifier = modifier,
-        shape = FrostSoulTheme.shapes.large,
-        contentPadding = PaddingValues(0.dp),
+    val palette = rememberFrostSoulPalette(artworkUrl)
+    val colors = FrostSoulTheme.colors
+    val surface = lerp(colors.surface, palette.artworkPrimary, 0.18f)
+    val wash = remember(surface, palette.artworkSecondary) {
+        Brush.horizontalGradient(listOf(surface, lerp(surface, palette.artworkSecondary, 0.14f)))
+    }
+    val shape = FrostSoulTheme.shapes.large
+    // Color comes from the song, not a second blurred copy of its full-size cover.
+    Column(
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = modifier.fillMaxWidth().clip(shape).background(wash)
+            .border(1.dp, colors.onSurface.copy(alpha = 0.10f), shape).padding(16.dp),
     ) {
-        Box(modifier = Modifier.fillMaxWidth().height(220.dp)) {
-            artworkUrl?.let {
-                AsyncImage(
-                    model = it,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .blur(FrostSoulTheme.effects.backdropBlurRadius)
-                        .alpha(0.36f),
-                )
-            }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(
-                modifier = Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        listOf(
-                            FrostSoulTheme.colors.background.copy(alpha = 0.10f),
-                            FrostSoulTheme.colors.background.copy(alpha = 0.90f),
-                        ),
-                    ),
-                ),
-            )
-            Column(
-                verticalArrangement = Arrangement.Bottom,
-                modifier = Modifier.fillMaxSize().padding(20.dp),
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(72.dp).clip(FrostSoulTheme.shapes.small).background(colors.surfaceRaised),
             ) {
+                if (!artworkUrl.isNullOrBlank()) {
+                    AsyncImage(model = artworkUrl, contentDescription = null, contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize())
+                } else {
+                    Icon(androidx.compose.ui.res.painterResource(R.drawable.music_note), null,
+                        tint = colors.onSurfaceMuted, modifier = Modifier.size(28.dp))
+                }
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "NOW PLAYING",
+                    text = when {
+                        !hasTrack -> "YOUR NEXT FAVORITE"
+                        isPlaying -> "NOW PLAYING"
+                        else -> "READY WHEN YOU ARE"
+                    },
                     style = FrostSoulTheme.typography.overline,
-                    color = FrostSoulTheme.colors.accentBright,
+                    color = colors.onSurfaceMuted,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(modifier = Modifier.height(FrostSoulTheme.spacing.small))
-                Text(
-                    text = title,
-                    style = FrostSoulTheme.typography.display.copy(fontSize = 23.sp, lineHeight = 28.sp),
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = subtitle,
-                    style = FrostSoulTheme.typography.body,
-                    color = Color.White.copy(alpha = 0.76f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (positionLabel != null && durationLabel != null) {
-                    Spacer(modifier = Modifier.height(FrostSoulTheme.spacing.medium))
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(3.dp)
-                                .clip(FrostSoulTheme.shapes.pill)
-                                .background(Color.White.copy(alpha = 0.28f)),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(progress.coerceIn(0f, 1f))
-                                    .height(3.dp)
-                                    .background(Color.White, FrostSoulTheme.shapes.pill),
-                            )
-                        }
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(positionLabel, style = FrostSoulTheme.typography.label, color = Color.White.copy(alpha = 0.68f))
-                            Text(durationLabel, style = FrostSoulTheme.typography.label, color = Color.White.copy(alpha = 0.68f))
-                        }
-                    }
+                Text(title, color = colors.onSurface, fontSize = 18.sp, lineHeight = 23.sp,
+                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, color = colors.onSurfaceMuted, fontSize = 12.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            onPlayPause?.let { onClick ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f).clip(FrostSoulTheme.shapes.pill)
+                        .background(colors.onSurface).height(48.dp)
+                        .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp),
+                ) {
+                    Icon(androidx.compose.ui.res.painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
+                        null, tint = colors.surface, modifier = Modifier.size(22.dp))
+                    Text(if (!hasTrack) "Find your sound" else if (isPlaying) "Pause" else "Resume",
+                        color = colors.surface, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                onPlayPause?.let { onClick ->
-                    Spacer(modifier = Modifier.height(FrostSoulTheme.spacing.medium))
-                    PremiumIconAvatar(
-                        painter = androidx.compose.ui.res.painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        size = 44.dp,
-                        tint = FrostSoulTheme.colors.onSurface,
-                        containerColor = FrostSoulTheme.colors.accentBright,
-                        modifier = Modifier.clickable(onClick = onClick),
-                    )
+            }
+            if (hasTrack && onNext != null) {
+                androidx.compose.material3.IconButton(
+                    onClick = onNext, enabled = canSkipNext,
+                    modifier = Modifier.size(48.dp).clip(CircleShape).background(colors.onSurface.copy(alpha = 0.08f)),
+                ) {
+                    Icon(androidx.compose.ui.res.painterResource(R.drawable.skip_next), "Next track",
+                        tint = colors.onSurface.copy(alpha = if (canSkipNext) 1f else 0.3f), modifier = Modifier.size(24.dp))
                 }
+            }
+        }
+        if (positionLabel != null && durationLabel != null) {
+            Box(Modifier.fillMaxWidth().height(3.dp).clip(FrostSoulTheme.shapes.pill)
+                .background(colors.onSurface.copy(alpha = 0.14f))) {
+                Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(3.dp).background(colors.onSurface))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(positionLabel, color = colors.onSurfaceMuted, fontSize = 11.sp)
+                Text(durationLabel, color = colors.onSurfaceMuted, fontSize = 11.sp)
             }
         }
     }

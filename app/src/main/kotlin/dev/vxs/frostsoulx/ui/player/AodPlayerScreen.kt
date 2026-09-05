@@ -504,17 +504,17 @@ fun AodPlayerScreen(
                 model = mediaMetadata.thumbnailUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().blur(13.dp).alpha(0.92f),
+                modifier = Modifier.fillMaxSize().blur(35.dp).alpha(0.64f),
 
             )
         }
         Box(
             modifier = Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.42f),
-                    0.48f to Color.Black.copy(alpha = 0.50f),
-                    0.80f to Color.Black.copy(alpha = 0.54f),
-                    1f to Color.Black.copy(alpha = 0.58f),
+                    0f to Color.Black.copy(alpha = 0.30f),
+                    0.48f to Color.Black.copy(alpha = 0.42f),
+                    0.80f to Color.Black.copy(alpha = 0.48f),
+                    1f to Color.Black.copy(alpha = 0.52f),
                 ),
             ),
         )
