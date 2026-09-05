@@ -166,13 +166,13 @@ internal fun FrostSoulHomeFeed(
         }
 
         item(key = "frostsoul_home_hero") {
-            FrostSoulHomeHero(
+            FrostSoulAstraCompactFeatureCard(
                 track = mediaMetadata,
                 isPlaying = isPlaying,
-                onQuickSearch = { openSearchPortal() },
                 onPlayPause = { playerConnection.player.togglePlayPause() },
                 onNext = playerConnection::seekToNext,
                 canSkipNext = canSkipNext,
+                onOpenSearch = openSearchPortal,
             )
         }
 
@@ -482,6 +482,103 @@ internal fun FrostSoulHomeFeed(
                         },
                         modifier = Modifier.weight(1f),
                         emphasized = true,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FrostSoulAstraCompactFeatureCard(
+    track: MediaMetadata?,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    canSkipNext: Boolean,
+    onOpenSearch: () -> Unit,
+) {
+    val colors = FrostSoulTheme.colors
+    val artworkUrl = track?.thumbnailUrl
+    val shape = FrostSoulTheme.shapes.large
+
+    Box(
+        modifier = Modifier
+            .padding(horizontal = FrostSoulTheme.spacing.page)
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        colors.surfaceRaised,
+                        colors.surface,
+                    ),
+                ),
+                shape,
+            )
+            .border(1.dp, colors.outline.copy(alpha = 0.64f), shape)
+            .padding(FrostSoulTheme.spacing.large),
+    ) {
+        if (artworkUrl != null) {
+            AsyncImage(
+                model = artworkUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(112.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .graphicsLayer { alpha = 0.22f },
+            )
+        }
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.small),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = "YOUR DAILY SOUNDTRACK",
+                style = FrostSoulTheme.typography.overline,
+                color = colors.accentMuted,
+                maxLines = 1,
+            )
+            Text(
+                text = if (track == null) "A little less noise.\nA little more music." else "Made for this moment.",
+                style = FrostSoulTheme.typography.title.copy(fontSize = 24.sp, lineHeight = 29.sp),
+                color = colors.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+            )
+            Text(
+                text = if (track == null) "Familiar favorites. Fresh discoveries." else "${track.title} · ${track.artist}",
+                style = FrostSoulTheme.typography.body,
+                color = colors.onSurfaceMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.small),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = FrostSoulTheme.spacing.small),
+            ) {
+                FSButton(
+                    label = if (track == null) "Search music" else if (isPlaying) "Pause" else "Play",
+                    onClick = if (track == null) onOpenSearch else onPlayPause,
+                    emphasized = true,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (track != null && canSkipNext) {
+                    FSIconButton(
+                        onClick = onNext,
+                        contentDescription = "Next track",
+                        icon = {
+                            FSIcon(
+                                painter = painterResource(R.drawable.skip_next),
+                                contentDescription = null,
+                                modifier = Modifier.size(21.dp),
+                                tint = colors.onSurface,
+                            )
+                        },
                     )
                 }
             }
