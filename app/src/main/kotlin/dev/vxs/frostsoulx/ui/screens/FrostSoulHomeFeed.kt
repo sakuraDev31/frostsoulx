@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.platform.LocalContext
@@ -136,6 +137,7 @@ internal fun FrostSoulHomeFeed(
         navController.currentBackStackEntry?.savedStateHandle?.set("openSearch", true)
     }
     val pageSections = uiState.homePage?.sections.orEmpty()
+    val listeningPalette = rememberFrostSoulPalette(mediaMetadata?.thumbnailUrl)
 
     LazyColumn(
         state = lazyListState,
@@ -145,7 +147,11 @@ internal fun FrostSoulHomeFeed(
                 bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 24.dp,
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = modifier.fillMaxSize().frostSoulScreenBackground(),
+        modifier = modifier.fillMaxSize().frostSoulScreenBackground()
+            .background(Brush.verticalGradient(
+                listOf(listeningPalette.artworkPrimary.copy(alpha = 0.18f), Color.Transparent),
+                endY = 900f,
+            )),
     ) {
         item(key = "frostsoul_home_header") {
             FrostSoulHomeHeader(
@@ -170,6 +176,30 @@ internal fun FrostSoulHomeFeed(
             )
         }
 
+        item(key = "frostsoul_listening_actions") {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = FrostSoulTheme.spacing.page),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (uiState.quickPicks.isNotEmpty()) {
+                    item(key = "shuffle") {
+                        FSButton(label = "Surprise me", emphasized = true, onClick = {
+                            playerConnection.playQueue(ListQueue(
+                                title = "Your soundtrack",
+                                items = uiState.quickPicks.shuffled().map { it.toMediaItem() },
+                            ))
+                        })
+                    }
+                }
+                item(key = "liked") {
+                    FSButton(label = "Liked songs", onClick = { navController.navigate("auto_playlist/liked") })
+                }
+                item(key = "offline") {
+                    FSButton(label = "Offline", onClick = { navController.navigate("auto_playlist/downloaded") })
+                }
+            }
+        }
+
         uiState.homePage?.chips.orEmpty().takeIf { it.isNotEmpty() }?.let { sourceChips ->
             // Preserve server chip titles so the selected label matches its destination.
             val displayChips = sourceChips
@@ -180,32 +210,10 @@ internal fun FrostSoulHomeFeed(
                         display.endpoint == uiState.selectedChip?.endpoint
                     },
                     onChipSelected = { displayChip ->
-                        val sourceChip = sourceChips.firstOrNull { it.endpoint == displayChip.endpoint }
-                        onAction(HomeAction.SelectChip(sourceChip))
+                        val sourceChip = sourceChips.firstOrNull { it.endpoint == displayChip?.endpoint }
+                        onAction(HomeAction.SelectChip(sourceChip.takeUnless { it?.endpoint == uiState.selectedChip?.endpoint }))
                     },
                 )
-            }
-        }
-
-        if (uiState.quickPicks.isNotEmpty()) {
-            item(key = "frostsoul_home_banner_carousel") {
-                FrostSoulBannerCarousel(
-                    songs = uiState.quickPicks.take(5),
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                    isPlaying = isPlaying,
-                )
-            }
-            item(key = "frostsoul_everyone_listening") {
-                FrostSoulEveryoneListening(
-                    songs = uiState.quickPicks.take(3),
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                    isPlaying = isPlaying,
-                )
-            }
-            item(key = "frostsoul_preference_prompt") {
-                FrostSoulPreferencePrompt(onClick = { navController.navigate("settings/content") })
             }
         }
 
@@ -228,6 +236,18 @@ internal fun FrostSoulHomeFeed(
         }
 
         if (uiState.quickPicks.isNotEmpty()) {
+            item(key = "frostsoul_home_banner_carousel") {
+                FrostSoulBannerCarousel(
+                    songs = uiState.quickPicks.take(5),
+                    mediaMetadata = mediaMetadata,
+                    playerConnection = playerConnection,
+                    isPlaying = isPlaying,
+                )
+            }
+
+        }
+
+        if (uiState.quickPicks.isNotEmpty()) {
             item(key = "frostsoul_for_this_moment_header") {
                 FSSectionHeader(title = "For This Moment", actionLabel = "See All", onAction = { openSearchPortal() })
             }
@@ -240,13 +260,7 @@ internal fun FrostSoulHomeFeed(
                     spotlight = false,
                 )
             }
-            item(key = "frostsoul_recommendation_list") {
-                FrostSoulRecommendationList(
-                    songs = uiState.quickPicks.take(5),
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                )
-            }
+
         }
 
         if (uiState.offlineMixes.isNotEmpty()) {
@@ -484,7 +498,7 @@ private fun FrostSoulBannerCarousel(
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val cardWidth = (maxWidth * 0.80f).coerceAtMost(400.dp)
-        val cardHeight = (cardWidth * 0.86f).coerceAtMost(300.dp)
+        val cardHeight = (cardWidth * 0.70f).coerceAtMost(260.dp)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             FSSectionHeader(title = "Featured for you")
             LazyRow(
@@ -772,16 +786,16 @@ private fun moodEmoji(currentSong: MediaMetadata?): String {
 private fun FrostSoulHomeTabs(
     chips: List<HomePage.Chip>,
     selectedChip: HomePage.Chip?,
-    onChipSelected: (HomePage.Chip) -> Unit,
+    onChipSelected: (HomePage.Chip?) -> Unit,
 ) {
     if (chips.isEmpty()) return
 
     val selectedEndpoint = selectedChip?.endpoint
-    val selectedIndex = chips.indexOfFirst { it.endpoint == selectedEndpoint }.let { if (it < 0) 0 else it }
+    val selectedIndex = chips.indexOfFirst { it.endpoint == selectedEndpoint } + 1
     PremiumSegmentedTabs(
-        labels = chips.map { it.title },
+        labels = listOf("For you") + chips.map { it.title },
         selectedIndex = selectedIndex,
-        onSelected = { index -> onChipSelected(chips[index]) },
+        onSelected = { index -> onChipSelected(chips.getOrNull(index - 1)) },
         modifier = Modifier.heightIn(min = 56.dp),
     )
 }
