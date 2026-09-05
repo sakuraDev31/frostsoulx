@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -232,14 +233,13 @@ internal fun FrostSoulPlayer(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.systemBars),
+                    .windowInsetsPadding(
+                        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                    ),
         ) {
-            // Status bar is fully hidden (immersive) for this style while the player is
-            // expanded — see MainActivity.shouldHideStatusBars, which now also covers
-            // FROSTSOUL/ARTWORK_BLUR alongside V7. With the bar actually hidden (not just
-            // drawn behind), WindowInsets.systemBars collapses to ~0 here, so this Column and
-            // the artwork header below it already reach the true top edge of the screen with
-            // no extra offset/overlay tricks needed.
+            // The expanded player owns the top edge. Keep only horizontal and bottom safe areas;
+            // applying the top system-bar inset here shrinks the vinyl deck on devices where
+            // the status bar is still reported by WindowInsets.
             //
             // On the Immersive main player page this row drops to 0dp height so the pager
             // below reclaims the space (letting the artwork header start at the true y=0),
