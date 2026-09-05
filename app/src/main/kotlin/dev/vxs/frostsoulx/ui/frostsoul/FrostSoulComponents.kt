@@ -576,6 +576,8 @@ fun FSNavigationBar(
     pairedWithMiniPlayer: Boolean = false,
     onCenterClick: (() -> Unit)? = null,
 ) {
+    val homeSelected = selectedRoute == "home"
+    val selectedTint = if (homeSelected) Color(0xFFFFE4AD) else FrostSoulTheme.colors.accentBright
     val shape = if (pairedWithMiniPlayer) {
         androidx.compose.foundation.shape.RoundedCornerShape(12.dp, 12.dp, 28.dp, 28.dp)
     } else {
@@ -588,7 +590,7 @@ fun FSNavigationBar(
             modifier
                 .height(60.dp)
                 .clip(shape)
-                .frostSoulGlass(shape)
+                .then(if (homeSelected) Modifier.background(Color(0xFF080A0F), shape) else Modifier.frostSoulGlass(shape))
                 .padding(horizontal = FrostSoulTheme.spacing.small, vertical = 4.dp),
     ) {
         items.forEachIndexed { index, item ->
@@ -604,7 +606,10 @@ fun FSNavigationBar(
                         .weight(1f)
                         .fillMaxSize()
                         .clip(FrostSoulTheme.shapes.medium)
-                        .background(if (selected) FrostSoulTheme.colors.accent.copy(alpha = 0.14f) else Color.Transparent)
+                        .background(Brush.verticalGradient(listOf(
+                            if (selected) selectedTint.copy(alpha = 0.06f) else Color.Transparent,
+                            if (selected) selectedTint.copy(alpha = 0.18f) else Color.Transparent,
+                        )))
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
@@ -614,13 +619,13 @@ fun FSNavigationBar(
                 FSIcon(
                     painter = painterResource(if (selected) item.activeIcon else item.inactiveIcon),
                     contentDescription = item.label,
-                    tint = if (selected) FrostSoulTheme.colors.accentBright else FrostSoulTheme.colors.onSurfaceMuted,
+                    tint = if (selected) selectedTint else FrostSoulTheme.colors.onSurfaceMuted,
                     modifier = Modifier.size(22.dp),
                 )
                 Spacer(Modifier.height(2.dp))
                 FSText(
                     text = item.label,
-                    color = if (selected) FrostSoulTheme.colors.accentBright else FrostSoulTheme.colors.onSurfaceMuted,
+                    color = if (selected) selectedTint else FrostSoulTheme.colors.onSurfaceMuted,
                     style = FrostSoulTheme.typography.overline,
                     maxLines = 1,
                 )

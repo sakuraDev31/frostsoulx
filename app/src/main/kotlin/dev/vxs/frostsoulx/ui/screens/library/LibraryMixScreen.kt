@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -181,7 +182,7 @@ fun LibraryMixScreen(
         ) {
             LazyColumn(
                 state = rememberLazyListState(),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
                 contentPadding =
                     PaddingValues(
                         top = LibraryHeaderContentPadding,
@@ -216,6 +217,83 @@ fun LibraryMixScreen(
                             onPlayAll = playAlbum,
                             onShuffle = shuffleAlbum,
                         )
+                    }
+                }
+
+                // 3. Recently Played Horizontal Row
+                if (recentSongs.isNotEmpty()) {
+                    item(key = "recently_played") {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = stringResource(R.string.recently_played),
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 24.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                items(recentSongs) { song ->
+                                    Column(
+                                        modifier =
+                                            Modifier
+                                                .width(110.dp)
+                                                .clickable {
+                                                    playerConnection.playQueue(ListQueue(items = listOf(song.toMediaItem())))
+                                                },
+                                    ) {
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .size(110.dp)
+                                                    .clip(RoundedCornerShape(28.dp)),
+                                        ) {
+                                            AsyncImage(
+                                                model = song.song.thumbnailUrl,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                            // Play Overlay button
+                                            Box(
+                                                modifier =
+                                                    Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(8.dp)
+                                                        .size(28.dp)
+                                                        .clip(CircleShape)
+                                                        .background(MaterialTheme.colorScheme.primary),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Icon(
+                                                    painter = painterResource(id = R.drawable.play),
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                                    modifier = Modifier.size(14.dp),
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = song.song.title,
+                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onBackground,
+                                        )
+                                        Text(
+                                            text = song.artists.joinToString(", ") { it.name },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -296,7 +374,15 @@ fun LibraryMixScreen(
                                 onClick = { navController.navigate("top_playlist/$topSize") },
                             )
 
-                            Spacer(modifier = Modifier.weight(1f))
+                            ShortcutCard(
+                                title = stringResource(R.string.playlists),
+                                countText = "Your collections",
+                                iconRes = R.drawable.queue_music,
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                iconColor = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onTabSelected(LibraryFilter.PLAYLISTS) },
+                            )
                         }
                     }
                 }
@@ -307,83 +393,6 @@ fun LibraryMixScreen(
                             onMessage = showMessage,
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
-                    }
-                }
-
-                // 3. Recently Played Horizontal Row
-                if (recentSongs.isNotEmpty()) {
-                    item(key = "recently_played") {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = stringResource(R.string.recently_played),
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                                color = MaterialTheme.colorScheme.onBackground,
-                            )
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 24.dp),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                items(recentSongs) { song ->
-                                    Column(
-                                        modifier =
-                                            Modifier
-                                                .width(110.dp)
-                                                .clickable {
-                                                    playerConnection.playQueue(ListQueue(items = listOf(song.toMediaItem())))
-                                                },
-                                    ) {
-                                        Box(
-                                            modifier =
-                                                Modifier
-                                                    .size(110.dp)
-                                                    .clip(RoundedCornerShape(28.dp)),
-                                        ) {
-                                            AsyncImage(
-                                                model = song.song.thumbnailUrl,
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize(),
-                                            )
-                                            // Play Overlay button
-                                            Box(
-                                                modifier =
-                                                    Modifier
-                                                        .align(Alignment.BottomEnd)
-                                                        .padding(8.dp)
-                                                        .size(28.dp)
-                                                        .clip(CircleShape)
-                                                        .background(MaterialTheme.colorScheme.primary),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Icon(
-                                                    painter = painterResource(id = R.drawable.play),
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                                    modifier = Modifier.size(14.dp),
-                                                )
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            text = song.song.title,
-                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = MaterialTheme.colorScheme.onBackground,
-                                        )
-                                        Text(
-                                            text = song.artists.joinToString(", ") { it.name },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -1146,124 +1155,34 @@ private fun MostPlayedAlbumSpotlightCard(
     onShuffle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val isDark =
-        MaterialTheme.colorScheme.surface.let {
-            ColorUtils.calculateLuminance(it.toArgb()) < 0.5
-        }
-    val surfaceContainer = MaterialTheme.colorScheme.surfaceContainer
-    val spotlightBg =
-        remember(surfaceContainer, primaryColor, isDark) {
-            if (isDark) {
-                Color(ColorUtils.blendARGB(surfaceContainer.toArgb(), primaryColor.toArgb(), 0.12f))
-            } else {
-                Color(ColorUtils.blendARGB(surfaceContainer.toArgb(), primaryColor.toArgb(), 0.08f))
-            }
-        }
     val trackCountText = pluralStringResource(R.plurals.n_song, album.trackCount, album.trackCount)
-    val backgroundBrush =
-        remember(spotlightBg) {
-            Brush.verticalGradient(
-                colors =
-                    listOf(
-                        spotlightBg,
-                        spotlightBg.copy(alpha = 0.9f),
-                    ),
-            )
-        }
-
     Box(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .clip(RoundedCornerShape(32.dp))
-                .background(backgroundBrush)
-                .clickable(onClick = onOpenAlbum)
-                .padding(16.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 24.dp)
+            .clip(RoundedCornerShape(28.dp)).background(Color(0xFF17191F))
+            .clickable(onClick = onOpenAlbum),
     ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier =
-                        Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(primaryColor.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val thumbnailUrl = album.thumbnailUrl
-                    if (thumbnailUrl != null) {
-                        AsyncImage(
-                            model = thumbnailUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        Icon(
-                            painter = painterResource(id = R.drawable.album),
-                            contentDescription = null,
-                            tint = primaryColor,
-                            modifier = Modifier.size(28.dp),
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier =
-                            Modifier
-                                .clip(CircleShape)
-                                .background(primaryColor.copy(alpha = 0.16f))
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.star),
-                            contentDescription = null,
-                            tint = primaryColor,
-                            modifier = Modifier.size(10.dp),
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = stringResource(R.string.most_played_badge),
-                            style =
-                                MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 9.sp,
-                                    letterSpacing = 0.5.sp,
-                                ),
-                            color = primaryColor,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = album.title,
-                        style =
-                            MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                            ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = trackCountText,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+        AsyncImage(
+            model = album.thumbnailUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize(),
+        )
+        Box(Modifier.matchParentSize().background(Brush.horizontalGradient(
+            listOf(Color.Black.copy(alpha = 0.90f), Color.Black.copy(alpha = 0.52f)),
+        )))
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 204.dp).padding(20.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(painterResource(R.drawable.star), null, tint = Color.White, modifier = Modifier.size(14.dp))
+                Text(stringResource(R.string.most_played_badge), color = Color.White.copy(alpha = 0.84f),
+                    style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp)
             }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
+            Text(album.title, color = Color.White, style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(trackCountText, color = Color.White.copy(alpha = 0.78f), style = MaterialTheme.typography.bodySmall)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1271,41 +1190,21 @@ private fun MostPlayedAlbumSpotlightCard(
             ) {
                 Button(
                     onClick = onPlayAll,
-                    shape = CircleShape,
-                    colors =
-                        ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    modifier = Modifier.height(36.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                    modifier = Modifier.heightIn(min = 48.dp),
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.play),
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.play_all),
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    )
+                    Icon(painterResource(R.drawable.play), null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.play_all), fontWeight = FontWeight.SemiBold)
                 }
-
                 IconButton(
                     onClick = onShuffle,
-                    colors =
-                        IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = Color.White.copy(alpha = 0.16f), contentColor = Color.White,
+                    ),
+                    modifier = Modifier.size(48.dp),
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.shuffle),
-                        contentDescription = stringResource(R.string.shuffle),
-                        modifier = Modifier.size(16.dp),
-                    )
+                    Icon(painterResource(R.drawable.shuffle), stringResource(R.string.shuffle), modifier = Modifier.size(22.dp))
                 }
             }
         }
@@ -1330,72 +1229,26 @@ fun ShortcutCard(
         label = "ShortcutCardScale",
     )
 
-    val isDark =
-        MaterialTheme.colorScheme.surface.let {
-            ColorUtils.calculateLuminance(it.toArgb()) < 0.5
-        }
-
-    val surfaceContainerColor = MaterialTheme.colorScheme.surfaceContainer
-    val finalBgColor =
-        remember(surfaceContainerColor, iconColor, isDark) {
-            if (isDark) {
-                Color(ColorUtils.blendARGB(surfaceContainerColor.toArgb(), iconColor.toArgb(), 0.08f))
-            } else {
-                Color(ColorUtils.blendARGB(surfaceContainerColor.toArgb(), iconColor.toArgb(), 0.06f))
-            }
-        }
-
-    val iconBgColor =
-        remember(iconColor, isDark) {
-            if (isDark) {
-                iconColor.copy(alpha = 0.16f)
-            } else {
-                iconColor.copy(alpha = 0.10f)
-            }
-        }
-
+    val finalBgColor = MaterialTheme.colorScheme.surfaceContainer
     Box(
-        modifier =
-            modifier
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }.clip(RoundedCornerShape(26.dp))
-                .background(finalBgColor)
-                .clickable(
-                    interactionSource = interactionSource,
-                    onClick = onClick,
-                ).padding(12.dp),
+        modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(20.dp))
+            .background(Brush.horizontalGradient(listOf(containerColor.copy(alpha = 0.45f), finalBgColor)))
+            .clickable(interactionSource = interactionSource, onClick = onClick)
+            .heightIn(min = 92.dp).padding(12.dp),
     ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(
-                modifier =
-                    Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(iconBgColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(id = iconRes),
-                    contentDescription = null,
-                    tint = iconColor,
-                    modifier = Modifier.size(16.dp),
-                )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(painterResource(iconRes), null, tint = iconColor, modifier = Modifier.size(22.dp))
+                Icon(painterResource(R.drawable.navigate_next), null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
             }
             Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = countText,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(countText, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }

@@ -23,12 +23,17 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +45,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -72,10 +78,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.media3.common.C
 import androidx.palette.graphics.Palette
@@ -169,18 +177,25 @@ fun AodPlayerScreen(
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
     lyricsText: String? = null,
+    isLiked: Boolean = false,
+    shuffleEnabled: Boolean = false,
+    repeatMode: Int = 0,
+    onToggleLike: () -> Unit = {},
+    onToggleShuffle: () -> Unit = {},
+    onToggleRepeat: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
     // AOD is intentionally a single, stable QQ-style surface. The former customization
     // settings are no longer read, so stale preferences cannot change its layout.
     val thumbnailShapeType = AodThumbnailShape.ROUNDED
-    val thumbnailSize = 300f
+    // Reference calibration at 1080x2400: artwork width ≈916 px / 3 = 305.3 dp.
+    val thumbnailSize = 306f
     val thumbnailShapeRotation = 0
     val showThumbnail = true
     val showArtist = true
     val showAlbum = false
-    val showProgress = true
+    val showProgress = false
     val showTimeLabels = true
     val showControls = true
     val showExitButton = true
@@ -386,7 +401,7 @@ fun AodPlayerScreen(
     val nextLyricLine = lyricsEntries.getOrNull(currentLyricIndex + 1)?.text?.takeIf { it.isNotBlank() }
 
     val targetAccentColor =
-        if (accentStyle == AodAccentStyle.THEME) dominantArtworkColor else Color.White
+        Color(0xFF52BF92)
 
     val accentColor by animateColorAsState(
         targetValue = targetAccentColor,
@@ -425,355 +440,355 @@ fun AodPlayerScreen(
         }
     }
 
+    val currentLyric = lyricsEntries.getOrNull(currentLyricIndex)?.text.orEmpty()
+    val previousLyric = lyricsEntries.getOrNull(currentLyricIndex - 1)?.text.orEmpty()
+    val followingLyric = lyricsEntries.getOrNull(currentLyricIndex + 1)?.text.orEmpty()
+    val clockState = remember { mutableStateOf(java.time.LocalDateTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            clockState.value = java.time.LocalDateTime.now()
+            delay(1000L)
+        }
+    }
+    val clockText = remember(clockState.value) {
+        clockState.value.format(java.time.format.DateTimeFormatter.ofPattern(if (android.text.format.DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm"))
+    }
+    val dateText = remember(clockState.value) {
+        clockState.value.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM EEE"))
+    }
+    val showFullContent = !isLocked || !minimalLockedState
+
     Box(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .pointerInput(gesturesEnabled, isLocked) {
-                    detectTapGestures(
-                        onTap = { resetInteraction() },
-                        onDoubleTap = {
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(gesturesEnabled, isLocked) {
+                detectTapGestures(
+                    onTap = { resetInteraction() },
+                    onDoubleTap = {
+                        resetInteraction()
+                        if (gesturesEnabled && !isLocked) onPlayPause()
+                    },
+                )
+            }
+            .pointerInput(gesturesEnabled, isLocked) {
+                detectHorizontalDragGestures(
+                    onDragStart = { resetInteraction() },
+                    onHorizontalDrag = { _, _ -> },
+                    onDragEnd = { resetInteraction() },
+                )
+            }
+            .pointerInput(gesturesEnabled, isLocked) {
+                if (gesturesEnabled && !isLocked) {
+                    var accumulated = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { resetInteraction(); accumulated = 0f },
+                        onVerticalDrag = { _, amount ->
                             resetInteraction()
-                            if (gesturesEnabled && !isLocked) {
-                                onPlayPause()
+                            accumulated += amount
+                            if (kotlin.math.abs(accumulated) > 40f) {
+                                val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
+                                val direction = if (accumulated < 0) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER
+                                audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, direction, android.media.AudioManager.FLAG_SHOW_UI)
+                                accumulated = 0f
                             }
-                        }
+                        },
+                        onDragEnd = { resetInteraction() },
                     )
                 }
-                .pointerInput(gesturesEnabled, isLocked) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { resetInteraction() },
-                        onHorizontalDrag = { _, _ -> },
-                        onDragEnd = {
-                            resetInteraction()
-                        }
-                    )
-                }
-                .pointerInput(gesturesEnabled, isLocked) {
-                    if (gesturesEnabled && !isLocked) {
-                        var accumVerticalDrag = 0f
-                        detectVerticalDragGestures(
-                            onDragStart = {
-                                resetInteraction()
-                                accumVerticalDrag = 0f
-                            },
-                            onVerticalDrag = { _, dragAmount ->
-                                resetInteraction()
-                                accumVerticalDrag += dragAmount
-                                if (kotlin.math.abs(accumVerticalDrag) > 40f) {
-                                    val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
-                                    val direction = if (accumVerticalDrag < 0) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER
-                                    audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, direction, android.media.AudioManager.FLAG_SHOW_UI)
-                                    accumVerticalDrag = 0f
-                                }
-                            },
-                            onDragEnd = { resetInteraction() },
-                        )
-                    }
-                }
-                .background(Color.Black),
+            }
+            .background(Color.Black),
     ) {
-        // Artwork-tinted scrim keeps the backdrop reading as the cover itself, darkened,
-        // instead of a flat black screen with a separate image layer.
+        // Full-screen blurred artwork stays behind every foreground element.
         if (!mediaMetadata.thumbnailUrl.isNullOrBlank()) {
             AsyncImage(
                 model = mediaMetadata.thumbnailUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(42.dp)
-                    .alpha(0.34f),
+                modifier = Modifier.fillMaxSize().blur(35.dp).alpha(0.64f),
+
             )
         }
         Box(
             modifier = Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
-                    colors = listOf(
-                        dominantArtworkColor.copy(alpha = 0.38f),
-                        Color.Black.copy(alpha = 0.72f),
-                        Color.Black.copy(alpha = 0.85f),
-                    ),
+                    0f to Color.Black.copy(alpha = 0.30f),
+                    0.48f to Color.Black.copy(alpha = 0.42f),
+                    0.80f to Color.Black.copy(alpha = 0.48f),
+                    1f to Color.Black.copy(alpha = 0.52f),
                 ),
             ),
         )
-        Box(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color.Black.copy(alpha = 0.16f),
-                        Color.Transparent,
-                        Color.Black.copy(alpha = 0.40f),
-                    ),
-                ),
-            ),
-        )
-        if (showExitButton && !isLocked) {
-            IconButton(
-                onClick = {
-                    resetInteraction()
-                    onExit()
-                },
-                modifier =
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .safeDrawingPadding()
-                        .padding(8.dp),
+
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset { pixelShiftOffset }
+                .alpha(contentAlpha)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 28.dp, vertical = 16.dp),
+        ) {
+            // Size against both axes: square on phones, never clipped on short displays.
+            val landscape = maxWidth > maxHeight
+            val referenceArtworkSize = minOf(maxWidth, maxHeight * if (landscape) 0.52f else 0.46f)
+                            Column(
+                modifier = Modifier.fillMaxWidth(if (landscape) 0.48f else 0.84f),
+
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.close),
-                    contentDescription = null,
-                    tint = White70,
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = clockText,
+                        color = Color.White,
+                        fontSize = 40.sp,
+                        fontWeight = FontWeight.Light,
+                        lineHeight = 42.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
+                    Text(
+                        text = dateText,
+                        color = White65,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
+                }
+                Text(
+                    text = mediaMetadata.title,
+                    color = White65,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .basicMarquee(iterations = Int.MAX_VALUE),
+                )
+                Text(
+                    text = artistText,
+                    color = White65,
+                    fontSize = 18.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
-        }
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
-            modifier =
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxSize()
-                    .offset { pixelShiftOffset }
-                    .alpha(contentAlpha)
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 30.dp)
-                    .padding(vertical = 24.dp),
-        ) {
-            AodClockWidget(
-                showClock = showClock,
-                clockStyle = clockStyle,
-                showBattery = showBattery,
-                accentColor = accentColor,
-            )
-
-            AnimatedVisibility(
-                visible = showThumbnail && (!isLocked || !minimalLockedState),
-                enter = fadeIn(tween(300)),
-                exit = fadeOut(tween(300)),
-            ) {
-                if (showThumbnail) {
+            if (showThumbnail && showFullContent) {
+                Box(
+                    modifier = Modifier
+                        .align(if (landscape) Alignment.TopEnd else Alignment.TopCenter)
+                        .offset(y = if (landscape) 8.dp else (maxHeight * 0.53f - referenceArtworkSize / 2))
+                        .size(referenceArtworkSize)
+                        .clip(RoundedCornerShape(1.dp)),
+                ) {
+                    AsyncImage(
+                        model = mediaMetadata.thumbnailUrl,
+                        contentDescription = "Artwork for ${mediaMetadata.title}",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                     Box(
                         modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .size(artworkSize + 48.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        // A soft copy of the cover bridges the sharp artwork into the blurred
-                        // backdrop without the detached card-like glow/shadow effect.
-                        AsyncImage(
-                            model = imageRequest,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    0.58f to Color.Transparent,
+                                    1f to Color.Black.copy(alpha = 0.82f),
+                                ),
+                            ),
+                    )
+                    if (showLyricTicker && (previousLyric.isNotBlank() || currentLyric.isNotBlank() || followingLyric.isNotBlank())) {
+                        Column(
                             modifier = Modifier
-                                .size(artworkSize + 48.dp)
-                                .blur(24.dp)
-                                .alpha(0.55f)
-                                .clip(thumbnailShape),
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .size(artworkSize)
-                                .clip(thumbnailShape),
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 22.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(7.dp),
                         ) {
-                            AsyncImage(
-                                model = imageRequest,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-
-                            if (showLyricTicker && (currentLyricLine != null || nextLyricLine != null)) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .fillMaxWidth()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                colors = listOf(
-                                                    Color.Transparent,
-                                                    Color.Black.copy(alpha = 0.55f),
-                                                ),
-                                            ),
-                                        )
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                ) {
-                                    Column(
-                                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) {
-                                        currentLyricLine?.let {
-                                            Text(
-                                                text = it,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = Color.White,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                textAlign = TextAlign.Center,
-                                                modifier = Modifier.fillMaxWidth(),
-                                            )
-                                        }
-                                        nextLyricLine?.let {
-                                            Text(
-                                                text = it,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = White65,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                textAlign = TextAlign.Center,
-                                                modifier = Modifier.fillMaxWidth(),
-                                            )
-                                        }
-                                    }
-                                }
+                            if (previousLyric.isNotBlank()) {
+                                Text(
+                                    text = previousLyric,
+                                    color = White65,
+                                    fontSize = 16.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                            if (currentLyric.isNotBlank()) {
+                                Text(
+                                    text = currentLyric,
+                                    color = accentColor,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                            if (followingLyric.isNotBlank()) {
+                                Text(
+                                    text = followingLyric,
+                                    color = White65,
+                                    fontSize = 16.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                )
                             }
                         }
                     }
                 }
-            } 
-
-            Column(
-                horizontalAlignment = textHorizontalAlignment,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                val showFullContent = !isLocked || !minimalLockedState
-
-                Text(
-                    text = mediaMetadata.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color.White,
-                    maxLines = if (marqueeTitles) 1 else titleMaxLines.coerceIn(1, 3),
-                    overflow = if (marqueeTitles) TextOverflow.Clip else TextOverflow.Ellipsis,
-                    textAlign = textAlign,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (marqueeTitles) Modifier.basicMarquee() else Modifier),
-                )
-                AnimatedVisibility(
-                    visible = showFullContent && showArtist,
-                    enter = fadeIn(tween(300)),
-                    exit = fadeOut(tween(300)),
-                ) {
-                    if (showArtist) {
-                        Text(
-                            text = artistText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = White65,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = textAlign,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-                AnimatedVisibility(
-                    visible = showFullContent && showAlbum && mediaMetadata.album?.title?.isNotBlank() == true,
-                    enter = fadeIn(tween(300)),
-                    exit = fadeOut(tween(300)),
-                ) {
-                    if (showAlbum && mediaMetadata.album?.title?.isNotBlank() == true) {
-                        Text(
-                            text = mediaMetadata.album.title,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = White65.copy(alpha = 0.78f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = textAlign,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
             }
 
-            AnimatedVisibility(
-                visible = showProgress && !isAmbient && (!isLocked || !minimalLockedState),
-                enter = fadeIn(tween(300)),
-                exit = fadeOut(tween(300)),
-            ) {
-                if (showProgress) {
-                    AodSliderSection(
-                        position = position,
-                        duration = duration,
-                        sliderPosition = sliderPosition,
-                        accentColor = accentColor,
-                        showTimeLabels = showTimeLabels,
-                        onSeek = {
-                            resetInteraction()
-                            onSeek(it)
+            AodReferenceControls(
+                isPlaying = isPlaying,
+                canSkipPrevious = canSkipPrevious,
+                canSkipNext = canSkipNext,
+                isLiked = isLiked,
+                shuffleEnabled = shuffleEnabled,
+                repeatMode = repeatMode,
+                accentColor = accentColor,
+                onPlayPause = { resetInteraction(); onPlayPause() },
+                onSkipPrevious = { resetInteraction(); onSkipPrevious() },
+                onSkipNext = { resetInteraction(); onSkipNext() },
+                onToggleLike = { resetInteraction(); onToggleLike() },
+                onToggleShuffle = { resetInteraction(); onToggleShuffle() },
+                onToggleRepeat = { resetInteraction(); onToggleRepeat() },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 56.dp),
+            )
+
+            if (showExitButton && !isAmbient) {
+                // Keep the reference's unobtrusive chevrons, with both swipe and accessible tap.
+                val exitThreshold = with(density) { 64.dp.toPx() }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.align(Alignment.BottomCenter).width(120.dp).height(48.dp)
+                        .clickable(onClickLabel = "Exit always-on display", onClick = onExit)
+                        .pointerInput(onExit, exitThreshold) {
+                            var distance = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { distance = 0f },
+                                onHorizontalDrag = { change, amount -> change.consume(); distance += amount },
+                                onDragEnd = { if (distance >= exitThreshold) onExit(); distance = 0f },
+                                onDragCancel = { distance = 0f },
+                            )
                         },
-                        onSeekFinished = {
-                            resetInteraction()
-                            onSeekFinished()
-                        },
-                    )
+                ) {
+                    Text("›››", color = White65, fontSize = 32.sp, fontWeight = FontWeight.Light)
                 }
-            }
-
-            AnimatedVisibility(
-                visible = showControls && !isAmbient && !isLocked,
-                enter = fadeIn(tween(300)),
-                exit = fadeOut(tween(300)),
-            ) {
-                AodControls(
-                    isPlaying = isPlaying,
-                    canSkipPrevious = canSkipPrevious,
-                    canSkipNext = canSkipNext,
-                    controlStyle = controlStyle,
-                    controlSize = controlSize.coerceIn(52f, 84f),
-                    accentColor = accentColor,
-                    onPlayPause = {
-                        resetInteraction()
-                        onPlayPause()
-                    },
-                    onSkipPrevious = {
-                        resetInteraction()
-                        onSkipPrevious()
-                    },
-                    onSkipNext = {
-                        resetInteraction()
-                        onSkipNext()
-                    },
-                )
-            }
-
-            AnimatedVisibility(
-                visible = !isLocked && !isAmbient,
-                enter = fadeIn(tween(300)),
-                exit = fadeOut(tween(300)),
-            ) {
-                AodSlideToLockButton(
-                    accentColor = accentColor,
-                    onLock = {
-                        resetInteraction()
-                        isLocked = true
-                    },
-                    modifier = Modifier.padding(top = 12.dp),
-                )
             }
         }
 
         if (isCovered && proximityBlackoutEnabled) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black).zIndex(999f))
+        }
+    }
+}
+
+@Composable
+private fun AodReferenceControls(
+    isPlaying: Boolean,
+    canSkipPrevious: Boolean,
+    canSkipNext: Boolean,
+    isLiked: Boolean,
+    shuffleEnabled: Boolean,
+    repeatMode: Int,
+    accentColor: Color,
+    onPlayPause: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
+    onToggleLike: () -> Unit,
+    onToggleShuffle: () -> Unit,
+    onToggleRepeat: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth().height(100.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        val scale = (maxWidth / 450.dp).coerceIn(0.65f, 1f)
+        val circle = 54.dp * scale
+        val sideTouch = 44.dp * scale
+        val stroke = 1.8.dp * scale
+        val centerGap = 26.dp * scale
+
+        Box(
+            modifier = Modifier.fillMaxWidth().height(100.dp * scale),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalArrangement = Arrangement.spacedBy(centerGap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AodSpecCircleButton(R.drawable.skip_previous, "Previous track", accentColor, onSkipPrevious, canSkipPrevious, circle, stroke, 22.dp * scale)
+                AodSpecCircleButton(if (isPlaying) R.drawable.pause else R.drawable.play, if (isPlaying) "Pause" else "Play", accentColor, onPlayPause, true, circle, stroke, 24.dp * scale)
+                AodSpecCircleButton(R.drawable.skip_next, "Next track", accentColor, onSkipNext, canSkipNext, circle, stroke, 22.dp * scale)
+            }
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-                    .zIndex(999f),
-            )
+                    .size(sideTouch)
+                    .align(Alignment.CenterStart)
+                    .offset(x = (67.5.dp * scale) - sideTouch / 2f)
+                    .clickable(onClick = onToggleRepeat),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painterResource(if (repeatMode == 1) R.drawable.repeat_one_on else R.drawable.repeat),
+                    contentDescription = "Repeat mode",
+                    tint = if (repeatMode == 0) White70 else accentColor,
+                    modifier = Modifier.size(21.dp * scale),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(sideTouch)
+                    .align(Alignment.CenterStart)
+                    .offset(x = (380.5.dp * scale) - sideTouch / 2f)
+                    .clickable(onClick = onToggleLike),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painterResource(if (isLiked) R.drawable.favorite else R.drawable.favorite_border),
+                    contentDescription = if (isLiked) "Remove from favorites" else "Add to favorites",
+                    tint = if (isLiked) accentColor else Color.White,
+                    modifier = Modifier.size(23.dp * scale),
+                )
+            }
         }
+    }
+}
 
-        AodTouchLockOverlay(
-            isLocked = isLocked,
-            unlockMethod = unlockMethod,
-            accentColor = accentColor,
-            onUnlock = {
-                resetInteraction()
-                isLocked = false
-            },
-        )
+@Composable
+private fun AodSpecCircleButton(
+    icon: Int,
+    description: String,
+    tint: Color,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    diameter: androidx.compose.ui.unit.Dp,
+    stroke: androidx.compose.ui.unit.Dp,
+    iconSize: androidx.compose.ui.unit.Dp,
+) {
+    val color = tint.copy(alpha = if (enabled) 1f else 0.3f)
+    Box(
+        modifier = Modifier
+            .size(diameter)
+            .border(stroke, color, CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(painterResource(icon), description, tint = color, modifier = Modifier.size(iconSize))
     }
 }
 
