@@ -550,7 +550,7 @@ private fun FrostSoulAstraCompactFeatureCard(
                 maxLines = 2,
             )
             Text(
-                text = if (track == null) "Familiar favorites. Fresh discoveries." else "${track.title} · ${track.artist}",
+                text = if (track == null) "Familiar favorites. Fresh discoveries." else "${track.title} · ${track.artists.joinToString(" • ") { it.name }.ifBlank { "Unknown artist" }}",
                 style = FrostSoulTheme.typography.body,
                 color = colors.onSurfaceMuted,
                 maxLines = 1,
