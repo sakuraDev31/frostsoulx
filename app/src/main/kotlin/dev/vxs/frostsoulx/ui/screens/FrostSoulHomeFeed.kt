@@ -177,27 +177,19 @@ internal fun FrostSoulHomeFeed(
         }
 
         item(key = "frostsoul_listening_actions") {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = FrostSoulTheme.spacing.page),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (uiState.quickPicks.isNotEmpty()) {
-                    item(key = "shuffle") {
-                        FSButton(label = "Surprise me", emphasized = true, onClick = {
-                            playerConnection.playQueue(ListQueue(
-                                title = "Your soundtrack",
-                                items = uiState.quickPicks.shuffled().map { it.toMediaItem() },
-                            ))
-                        })
-                    }
-                }
-                item(key = "liked") {
-                    FSButton(label = "Liked songs", onClick = { navController.navigate("auto_playlist/liked") })
-                }
-                item(key = "offline") {
-                    FSButton(label = "Offline", onClick = { navController.navigate("auto_playlist/downloaded") })
-                }
-            }
+            FrostSoulAstraQuickAccess(
+                hasQuickPicks = uiState.quickPicks.isNotEmpty(),
+                onSurprise = {
+                    playerConnection.playQueue(
+                        ListQueue(
+                            title = "Your soundtrack",
+                            items = uiState.quickPicks.shuffled().map { it.toMediaItem() },
+                        ),
+                    )
+                },
+                onLiked = { navController.navigate("auto_playlist/liked") },
+                onOffline = { navController.navigate("auto_playlist/downloaded") },
+            )
         }
 
         uiState.homePage?.chips.orEmpty().takeIf { it.isNotEmpty() }?.let { sourceChips ->
@@ -486,6 +478,90 @@ internal fun FrostSoulHomeFeed(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FrostSoulAstraQuickAccess(
+    hasQuickPicks: Boolean,
+    onSurprise: () -> Unit,
+    onLiked: () -> Unit,
+    onOffline: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.small)) {
+        FSSectionHeader(title = "Quick access")
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = FrostSoulTheme.spacing.page),
+            horizontalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.small),
+        ) {
+            if (hasQuickPicks) {
+                item(key = "astra_quick_surprise") {
+                    FrostSoulAstraQuickAction(
+                        icon = R.drawable.shuffle,
+                        title = "Surprise me",
+                        subtitle = "Fresh picks",
+                        onClick = onSurprise,
+                        emphasized = true,
+                    )
+                }
+            }
+            item(key = "astra_quick_liked") {
+                FrostSoulAstraQuickAction(
+                    icon = R.drawable.favorite,
+                    title = "Liked songs",
+                    subtitle = "Your favorites",
+                    onClick = onLiked,
+                )
+            }
+            item(key = "astra_quick_offline") {
+                FrostSoulAstraQuickAction(
+                    icon = R.drawable.download,
+                    title = "Downloads",
+                    subtitle = "Offline music",
+                    onClick = onOffline,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FrostSoulAstraQuickAction(
+    icon: Int,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    emphasized: Boolean = false,
+) {
+    val colors = FrostSoulTheme.colors
+    PremiumCard(
+        modifier = Modifier.width(150.dp),
+        shape = FrostSoulTheme.shapes.medium,
+        contentPadding = PaddingValues(FrostSoulTheme.spacing.medium),
+        onClick = onClick,
+    ) {
+        FSIcon(
+            painter = painterResource(icon),
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+            tint = if (emphasized) colors.accentBright else colors.accent,
+        )
+        Spacer(Modifier.height(FrostSoulTheme.spacing.medium))
+        Text(
+            text = title,
+            style = FrostSoulTheme.typography.body,
+            color = colors.onSurface,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = subtitle,
+            style = FrostSoulTheme.typography.bodyMuted,
+            color = colors.onSurfaceMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
