@@ -1092,10 +1092,10 @@ private fun FrostSoulArtworkBlurAlbumPage(
     onSeekDraggingChanged: (Boolean) -> Unit = {},
     onOpenLyrics: () -> Unit = {},
 ) {
-    val base = remember(uiState.palette) { lerp(Color(0xFF0D0F14), uiState.palette.artworkPrimary, 0.16f) }
+    val base = remember(uiState.palette) { lerp(Color(0xFF0D0F14), uiState.palette.artworkPrimary, 0.10f) }
     val accent = remember(uiState.palette) { lerp(uiState.palette.artworkPrimary, Color.White, 0.72f) }
     val backdrop = remember(base, uiState.palette) {
-        Brush.verticalGradient(listOf(lerp(base, uiState.palette.artworkSecondary, 0.24f), base))
+        Brush.verticalGradient(listOf(lerp(base, uiState.palette.artworkSecondary, 0.16f), base))
     }
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(backdrop)) {
         val landscape = maxWidth > maxHeight
