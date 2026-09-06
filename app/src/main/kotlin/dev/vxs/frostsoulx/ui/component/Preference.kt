@@ -77,6 +77,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
@@ -102,15 +107,15 @@ enum class PreferenceGroupPosition { Single, First, Middle, Last }
 
 val LocalPreferenceGroupPosition = compositionLocalOf<PreferenceGroupPosition?> { null }
 
-private val PreferenceGroupLargeCorner = 28.dp
-private val PreferenceGroupSmallCorner = 6.dp
-private val PreferenceGroupHorizontalPadding = 26.dp
-private val PreferenceEntryMinHeight = 88.dp
-private val PreferenceEntryHorizontalPadding = 22.dp
-private val PreferenceEntryVerticalPadding = 18.dp
+private val PreferenceGroupLargeCorner = 24.dp
+private val PreferenceGroupSmallCorner = 8.dp
+private val PreferenceGroupHorizontalPadding = 16.dp
+private val PreferenceEntryMinHeight = 76.dp
+private val PreferenceEntryHorizontalPadding = 16.dp
+private val PreferenceEntryVerticalPadding = 14.dp
 
 @Composable
-private fun rememberPreferenceIconShape(): Shape = MaterialShapes.Ghostish.toShape()
+private fun rememberPreferenceIconShape(): Shape = remember { RoundedCornerShape(14.dp) }
 
 private fun segmentedPreferenceItemShape(
     index: Int,
@@ -181,13 +186,6 @@ fun PreferenceEntry(
         }
     val resolvedShape = shape ?: preferenceItemShape
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessHigh),
-        label = "prefScale",
-    )
-
     val rowContent: @Composable () -> Unit = {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -213,7 +211,8 @@ fun PreferenceEntry(
                         Modifier
                             .align(Alignment.CenterVertically)
                             .size(44.dp)
-                            .clip(preferenceIconShape),
+                            .clip(preferenceIconShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) {
@@ -227,7 +226,7 @@ fun PreferenceEntry(
                 verticalArrangement = Arrangement.Center,
                 modifier = Modifier.weight(1f),
             ) {
-                ProvideTextStyle(MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)) {
+                ProvideTextStyle(MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium)) {
                     title()
                 }
                 if (description != null) {
@@ -254,7 +253,8 @@ fun PreferenceEntry(
         shape = resolvedShape,
         colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSurface,
             ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier =
@@ -263,10 +263,8 @@ fun PreferenceEntry(
                 .padding(
                     horizontal = if (inGroup) 0.dp else 16.dp,
                     vertical = if (inGroup) 0.dp else 3.dp,
-                ).graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                },
+                ).clip(resolvedShape)
+                .frostSoulGlass(resolvedShape),
     ) {
         rowContent()
     }
@@ -1112,7 +1110,7 @@ fun PreferenceGroup(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = PreferenceGroupHorizontalPadding),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             scope.items.forEachIndexed { index, itemContent ->
                 val position =
@@ -1152,6 +1150,6 @@ fun PreferenceGroupTitle(
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+        modifier = modifier.semantics { heading() }.padding(horizontal = 4.dp, vertical = 12.dp),
     )
 }

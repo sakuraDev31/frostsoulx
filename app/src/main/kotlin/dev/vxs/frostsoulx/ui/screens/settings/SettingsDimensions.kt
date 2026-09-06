@@ -21,9 +21,9 @@ object SettingsDimensions {
 
     val ScreenHorizontalPadding = 16.dp
     val ScreenBottomPadding = 32.dp
-    val SectionSpacing = 14.dp
-    val SegmentedGroupHorizontalPadding = 26.dp
-    val SegmentedItemGap = 2.dp
+    val SectionSpacing = 20.dp
+    val SegmentedGroupHorizontalPadding = 16.dp
+    val SegmentedItemGap = 4.dp
     val RowVerticalPadding = 14.dp
     val RowHorizontalPadding = 16.dp
 

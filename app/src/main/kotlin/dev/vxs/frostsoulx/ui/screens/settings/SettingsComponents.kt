@@ -13,6 +13,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulScreenBackground
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -60,6 +62,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,6 +73,36 @@ import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.ui.premium.PremiumCard
 import dev.vxs.frostsoulx.ui.premium.PremiumIconAvatar
+
+/** A route-scoped theme: settings share the glass palette without changing player/dialog logic. */
+@Composable
+fun FrostSoulSettingsPage(content: @Composable () -> Unit) {
+    val colors = FrostSoulTheme.colors
+    val inheritedScheme = MaterialTheme.colorScheme
+    val scheme = remember(inheritedScheme, colors) {
+        inheritedScheme.copy(
+            background = Color.Transparent,
+            onBackground = colors.onBackground,
+            surface = colors.surface,
+            onSurface = colors.onSurface,
+            onSurfaceVariant = colors.onSurfaceMuted,
+            surfaceContainer = colors.surfaceRaised,
+            surfaceContainerLow = colors.surface,
+            surfaceContainerHigh = colors.surfaceRaised,
+            surfaceContainerHighest = colors.surfaceRaised,
+            primary = colors.accent,
+            onPrimary = colors.surface,
+            primaryContainer = colors.surfaceRaised,
+            onPrimaryContainer = colors.onSurface,
+            outlineVariant = colors.outline,
+        )
+    }
+    MaterialTheme(colorScheme = scheme) {
+        Box(Modifier.fillMaxSize().frostSoulScreenBackground()) {
+            content()
+        }
+    }
+}
 
 @Composable
 fun SettingsProfileHeader(
@@ -526,7 +561,7 @@ fun SettingsSectionLabel(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         letterSpacing = MaterialTheme.typography.labelSmall.letterSpacing * 1.2f,
         modifier =
-            modifier.padding(
+            modifier.semantics { heading() }.padding(
                 horizontal = SettingsDimensions.SectionHeaderHorizontalPadding,
                 vertical = SettingsDimensions.SectionHeaderBottomPadding,
             ),
@@ -541,40 +576,21 @@ fun SettingsSegmentedItem(
     modifier: Modifier = Modifier,
 ) {
     val colors = FrostSoulTheme.colors
-    val iconContentColor = colors.onSurfaceMuted
+    val iconContentColor = if (item.accentColor.isSpecified) item.accentColor else colors.accent
     val shape = remember(index, count) { segmentedSettingsItemShape(index, count) }
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) SettingsAnimations.PressScale else 1f,
-        animationSpec = SettingsAnimations.pressSpring(),
-        label = "settingsSegmentScale",
-    )
 
     Card(
         modifier =
             modifier
                 .fillMaxWidth()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }.clip(shape)
-                .drawWithCache {
-                    onDrawBehind {
-                        if (index < count - 1) {
-                            drawLine(
-                                color = colors.onSurface.copy(alpha = 0.07f),
-                                start = Offset(64.dp.toPx(), size.height),
-                                end = Offset(size.width - 16.dp.toPx(), size.height),
-                                strokeWidth = 1.dp.toPx(),
-                            )
-                        }
-                    }
-                }
+                .clip(shape)
+                .frostSoulGlass(shape)
                 .focusable()
                 .clickable(
                     interactionSource = interactionSource,
-                    indication = null,
+                    indication = androidx.compose.material3.ripple(),
+                    role = Role.Button,
                     onClick = item.onClick,
                 ),
         shape = shape,
@@ -588,16 +604,16 @@ fun SettingsSegmentedItem(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 68.dp)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .heightIn(min = 80.dp)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier =
                     Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color.Transparent),
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(iconContentColor.copy(alpha = 0.10f)),
                 contentAlignment = Alignment.Center,
             ) {
                 if (item.showUpdateIndicator) {
@@ -637,7 +653,7 @@ fun SettingsSegmentedItem(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
                     color = colors.onSurface,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 item.subtitle?.let { subtitle ->
@@ -646,7 +662,7 @@ fun SettingsSegmentedItem(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurfaceMuted,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -681,8 +697,8 @@ private fun segmentedSettingsItemShape(
     index: Int,
     count: Int,
 ): Shape {
-    val large = 28.dp
-    val small = 6.dp
+    val large = 24.dp
+    val small = 8.dp
     return when {
         count <= 1 -> {
             RoundedCornerShape(large)

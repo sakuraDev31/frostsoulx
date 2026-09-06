@@ -119,6 +119,7 @@ fun SettingsScreen(
         topBar = {
             PremiumTopBar(
                 title = stringResource(R.string.settings),
+                eyebrow = "FROSTSOULX",
                 modifier = Modifier.statusBarsPadding(),
                 navigationIcon = {
                     IconButton(
@@ -146,7 +147,7 @@ fun SettingsScreen(
                     ),
             contentPadding =
                 PaddingValues(
-                    top = innerPadding.calculateTopPadding(),
+                    top = innerPadding.calculateTopPadding() + 8.dp,
                     bottom = SettingsDimensions.ScreenBottomPadding,
                 ),
         ) {
@@ -195,6 +196,11 @@ fun SettingsScreen(
                     ) {
                         Spacer(modifier = Modifier.height(SettingsDimensions.SectionSpacing))
                     }
+                }
+
+                item(key = "settings_group_label_$groupIndex", contentType = "settings_section_label") {
+                    SettingsSectionLabel(text = group.title)
+                    Spacer(Modifier.height(6.dp))
                 }
 
                 itemsIndexed(
