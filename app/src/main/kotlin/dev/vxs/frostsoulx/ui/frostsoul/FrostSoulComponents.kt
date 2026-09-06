@@ -99,6 +99,8 @@ fun FSButton(
 ) {
     val colors = FrostSoulTheme.colors
     val shape = FrostSoulTheme.shapes.pill
+    val emphasizedSurface = Color.Black.copy(alpha = if (colors.background.luminance() < 0.5f) 0.92f else 1f)
+    val emphasizedInk = if (emphasizedSurface.luminance() < 0.5f) Color.White else Color.Black
     val interactionSource = remember { MutableInteractionSource() }
     Row(
         horizontalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.small, Alignment.CenterHorizontally),
@@ -109,9 +111,7 @@ fun FSButton(
                 .clip(shape)
                 .background(
                     if (emphasized) {
-                        Brush.horizontalGradient(
-                            listOf(colors.accent, colors.accentBright),
-                        )
+                        Brush.horizontalGradient(listOf(emphasizedSurface, emphasizedSurface))
                     } else {
                         Brush.horizontalGradient(
                             listOf(colors.surfaceRaised, colors.surface),
@@ -119,7 +119,7 @@ fun FSButton(
                     },
                     shape,
                 ).border(
-                    BorderStroke(1.dp, if (emphasized) colors.accentBright.copy(alpha = 0.38f) else colors.outline),
+                    BorderStroke(1.dp, if (emphasized) colors.onSurface.copy(alpha = 0.28f) else colors.outline),
                     shape,
                 ).clickable(
                     enabled = enabled,
@@ -132,7 +132,7 @@ fun FSButton(
         FSText(
             text = label,
             style = FrostSoulTheme.typography.label,
-            color = if (emphasized) colors.surface else colors.onSurface,
+            color = if (emphasized) emphasizedInk else colors.onSurface,
             maxLines = 1,
         )
         trailing?.invoke()
@@ -594,8 +594,9 @@ fun FSNavigationBar(
     pairedWithMiniPlayer: Boolean = false,
     onCenterClick: (() -> Unit)? = null,
 ) {
+    val colors = FrostSoulTheme.colors
     val homeSelected = selectedRoute == "home"
-    val selectedTint = if (homeSelected) Color(0xFFFFE4AD) else FrostSoulTheme.colors.accentBright
+    val selectedTint = if (pureBlack) Color.White else colors.onSurface
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
     val navSurface = if (pureBlack) Color.Black.copy(alpha = 0.94f) else null
     Row(
@@ -607,7 +608,7 @@ fun FSNavigationBar(
                 .clip(shape)
                 .then(
                     if (navSurface != null) Modifier.background(navSurface, shape)
-                    else Modifier.frostSoulGlass(shape, tint = FrostSoulTheme.colors.surface.copy(alpha = 0.90f))
+                    else Modifier.frostSoulGlass(shape, tint = colors.surface.copy(alpha = 0.90f))
                 )
                 .border(1.dp, selectedTint.copy(alpha = if (homeSelected) 0.22f else 0.14f), shape)
                 .padding(horizontal = 4.dp, vertical = 3.dp),
@@ -655,13 +656,7 @@ fun FSNavigationBar(
 
 @Composable
 private fun FrostSoulCenterNavigationAction(onClick: () -> Unit) {
-    val transition = rememberInfiniteTransition(label = "frostsoul-center-navigation-glow")
-    val glowAlpha by transition.animateFloat(
-        initialValue = 0.16f,
-        targetValue = 0.34f,
-        animationSpec = infiniteRepeatable(tween(1_800, easing = LinearEasing), RepeatMode.Reverse),
-        label = "frostsoul-center-navigation-glow-alpha",
-    )
+    val colors = FrostSoulTheme.colors
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
@@ -669,15 +664,15 @@ private fun FrostSoulCenterNavigationAction(onClick: () -> Unit) {
             .fillMaxSize()
             .padding(horizontal = 4.dp)
             .clip(CircleShape)
-            .background(FrostSoulTheme.colors.accent.copy(alpha = glowAlpha), CircleShape)
-            .border(BorderStroke(1.dp, FrostSoulTheme.colors.accent.copy(alpha = 0.62f)), CircleShape)
-            .frostSoulGlow(FrostSoulTheme.colors.accentBright, alpha = glowAlpha)
+            .background(Color.Black.copy(alpha = 0.94f), CircleShape)
+            .border(BorderStroke(1.dp, colors.onSurface.copy(alpha = 0.32f)), CircleShape)
+            .frostSoulGlow(Color.Transparent, alpha = 0f)
             .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onClick),
     ) {
         FSIcon(
             painter = painterResource(R.drawable.about_appbar),
             contentDescription = "Open FrostSoul player",
-            tint = FrostSoulTheme.colors.accentBright,
+            tint = Color.White,
             modifier = Modifier.size(34.dp),
         )
     }

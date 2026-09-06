@@ -31,7 +31,7 @@ import dev.vxs.frostsoulx.ui.frostsoul.FSNavigationBar
 import dev.vxs.frostsoulx.ui.frostsoul.FSNavigationItem
 import dev.vxs.frostsoulx.ui.screens.Screens
 
-private val NavigationItemsMaxWidth = 200.dp
+private val NavigationItemsMaxWidth = 170.dp
 
 @Composable
 fun FloatingNavigationToolbar(

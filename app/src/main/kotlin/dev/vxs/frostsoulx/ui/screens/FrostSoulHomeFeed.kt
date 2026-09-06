@@ -166,10 +166,6 @@ internal fun FrostSoulHomeFeed(
             }
         }
 
-        item(key = "frostsoul_quick_search") {
-            FrostSoulQuickSearch(onOpenSearch = { openSearchPortal() })
-        }
-
         uiState.homePage?.chips.orEmpty().takeIf { it.isNotEmpty() }?.let { sourceChips ->
             // Preserve server chip titles so the selected label matches its destination.
             val displayChips = sourceChips
@@ -787,6 +783,7 @@ private fun FrostSoulHomeHeader(
     }
     // A compact editorial header leaves discovery in view and avoids decoding a second cover.
     PremiumTopBar(
+        modifier = Modifier.statusBarsPadding(),
         title = greeting,
         subtitle = userName?.takeIf { it.isNotBlank() },
         eyebrow = "FROSTSOULX",
@@ -918,7 +915,7 @@ private fun FrostSoulOfflineMixShelf(
                         )
                         Box(
                             modifier = Modifier.fillMaxWidth(0.72f).padding(top = 10.dp).height(2.dp)
-                                .background(FrostSoulTheme.colors.accentBright, FrostSoulTheme.shapes.pill),
+                                .background(FrostSoulTheme.colors.onSurface.copy(alpha = 0.72f), FrostSoulTheme.shapes.pill),
                         )
                     }
                     FSIconButton(
@@ -933,7 +930,7 @@ private fun FrostSoulOfflineMixShelf(
                         FSIcon(
                             painter = painterResource(R.drawable.play),
                             contentDescription = "Play ${mix.title}",
-                            tint = FrostSoulTheme.colors.accentBright,
+                            tint = FrostSoulTheme.colors.onSurface,
                         )
                     }
                 }
