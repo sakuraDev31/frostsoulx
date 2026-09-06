@@ -689,9 +689,9 @@ internal fun FSPlayerControls(
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().height(40.dp),
         ) {
             Spacer(modifier = Modifier.weight(1f))
             FSDownloadButton(
@@ -708,8 +708,8 @@ internal fun FSPlayerControls(
                 contentDescription = if (state.sleepTimerActive) "Clear sleep timer" else "Set sleep timer",
                 onClick = actions.onOpenSleepTimer,
                 active = state.sleepTimerActive,
-                buttonSize = 32.dp,
-                iconSize = 21.dp,
+                buttonSize = 40.dp,
+                iconSize = 23.dp,
                 showContainer = false,
             )
             FrostSoulOutputDeviceButton(
@@ -850,8 +850,8 @@ private fun FSDspMicButton(
         contentDescription = "Open spatial DSP controls",
         onClick = onClick,
         active = active,
-        buttonSize = 32.dp,
-        iconSize = 18.dp,
+        buttonSize = 40.dp,
+        iconSize = 22.dp,
         showContainer = false,
         forceWhite = immersive,
         modifier = Modifier.graphicsLayer { rotationZ = 65f },
@@ -924,7 +924,7 @@ private fun FSDownloadButton(
     val normalizedProgress = progress?.coerceIn(0f, 1f)
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(36.dp).clickable(onClick = onClick),
+        modifier = Modifier.size(40.dp).clickable(onClick = onClick),
     ) {
         normalizedProgress?.let { value ->
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -961,12 +961,12 @@ private fun FSTwoDotButton(
     Column(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.size(if (immersive) 40.dp else 36.dp).clickable(onClick = onClick),
+        modifier = Modifier.size(40.dp).clickable(onClick = onClick),
     ) {
         repeat(2) {
             Box(
                 modifier = Modifier
-                    .size(if (immersive) 7.dp else 5.dp)
+                    .size(if (immersive) 7.dp else 6.dp)
                     .background(
                         if (immersive) Color(0xFFD7DBE0) else FrostSoulTheme.colors.onSurface,
                         androidx.compose.foundation.shape.CircleShape,
