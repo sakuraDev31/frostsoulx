@@ -457,93 +457,214 @@ internal fun FSMiniPlayer(
     onQueueClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val progress = if (durationMs > 0L) {
-        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
-    val colors = FrostSoulTheme.colors
-    val isLightTheme = colors.background.luminance() > 0.5f
-    val surface = lerp(colors.surface, palette.artworkPrimary, if (isLightTheme) 0.10f else 0.22f)
-    val accent = if (isLightTheme) colors.onSurface else lerp(palette.artworkPrimary, Color.White, 0.72f)
+    val rawProgress =
+        if (durationMs > 0L) {
+            (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+    val progress by animateFloatAsState(
+        targetValue = rawProgress,
+        animationSpec = tween(220),
+        label = "frostsoul-mini-player-progress",
+    )
+    val isLightTheme = FrostSoulTheme.colors.background.luminance() > 0.5f
+    val backgroundColor = FrostSoulTheme.colors.surface
+    val primaryTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurface else FrostSoulOnSurface
+    val mutedTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurfaceMuted else FrostSoulOnSurfaceMuted
 
-    // Tinted glass, not backdrop blur: one cached brush, no elevated/offscreen layer.
-    BoxWithConstraints(
-        modifier = modifier.fillMaxWidth().height(height).clip(shape)
-            .frostSoulGlass(shape, tint = surface)
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = androidx.compose.material3.ripple(),
-                role = Role.Button,
-                onClickLabel = "Open full player",
-                onLongClickLabel = "Track actions",
-                onClick = onCardClick,
-                onLongClick = onLongPress,
-            ),
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(height)
+                .graphicsLayer {
+                    shadowElevation = if (isPlaying) 18.dp.toPx() else 8.dp.toPx()
+                    this.shape = shape
+                    clip = false
+                }
+                .clip(shape)
+                .background(backgroundColor.copy(alpha = 0.94f))
+                .border(1.dp, palette.accent.copy(alpha = if (isPlaying) 0.48f else 0.20f), shape)
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onCardClick,
+                    onLongClick = onLongPress,
+                ),
     ) {
-        // Keep the title usable on narrow displays; favorite remains in Track actions.
-        val showFavorite = maxWidth >= 400.dp
-        val showQueue = maxWidth >= 300.dp
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.size(artworkSize + 8.dp),
+                modifier = Modifier.size(artworkSize + 10.dp),
             ) {
-                AsyncImage(
-                    model = track.artworkUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(artworkSize - 4.dp).clip(CircleShape)
-                        .background(colors.surfaceRaised),
-                )
-                if (track.artworkUrl.isNullOrBlank()) {
-                    Icon(painterResource(R.drawable.music_note), null, tint = colors.onSurfaceMuted,
-                        modifier = Modifier.size(24.dp))
-                }
-                Canvas(Modifier.fillMaxSize().padding(1.dp)) {
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    val strokeWidth = 2.5.dp.toPx()
+                    val inset = strokeWidth / 2f
+                    val left = inset
+                    val top = inset
+                    val right = size.width - inset
+                    val bottom = size.height - inset
+                    val cornerRadius = 10.dp.toPx().coerceAtMost((minOf(size.width, size.height) / 2f) - inset)
+                    val topMidX = (left + right) / 2f
+                    val timelineColor = if (isLightTheme) Color.Black else Color.White
+                    // Built by hand (instead of Path.addRoundRect, whose start point sits near a
+                    // corner and which Compose defaults to counter-clockwise) so distance=0 on
+                    // this path is exactly the middle of the top edge and the path winds
+                    // clockwise from there — matching the requested start point/direction for
+                    // the progress sweep below.
+                    val perimeterPath = Path().apply {
+                        moveTo(topMidX, top)
+                        lineTo(right - cornerRadius, top)
+                        arcTo(
+                            rect = androidx.compose.ui.geometry.Rect(right - 2 * cornerRadius, top, right, top + 2 * cornerRadius),
+                            startAngleDegrees = -90f,
+                            sweepAngleDegrees = 90f,
+                            forceMoveTo = false,
+                        )
+                        lineTo(right, bottom - cornerRadius)
+                        arcTo(
+                            rect = androidx.compose.ui.geometry.Rect(right - 2 * cornerRadius, bottom - 2 * cornerRadius, right, bottom),
+                            startAngleDegrees = 0f,
+                            sweepAngleDegrees = 90f,
+                            forceMoveTo = false,
+                        )
+                        lineTo(left + cornerRadius, bottom)
+                        arcTo(
+                            rect = androidx.compose.ui.geometry.Rect(left, bottom - 2 * cornerRadius, left + 2 * cornerRadius, bottom),
+                            startAngleDegrees = 90f,
+                            sweepAngleDegrees = 90f,
+                            forceMoveTo = false,
+                        )
+                        lineTo(left, top + cornerRadius)
+                        arcTo(
+                            rect = androidx.compose.ui.geometry.Rect(left, top, left + 2 * cornerRadius, top + 2 * cornerRadius),
+                            startAngleDegrees = 180f,
+                            sweepAngleDegrees = 90f,
+                            forceMoveTo = false,
+                        )
+                        lineTo(topMidX, top)
+                        close()
+                    }
+                    val perimeterMeasure = PathMeasure()
+                    perimeterMeasure.setPath(perimeterPath, forceClosed = true)
                     val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
-                        width = 2.dp.toPx(), cap = StrokeCap.Round,
+                        width = strokeWidth,
+                        cap = StrokeCap.Round,
+                        join = androidx.compose.ui.graphics.StrokeJoin.Round,
                     )
-                    drawArc(accent.copy(alpha = 0.16f), -90f, 360f, false, style = stroke)
-                    if (progress > 0f) drawArc(accent, -90f, 360f * progress, false, style = stroke)
+                    drawPath(
+                        path = perimeterPath,
+                        color = timelineColor.copy(alpha = 0.22f),
+                        style = stroke,
+                    )
+                    if (progress > 0f) {
+                        val progressPath = Path()
+                        perimeterMeasure.getSegment(
+                            startDistance = 0f,
+                            stopDistance = perimeterMeasure.length * progress,
+                            destination = progressPath,
+                            startWithMoveTo = true,
+                        )
+                        drawPath(
+                            path = progressPath,
+                            color = timelineColor,
+                            style = stroke,
+                        )
+                    }
+                }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(artworkSize).clip(RoundedCornerShape(8.dp)).background(FrostSoulSurface),
+                ) {
+                    AsyncImage(
+                        model = track.artworkUrl,
+                        contentDescription = "Album artwork for ${track.title}",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (track.artworkUrl.isNullOrBlank()) {
+                        Icon(
+                            painter = painterResource(R.drawable.music_note),
+                            contentDescription = null,
+                            tint = mutedTextColor,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
             }
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Text(track.title, color = colors.onSurface, fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(track.artist, color = colors.onSurfaceMuted, fontSize = 11.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
-            }
-            if (showFavorite) {
-                androidx.compose.material3.IconButton(onClick = onToggleLike, modifier = Modifier.size(48.dp)) {
-                    Icon(
-                        painterResource(if (track.isLiked) R.drawable.favorite else R.drawable.favorite_border),
-                        if (track.isLiked) "Remove from favorites" else "Add to favorites",
-                        tint = if (track.isLiked) Color(0xFFF08D9C) else colors.onSurface,
-                        modifier = Modifier.size(23.dp),
-                    )
-                }
-            }
-            androidx.compose.material3.IconButton(
-                onClick = onTogglePlayPause,
-                modifier = Modifier.size(48.dp).clip(CircleShape).background(accent),
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(
+                        SpanStyle(
+                            color = primaryTextColor,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                    ) {
+                        append(track.title)
+                    }
+                    if (track.artist.isNotBlank()) {
+                        withStyle(
+                            SpanStyle(
+                                color = mutedTextColor,
+                                fontSize = 13.sp,
+                            ),
+                        ) {
+                            append("  -  ${track.artist}")
+                        }
+                    }
+                },
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE),
+            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(42.dp).zIndex(1f).clickable(onClick = onToggleLike),
             ) {
-                Icon(painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
-                    if (isPlaying) "Pause" else "Play",
-                    tint = if (isLightTheme) colors.surface else Color(0xFF131318),
-                    modifier = Modifier.size(26.dp))
+                Icon(
+                    painter = painterResource(if (track.isLiked) R.drawable.favorite else R.drawable.favorite_border),
+                    contentDescription = if (track.isLiked) "Remove from favorites" else "Add to favorites",
+                    tint = if (track.isLiked) Color(0xFFFF3B4D) else primaryTextColor,
+                    modifier = Modifier.size(24.dp),
+                )
             }
-            onQueueClick?.takeIf { showQueue }?.let { openQueue ->
-                androidx.compose.material3.IconButton(onClick = openQueue, modifier = Modifier.size(48.dp)) {
-                    Icon(painterResource(R.drawable.queue_music), "Open queue", tint = colors.onSurface,
-                        modifier = Modifier.size(23.dp))
+            FSIconButton(
+                painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                onClick = onTogglePlayPause,
+                active = false,
+                buttonSize = 42.dp,
+                iconSize = 24.dp,
+                showContainer = false,
+                dimBackdrop = false,
+                tintOverride = if (isLightTheme) Color.Black else Color.White,
+                modifier = Modifier.zIndex(1f),
+            )
+            onQueueClick?.let { openQueue ->
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier =
+                        Modifier
+                            .size(48.dp)
+                            .zIndex(2f)
+                            .clickable(onClick = openQueue),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.queue_music),
+                        contentDescription = "Open queue",
+                        tint = if (isLightTheme) Color.Black else Color.White,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
         }
-
     }
 }
 
