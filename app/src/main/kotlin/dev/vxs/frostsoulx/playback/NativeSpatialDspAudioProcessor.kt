@@ -17,6 +17,8 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
     private var inputEnded = false
     private var nativeHandle = 0L
     private var enabled = false
+    private var preset = Preset.NATURAL
+    private var parameters = Parameters()
 
     override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT || inputAudioFormat.channelCount != 2) {
@@ -28,20 +30,27 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
             releaseNative()
             nativeHandle = nativeCreate(inputAudioFormat.sampleRate)
             this.inputAudioFormat = inputAudioFormat
+            setPreset(preset)
+            setParameters(parameters)
+            setEnabled(enabled)
         }
         outputAudioFormat = inputAudioFormat
         return outputAudioFormat
     }
 
-    override fun isActive(): Boolean = nativeHandle != 0L && enabled
+    // Keep the processor active once configured so the UI can toggle DSP at runtime without
+    // forcing a player rebuild. Disabled mode is a zero-cost native bypass.
+    override fun isActive(): Boolean = nativeHandle != 0L
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (inputBuffer.remaining() == 0) return
-        if (isActive() && inputBuffer.isDirect) {
-            val frames = inputBuffer.remaining() / BYTES_PER_FRAME
-            nativeProcess(nativeHandle, inputBuffer, frames)
+        val frameBytes = inputBuffer.remaining()
+        if (enabled && nativeHandle != 0L && inputBuffer.isDirect && frameBytes >= BYTES_PER_FRAME) {
+            nativeProcess(nativeHandle, inputBuffer, frameBytes / BYTES_PER_FRAME)
         }
-        outputBuffer = inputBuffer
+        // Preserve the readable range before consuming the input buffer. Assigning the original
+        // buffer and then advancing its position makes getOutput() appear empty and mutes audio.
+        outputBuffer = inputBuffer.slice().order(inputBuffer.order())
         inputBuffer.position(inputBuffer.limit())
     }
 
@@ -76,23 +85,25 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
     }
 
     fun setPreset(value: Preset) {
+        preset = value
         if (nativeHandle != 0L) nativeSetPreset(nativeHandle, value.nativeValue)
     }
 
-    fun setParameters(parameters: Parameters) {
+    fun setParameters(value: Parameters) {
+        parameters = value
         if (nativeHandle != 0L) {
             nativeSetParameters(
                 nativeHandle,
-                parameters.intensity,
-                parameters.width,
-                parameters.crossfeed,
-                parameters.lowFrequencyProtection,
-                parameters.surround,
-                parameters.reverbMix,
-                parameters.reverbRoomSize,
-                parameters.reverbDecay,
-                parameters.outputGainDb,
-                parameters.limiterCeilingDb,
+                value.intensity,
+                value.width,
+                value.crossfeed,
+                value.lowFrequencyProtection,
+                value.surround,
+                value.reverbMix,
+                value.reverbRoomSize,
+                value.reverbDecay,
+                value.outputGainDb,
+                value.limiterCeilingDb,
             )
         }
     }
