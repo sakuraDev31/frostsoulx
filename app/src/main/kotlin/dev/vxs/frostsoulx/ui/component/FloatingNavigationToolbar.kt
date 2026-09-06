@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.vxs.frostsoulx.constants.NavigationBarMaxWidth
 import dev.vxs.frostsoulx.ui.frostsoul.FSNavigationBar
@@ -44,6 +45,7 @@ fun FloatingNavigationToolbar(
     onSearchItemDoubleClick: (() -> Unit)? = null,
     onCenterClick: (() -> Unit)? = null,
     overflowContent: (@Composable () -> Unit)? = null,
+    reservedEndSpace: Dp = 0.dp,
 ) {
     val navigationItems =
         items.map { screen ->
@@ -61,6 +63,7 @@ fun FloatingNavigationToolbar(
         modifier =
             modifier
                 .fillMaxWidth()
+                .padding(end = reservedEndSpace)
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),
         contentAlignment = Alignment.Center,
     ) {

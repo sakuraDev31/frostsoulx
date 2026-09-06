@@ -1946,6 +1946,12 @@ class MainActivity : ComponentActivity() {
                                                             bottom = bottomInset + floatingBarsBottomPadding,
                                                         )
                                                         .height(navVisibleHeight),
+                                                reservedEndSpace =
+                                                    if (showHomeOverflowFab) {
+                                                        HomeOverflowFabSize + 16.dp
+                                                    } else {
+                                                        0.dp
+                                                    },
                                                 isSelected = { screen ->
                                                     navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
                                                         true
