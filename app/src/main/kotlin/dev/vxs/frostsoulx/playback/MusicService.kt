@@ -669,7 +669,7 @@ class MusicService :
     lateinit var downloadCache: Cache
 
     lateinit var localPlayer: ExoPlayer
-        private set
+    private val spatialDspAudioProcessor = NativeSpatialDspAudioProcessor()
     lateinit var player: Player
         private set
     private lateinit var castPlaybackRepository: CastPlaybackRepository
@@ -1062,6 +1062,7 @@ class MusicService :
 
     override fun onCreate() {
         super.onCreate()
+        NativeSpatialDspRuntime.attach(spatialDspAudioProcessor)
         equalizerPlaybackController.attach(this)
         ensureScopesActive()
 
@@ -7920,6 +7921,7 @@ class MusicService :
                             150.toShort(),
                         ),
                         SonicAudioProcessor(),
+                        spatialDspAudioProcessor,
                     ),
                 ).build()
         }
@@ -8371,6 +8373,8 @@ class MusicService :
     }
 
     override fun onDestroy() {
+        NativeSpatialDspRuntime.detach(spatialDspAudioProcessor)
+        spatialDspAudioProcessor.reset()
         playbackCore?.close()
         playbackCore = null
         stopLyricsSync()
