@@ -1224,10 +1224,41 @@ private fun FrostSoulArtworkBlurAlbumPage(
         } else {
             0f
         }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(bottom = 8.dp),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+    val immersiveBlurRadius = artworkHeaderBlur.coerceAtLeast(28f).coerceAtMost(72f)
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (!uiState.track.artworkUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = uiState.track.artworkUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(immersiveBlurRadius.dp, BlurredEdgeTreatment.Rectangle)
+                    .graphicsLayer { alpha = 0.92f },
+            )
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        colors = listOf(uiState.palette.artworkPrimary, uiState.palette.artworkSecondary),
+                    ),
+                ),
+            )
+        }
+        Box(
+            modifier = Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.28f),
+                    0.42f to Color.Transparent,
+                    0.76f to Color.Black.copy(alpha = 0.62f),
+                    1f to Color.Black.copy(alpha = 0.90f),
+                ),
+            ),
+        )
+        Column(
+            modifier = Modifier.fillMaxSize().padding(bottom = 8.dp),
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
             // Full-bleed artwork header: the image spans the whole width with no card
        // inset, and fades edge-to-edge into the page background so the thumbnail
             // reads as one seamless surface (QQ Music "immersive cover" behaviour).
@@ -1350,6 +1381,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
             immersive = true,
             onSeekDraggingChanged = onSeekDraggingChanged,
         )
+        }
     }
 }
 
