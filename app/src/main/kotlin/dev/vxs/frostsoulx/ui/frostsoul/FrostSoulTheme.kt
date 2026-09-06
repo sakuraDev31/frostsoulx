@@ -21,6 +21,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -265,7 +266,7 @@ fun Modifier.frostSoulGlow(
         val radius = size.maxDimension.coerceAtLeast(1f) * 0.72f
         val glow = Brush.radialGradient(
             colors = listOf(color.copy(alpha = alpha), Color.Transparent),
-            center = center,
+            center = Offset(size.width / 2f, size.height / 2f),
             radius = radius,
         )
         onDrawBehind {
