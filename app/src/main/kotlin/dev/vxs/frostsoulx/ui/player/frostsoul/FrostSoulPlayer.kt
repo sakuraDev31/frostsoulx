@@ -331,7 +331,6 @@ internal fun FrostSoulPlayer(
                                     onSearchTrack = onSearchTrack,
                                     onShowArtists = { showArtistDialog = true },
                                     onSeekDraggingChanged = { isSeekbarDragging = it },
-                                    onOpenLyrics = { scope.launch { pagerState.animateScrollToPage(2) } },
                                 )
                             } else {
                                 FrostSoulAlbumPage(
