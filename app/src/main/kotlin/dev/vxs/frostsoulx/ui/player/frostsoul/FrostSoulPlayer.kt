@@ -1101,28 +1101,13 @@ private fun FrostSoulArtworkBlurAlbumPage(
     val base = remember(uiState.palette) { lerp(Color(0xFF0D0F14), uiState.palette.artworkPrimary, 0.10f) }
     val accent = remember(uiState.palette) { lerp(uiState.palette.artworkPrimary, Color.White, 0.72f) }
     val context = LocalContext.current
-    val (disableBlur) = rememberPreference(DisableBlurKey, false)
-    val density = LocalDensity.current
-    val radiusPx = with(density) { uiState.blurRadius.coerceIn(16f, 36f).dp.toPx() }
-    // Clamp edge pixels rather than sampling transparent black at the cover edges.
-    // No effect is allocated on unsupported devices or when blur is disabled.
-    val artworkBlur = remember(disableBlur, radiusPx) {
-        if (!disableBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            android.graphics.RenderEffect.createBlurEffect(
-                radiusPx, radiusPx, android.graphics.Shader.TileMode.CLAMP,
-            ).asComposeRenderEffect()
-        } else {
-            null
-        }
-    }
+    // Both layers share a bounded decode/cache entry, not two original-size bitmaps.
     val artworkRequest = remember(context, uiState.track.artworkUrl) {
         ImageRequest.Builder(context)
             .data(uiState.track.artworkUrl)
-            .size(640, 640)
+            .size(768, 768)
             .build()
     }
-    // Both draws use ONE painter/decode and update together, including cache misses.
-    val artworkPainter = rememberAsyncImagePainter(artworkRequest)
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(base)) {
         val landscape = maxWidth > maxHeight
         val viewportHeight = maxHeight
@@ -1130,40 +1115,32 @@ private fun FrostSoulArtworkBlurAlbumPage(
         val artworkHeight = (maxHeight * 0.43f).coerceIn(180.dp, 440.dp)
         val artwork: @Composable (Modifier) -> Unit = { artworkModifier ->
             Box(modifier = artworkModifier.clipToBounds(), contentAlignment = Alignment.Center) {
-                if (artworkBlur != null) {
-                    Image(
-                        painter = artworkPainter,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().graphicsLayer { renderEffect = artworkBlur },
-                    )
-                }
-                Image(
-                    painter = artworkPainter,
+                val artworkScale = if (landscape) ContentScale.Fit else ContentScale.Crop
+                AsyncImage(
+                    model = artworkRequest,
+                    contentDescription = null,
+                    contentScale = artworkScale,
+                    modifier = Modifier.fillMaxSize()
+                        .blur(uiState.blurRadius.coerceIn(16f, 40f).dp, BlurredEdgeTreatment.Rectangle),
+                )
+                AsyncImage(
+                    model = artworkRequest,
                     contentDescription = "Album artwork for ${uiState.track.title}",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().then(
-                        if (artworkBlur != null) {
-                            Modifier
-                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                                .drawWithCache {
-                                    val dissolve = Brush.verticalGradient(
-                                        0f to Color.White,
-                                        0.30f to Color.White,
-                                        0.52f to Color.White.copy(alpha = 0.88f),
-                                        0.72f to Color.White.copy(alpha = 0.45f),
-                                        0.90f to Color.White.copy(alpha = 0.08f),
-                                        1f to Color.Transparent,
-                                    )
-                                    onDrawWithContent {
-                                        drawContent()
-                                        drawRect(dissolve, blendMode = BlendMode.DstIn)
-                                    }
-                                }
-                        } else {
-                            Modifier
+                    contentScale = artworkScale,
+                    modifier = Modifier.fillMaxSize()
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithCache {
+                            val dissolve = Brush.verticalGradient(
+                                0f to Color.White,
+                                0.52f to Color.White,
+                                0.82f to Color.White.copy(alpha = 0.25f),
+                                1f to Color.Transparent,
+                            )
+                            onDrawWithContent {
+                                drawContent()
+                                drawRect(dissolve, blendMode = BlendMode.DstIn)
+                            }
                         },
-                    ),
                 )
                 if (uiState.track.artworkUrl.isNullOrBlank()) {
                     Icon(painterResource(R.drawable.music_note), null, tint = accent, modifier = Modifier.size(72.dp))
@@ -1171,17 +1148,13 @@ private fun FrostSoulArtworkBlurAlbumPage(
                 // The sharp cover dissolves into its identically aligned blurred copy,
                 // then into the EXACT body color: no hard seam or mismatched gradient.
                 // Blur/offscreen work stays inside the artwork, never the full player.
-                Box(Modifier.fillMaxSize().drawWithCache {
-                    val fade = Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.16f),
-                        0.36f to Color.Transparent,
-                        0.60f to base.copy(alpha = 0.08f),
-                        0.78f to base.copy(alpha = 0.38f),
-                        0.92f to base.copy(alpha = 0.82f),
-                        1f to base,
-                    )
-                    onDrawBehind { drawRect(fade) }
-                })
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.24f),
+                    0.45f to Color.Transparent,
+                    0.70f to base.copy(alpha = 0.12f),
+                    0.88f to base.copy(alpha = 0.65f),
+                    1f to base,
+                )))
             }
         }
         val details: @Composable () -> Unit = {
