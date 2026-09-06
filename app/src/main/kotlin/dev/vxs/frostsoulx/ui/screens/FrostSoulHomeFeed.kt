@@ -155,17 +155,6 @@ internal fun FrostSoulHomeFeed(
             )
         }
 
-        if (uiState.quickPicks.isNotEmpty()) {
-            item(key = "frostsoul_featured_for_you_top") {
-                FrostSoulBannerCarousel(
-                    songs = uiState.quickPicks.take(5),
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                    isPlaying = isPlaying,
-                )
-            }
-        }
-
         uiState.homePage?.chips.orEmpty().takeIf { it.isNotEmpty() }?.let { sourceChips ->
             // Preserve server chip titles so the selected label matches its destination.
             val displayChips = sourceChips
@@ -179,6 +168,17 @@ internal fun FrostSoulHomeFeed(
                         val sourceChip = sourceChips.firstOrNull { it.endpoint == displayChip?.endpoint }
                         onAction(HomeAction.SelectChip(sourceChip.takeUnless { it?.endpoint == uiState.selectedChip?.endpoint }))
                     },
+                )
+            }
+        }
+
+        if (uiState.quickPicks.isNotEmpty()) {
+            item(key = "frostsoul_featured_for_you_top") {
+                FrostSoulBannerCarousel(
+                    songs = uiState.quickPicks.take(5),
+                    mediaMetadata = mediaMetadata,
+                    playerConnection = playerConnection,
+                    isPlaying = isPlaying,
                 )
             }
         }

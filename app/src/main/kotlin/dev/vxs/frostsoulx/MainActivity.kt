@@ -1979,8 +1979,9 @@ class MainActivity : ComponentActivity() {
                                             modifier =
                                                 Modifier
                                                     .align(Alignment.BottomEnd)
+                                                    .zIndex(12f)
                                                     .padding(
-                                                        end = NavigationBarHorizontalPadding,
+                                                        end = NavigationBarHorizontalPadding + 4.dp,
                                                         bottom = homeOverflowFabBottomPadding,
                                                     ),
                                         ) {

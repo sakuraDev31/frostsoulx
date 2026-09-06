@@ -1217,7 +1217,6 @@ private fun FrostSoulArtworkBlurAlbumPage(
     onShowArtists: () -> Unit,
     onSeekDraggingChanged: (Boolean) -> Unit = {},
 ) {
-    val titleScrollState = rememberScrollState()
     val artworkHeaderBlur =
         if (uiState.blurRadius > 0f) {
             (uiState.blurRadius + 18f).coerceIn(18f, 120f)
@@ -1332,7 +1331,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(titleScrollState)
+                            .basicMarquee()
                             .clickable(onClick = onSearchTrack),
                     ) {
                         Text(
@@ -2458,6 +2457,7 @@ private fun FrostSoulDynamicBackground(
     moodSeed: String,
 ) {
     val isVinyl = playerDesignStyle == PlayerDesignStyle.FROSTSOUL
+    val isImmersiveArtwork = playerDesignStyle == PlayerDesignStyle.ARTWORK_BLUR
     val isAnimatedGlow = isVinyl && playerBackgroundStyle == PlayerBackgroundStyle.GLOW_ANIMATED
     val isStaticGlow = isVinyl && playerBackgroundStyle == PlayerBackgroundStyle.GLOW
     val isGlow = isAnimatedGlow || isStaticGlow
@@ -2475,6 +2475,7 @@ private fun FrostSoulDynamicBackground(
                 .build()
         }
     }
+    val shouldRenderArtworkBlur = (isBlur || isImmersiveArtwork) && artworkRequest != null
 
     // Palette colors interpolate only when artwork changes. The glow remains still between
     // transitions, so the vinyl can rotate independently without a perpetual background sweep.
@@ -2492,7 +2493,7 @@ private fun FrostSoulDynamicBackground(
     )
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        if (isBlur && artworkRequest != null) {
+        if (shouldRenderArtworkBlur) {
             AsyncImage(
                 model = artworkRequest,
                 contentDescription = null,
@@ -2501,12 +2502,18 @@ private fun FrostSoulDynamicBackground(
                     .fillMaxSize()
                     .graphicsLayer { scaleX = 1.08f; scaleY = 1.08f }
                     .blur(
-                        radius = blurRadius.coerceIn(0f, 64f).dp,
+                        radius = (if (isImmersiveArtwork) blurRadius.coerceAtLeast(42f) else blurRadius)
+                            .coerceIn(0f, 72f)
+                            .dp,
                         edgeTreatment = BlurredEdgeTreatment.Unbounded,
                     )
-                    .alpha(0.72f),
+                    .alpha(if (isImmersiveArtwork) 0.86f else 0.72f),
             )
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.38f)))
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Color.Black.copy(alpha = if (isImmersiveArtwork) 0.30f else 0.38f),
+                ),
+            )
         }
 
         if (isGradient) {
