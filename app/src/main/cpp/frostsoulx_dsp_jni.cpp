@@ -62,7 +62,7 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeCreate(
     JNIEnv*,
     jobject,
-    jint sampleRate,
+    jint sampleRate
 ) {
     auto* dsp = new (std::nothrow) NativeDsp();
     if (dsp == nullptr) return 0;
