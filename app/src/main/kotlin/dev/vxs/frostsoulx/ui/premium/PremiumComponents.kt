@@ -50,6 +50,7 @@ import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.ui.frostsoul.FSAlbumArt
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlow
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
 import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
 
 @Composable
@@ -84,7 +85,7 @@ fun PremiumTopBar(
                 text = title,
                 style = FrostSoulTheme.typography.display.copy(fontSize = 30.sp, lineHeight = 36.sp),
                 color = FrostSoulTheme.colors.onBackground,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -180,8 +181,7 @@ fun PremiumCard(
     Column(
         modifier = modifier
             .clip(shape)
-            .background(FrostSoulTheme.colors.surfaceGlassStrong, shape)
-            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.52f), shape)
+            .frostSoulGlass(shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(contentPadding),
         content = content,

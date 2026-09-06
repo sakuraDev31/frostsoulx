@@ -12,6 +12,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -27,6 +28,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -131,29 +135,29 @@ data class FrostSoulDesignTokens(
 
 private val DefaultFrostSoulTokens = FrostSoulDesignTokens(
     colors = FrostSoulColors(
-        background = Color.Black,
-        surface = Color(0xFF0B0B0B),
-        surfaceRaised = Color(0xFF151515),
-        surfaceGlass = Color(0xFF0E0E0E),
-        surfaceGlassStrong = Color(0xFF181818),
-        accent = Color.White,
-        accentBright = Color.White,
-        accentMuted = Color(0xFFB0B0B0),
-        onBackground = Color.White,
-        onSurface = Color.White,
-        onSurfaceMuted = Color(0xFFA6A6A6),
-        outline = Color(0xFF3A3A3A),
+        background = Color(0xFF070B10),
+        surface = Color(0xFF0D131B),
+        surfaceRaised = Color(0xFF18212A),
+        surfaceGlass = Color(0xCC151D27),
+        surfaceGlassStrong = Color(0xEB1B2430),
+        accent = Color(0xFFEADCC5),
+        accentBright = Color(0xFFFFE4AD),
+        accentMuted = Color(0xFFBEB5A7),
+        onBackground = Color(0xFFF4F2EF),
+        onSurface = Color(0xFFF4F2EF),
+        onSurfaceMuted = Color(0xFFA7ADB8),
+        outline = Color(0xFF3A4552),
         error = Color(0xFFFF6B6B),
         scrim = Color.Black.copy(alpha = 0.72f),
     ),
     typography = FrostSoulTypography(
-        display = TextStyle(fontWeight = FontWeight.SemiBold),
-        title = TextStyle(fontWeight = FontWeight.SemiBold),
-        sectionTitle = TextStyle(fontWeight = FontWeight.SemiBold),
+        display = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Normal),
+        title = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Normal),
+        sectionTitle = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Normal),
         body = TextStyle(fontWeight = FontWeight.Normal),
         bodyMuted = TextStyle(fontWeight = FontWeight.Normal),
         label = TextStyle(fontWeight = FontWeight.Medium),
-        overline = TextStyle(fontWeight = FontWeight.SemiBold, letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified),
+        overline = TextStyle(fontWeight = FontWeight.Medium, letterSpacing = 1.4.sp),
     ),
     shapes = FrostSoulShapes(
         tiny = RoundedCornerShape(10.dp),
@@ -229,7 +233,12 @@ fun FrostSoulDesignSystem(
 @Composable
 fun Modifier.frostSoulGlass(shape: Shape = FrostSoulTheme.shapes.large): Modifier {
     val colors = FrostSoulTheme.colors
-    return this.background(colors.surfaceGlass, shape)
+    return this
+        .background(
+            Brush.verticalGradient(listOf(colors.surfaceGlassStrong, colors.surfaceGlass)),
+            shape,
+        )
+        .border(0.5.dp, colors.onSurface.copy(alpha = 0.12f), shape)
 }
 
 @Composable
@@ -249,5 +258,14 @@ fun Modifier.frostSoulGlow(
     }
 
 @Composable
-fun Modifier.frostSoulScreenBackground(): Modifier =
-    background(FrostSoulTheme.colors.background)
+fun Modifier.frostSoulScreenBackground(ambient: Color = Color(0xFF334760)): Modifier {
+    val base = FrostSoulTheme.colors.background
+    // Static tonal atmosphere; no full-screen blur texture or animation loop.
+    return background(
+        Brush.verticalGradient(
+            0f to lerp(base, ambient, 0.20f),
+            0.48f to lerp(base, ambient, 0.06f),
+            1f to base,
+        ),
+    )
+}

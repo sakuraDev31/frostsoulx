@@ -917,12 +917,30 @@ private fun FrostSoulHomeHeader(
             in 17..21 -> "Good Evening"
             else -> "Good Night"
         }
+    val base = FrostSoulTheme.colors.background
+    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 230.dp)) {
+        currentSong?.thumbnailUrl?.let { artwork ->
+            AsyncImage(
+                model = artwork,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
+        Box(
+            modifier = Modifier.matchParentSize().background(
+                Brush.verticalGradient(
+                    0f to base.copy(alpha = 0.28f),
+                    0.35f to base.copy(alpha = 0.40f),
+                    1f to base,
+                ),
+            ),
+        )
         PremiumTopBar(
-
         title = timeOfDay,
         subtitle = userName?.let { "$it ${moodEmoji(currentSong)}" },
-        eyebrow = "FROSTSOUL",
-        modifier = Modifier.padding(top = 10.dp),
+        eyebrow = "FROSTSOULX",
+        modifier = Modifier.align(Alignment.BottomStart).padding(top = 10.dp),
         trailingContent = {
             FSIconButton(
                 onClick = onOpenRecent,
@@ -936,7 +954,8 @@ private fun FrostSoulHomeHeader(
                 )
             }
         },
-    )
+        )
+    }
 }
 
 private fun moodEmoji(currentSong: MediaMetadata?): String {

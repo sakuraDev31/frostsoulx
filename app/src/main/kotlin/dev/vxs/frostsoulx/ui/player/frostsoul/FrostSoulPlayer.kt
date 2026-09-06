@@ -229,7 +229,7 @@ internal fun FrostSoulPlayer(
                 palette = uiState.palette,
                 moodSeed = "${uiState.track.title} ${uiState.track.artist} ${uiState.track.album}",
             )
-            Column(
+            Box(
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -237,19 +237,13 @@ internal fun FrostSoulPlayer(
                         WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
                     ),
         ) {
-            // The expanded player owns the top edge. Keep only horizontal and bottom safe areas;
-            // applying the top system-bar inset here shrinks the vinyl deck on devices where
-            // the status bar is still reported by WindowInsets.
-            //
-            // On the Immersive main player page this row drops to 0dp height so the pager
-            // below reclaims the space (letting the artwork header start at the true y=0),
-            // while zIndex keeps the chevron/dots painted above the artwork instead of
-            // being drawn underneath it.
+            // Overlay a real, tappable header instead of constraining its children to 0dp.
+            // Artwork starts at y=0; only non-immersive pages reserve header space.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (isImmersiveArtworkMainPage) 0.dp else 42.dp)
-                    .zIndex(if (isImmersiveArtworkMainPage) 12f else 0f)
+                    .height(42.dp)
+                    .zIndex(12f)
                     .padding(
                         start = PlayerLayoutTokens.MasterHorizontalPadding,
                         end = PlayerLayoutTokens.MasterHorizontalPadding,
@@ -263,8 +257,9 @@ internal fun FrostSoulPlayer(
                     tint = FrostSoulTheme.colors.onSurface,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .size(28.dp)
-                        .clickable(onClick = actions.onDismiss),
+                        .size(48.dp)
+                        .clickable(onClick = actions.onDismiss)
+                        .padding(10.dp),
                 )
                 if (showPagerDots) {
                     FrostSoulPagerDots(
@@ -284,7 +279,8 @@ internal fun FrostSoulPlayer(
                 key = { index -> pages[index].name },
                 beyondViewportPageCount = 1,
                 userScrollEnabled = !isSeekbarDragging,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize()
+                    .padding(top = if (isImmersiveArtworkMainPage) 0.dp else 42.dp),
             ) { pageIndex ->
                 val pageDistance = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
                 Box(
@@ -1094,29 +1090,59 @@ private fun FrostSoulArtworkBlurAlbumPage(
 ) {
     val base = remember(uiState.palette) { lerp(Color(0xFF0D0F14), uiState.palette.artworkPrimary, 0.10f) }
     val accent = remember(uiState.palette) { lerp(uiState.palette.artworkPrimary, Color.White, 0.72f) }
-    val backdrop = remember(base, uiState.palette) {
-        Brush.verticalGradient(listOf(lerp(base, uiState.palette.artworkSecondary, 0.16f), base))
+    val context = LocalContext.current
+    // Both layers share a bounded decode/cache entry, not two original-size bitmaps.
+    val artworkRequest = remember(context, uiState.track.artworkUrl) {
+        ImageRequest.Builder(context)
+            .data(uiState.track.artworkUrl)
+            .size(768, 768)
+            .build()
     }
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(backdrop)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(base)) {
         val landscape = maxWidth > maxHeight
         val viewportHeight = maxHeight
+        // Keep the existing lower edge and detail/control positions unchanged.
         val artworkHeight = (maxHeight * 0.43f).coerceIn(180.dp, 440.dp)
         val artwork: @Composable (Modifier) -> Unit = { artworkModifier ->
             Box(modifier = artworkModifier.clipToBounds(), contentAlignment = Alignment.Center) {
+                val artworkScale = if (landscape) ContentScale.Fit else ContentScale.Crop
                 AsyncImage(
-                    model = uiState.track.artworkUrl,
+                    model = artworkRequest,
+                    contentDescription = null,
+                    contentScale = artworkScale,
+                    modifier = Modifier.fillMaxSize()
+                        .blur(uiState.blurRadius.coerceIn(16f, 40f).dp, BlurredEdgeTreatment.Rectangle),
+                )
+                AsyncImage(
+                    model = artworkRequest,
                     contentDescription = "Album artwork for ${uiState.track.title}",
-                    contentScale = if (landscape) ContentScale.Fit else ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+                    contentScale = artworkScale,
+                    modifier = Modifier.fillMaxSize()
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithCache {
+                            val dissolve = Brush.verticalGradient(
+                                0f to Color.White,
+                                0.52f to Color.White,
+                                0.82f to Color.White.copy(alpha = 0.25f),
+                                1f to Color.Transparent,
+                            )
+                            onDrawWithContent {
+                                drawContent()
+                                drawRect(dissolve, blendMode = BlendMode.DstIn)
+                            }
+                        },
                 )
                 if (uiState.track.artworkUrl.isNullOrBlank()) {
                     Icon(painterResource(R.drawable.music_note), null, tint = accent, modifier = Modifier.size(72.dp))
                 }
-                // An ordinary scrim dissolves into the exact surface color. No DstIn,
-                // RenderEffect or full-screen offscreen texture is needed for this fade.
+                // The sharp cover dissolves into its identically aligned blurred copy,
+                // then into the EXACT body color: no hard seam or mismatched gradient.
+                // Blur/offscreen work stays inside the artwork, never the full player.
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                     0f to Color.Black.copy(alpha = 0.24f),
-                    0.50f to Color.Transparent,
+                    0.45f to Color.Transparent,
+                    0.70f to base.copy(alpha = 0.12f),
+                    0.88f to base.copy(alpha = 0.65f),
                     1f to base,
                 )))
             }

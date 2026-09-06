@@ -38,6 +38,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulScreenBackground
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -110,8 +112,9 @@ fun SettingsScreen(
     Scaffold(
         modifier =
             Modifier
-                .fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.surface,
+                .fillMaxSize()
+                .frostSoulScreenBackground(),
+        containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             PremiumTopBar(

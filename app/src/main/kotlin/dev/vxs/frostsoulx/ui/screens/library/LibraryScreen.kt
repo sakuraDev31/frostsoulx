@@ -74,6 +74,7 @@ import dev.vxs.frostsoulx.constants.ShowTagsInLibraryKey
 import dev.vxs.frostsoulx.db.entities.TagEntity
 import dev.vxs.frostsoulx.ui.component.TagsManagementDialog
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulScreenBackground
 import dev.vxs.frostsoulx.utils.rememberEnumPreference
 import dev.vxs.frostsoulx.utils.rememberPreference
 import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
@@ -125,14 +126,14 @@ fun LibraryScreen(navController: NavController) {
             initialPage = libraryFilters.indexOf(defaultFilter).takeIf { it >= 0 } ?: 0,
         ) { libraryFilters.size }
 
-    val tonalStart = MaterialTheme.colorScheme.primaryContainer
-    val tonalMiddle = MaterialTheme.colorScheme.secondaryContainer
+    val tonalStart = Color(0xFF243B33)
+    val tonalMiddle = Color(0xFF162824)
 
     Box(
         modifier =
             Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .frostSoulScreenBackground(ambient = Color(0xFF20372E)),
     ) {
         if (!disableBlur) {
             Box(

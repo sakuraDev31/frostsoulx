@@ -11,6 +11,9 @@ package dev.vxs.frostsoulx.ui.screens.settings
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -538,19 +541,8 @@ fun SettingsSegmentedItem(
     count: Int,
     modifier: Modifier = Modifier,
 ) {
-    val effectiveAccent =
-        if (item.accentColor.isSpecified) {
-            item.accentColor
-        } else {
-            MaterialTheme.colorScheme.primary
-        }
-    val iconContentCandidate = contentColorFor(effectiveAccent)
-    val iconContentColor =
-        if (iconContentCandidate.isSpecified) {
-            iconContentCandidate
-        } else {
-            MaterialTheme.colorScheme.surface
-        }
+    val colors = FrostSoulTheme.colors
+    val iconContentColor = colors.onSurfaceMuted
     val shape = remember(index, count) { segmentedSettingsItemShape(index, count) }
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -568,6 +560,18 @@ fun SettingsSegmentedItem(
                     scaleX = scale
                     scaleY = scale
                 }.clip(shape)
+                .drawWithCache {
+                    onDrawBehind {
+                        if (index < count - 1) {
+                            drawLine(
+                                color = colors.onSurface.copy(alpha = 0.07f),
+                                start = Offset(64.dp.toPx(), size.height),
+                                end = Offset(size.width - 16.dp.toPx(), size.height),
+                                strokeWidth = 1.dp.toPx(),
+                            )
+                        }
+                    }
+                }
                 .focusable()
                 .clickable(
                     interactionSource = interactionSource,
@@ -577,7 +581,7 @@ fun SettingsSegmentedItem(
         shape = shape,
         colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = Color.Transparent,
             ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
@@ -585,16 +589,16 @@ fun SettingsSegmentedItem(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 88.dp)
-                    .padding(horizontal = 22.dp, vertical = 14.dp),
+                    .heightIn(min = 68.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier =
                     Modifier
-                        .size(52.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
-                        .background(effectiveAccent),
+                        .background(Color.Transparent),
                 contentAlignment = Alignment.Center,
             ) {
                 if (item.showUpdateIndicator) {
@@ -632,8 +636,8 @@ fun SettingsSegmentedItem(
                 Text(
                     text = item.title,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                    color = colors.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -642,12 +646,19 @@ fun SettingsSegmentedItem(
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colors.onSurfaceMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
+
+            Icon(
+                painter = painterResource(R.drawable.navigate_next),
+                contentDescription = null,
+                tint = colors.onSurfaceMuted,
+                modifier = Modifier.size(18.dp),
+            )
 
             item.badge?.let { badge ->
                 Spacer(modifier = Modifier.width(12.dp))
@@ -658,7 +669,7 @@ fun SettingsSegmentedItem(
                     Text(
                         text = badge,
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colors.onSurfaceMuted,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                     )
                 }
