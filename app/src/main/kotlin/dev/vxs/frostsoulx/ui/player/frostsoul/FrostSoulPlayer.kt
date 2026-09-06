@@ -921,7 +921,6 @@ private fun FrostSoulDspMenu(
     ) {
         FSGlassCard(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 20.dp),
-            shape = RoundedCornerShape(28.dp),
         ) {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
