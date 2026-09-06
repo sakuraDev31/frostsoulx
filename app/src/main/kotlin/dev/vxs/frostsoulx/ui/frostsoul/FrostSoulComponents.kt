@@ -588,6 +588,7 @@ data class FSNavigationItem(
 fun FSNavigationBar(
     items: List<FSNavigationItem>,
     selectedRoute: String?,
+    pureBlack: Boolean = false,
     onItemClick: (FSNavigationItem, Boolean) -> Unit,
     modifier: Modifier = Modifier,
     pairedWithMiniPlayer: Boolean = false,
@@ -595,20 +596,21 @@ fun FSNavigationBar(
 ) {
     val homeSelected = selectedRoute == "home"
     val selectedTint = if (homeSelected) Color(0xFFFFE4AD) else FrostSoulTheme.colors.accentBright
-    val shape = if (pairedWithMiniPlayer) {
-        androidx.compose.foundation.shape.RoundedCornerShape(12.dp, 12.dp, 28.dp, 28.dp)
-    } else {
-        FrostSoulTheme.shapes.extraLarge
-    }
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
+    val navSurface = if (pureBlack) Color.Black.copy(alpha = 0.94f) else null
     Row(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
         modifier =
             modifier
-                .height(60.dp)
+                .height(56.dp)
                 .clip(shape)
-                .then(if (homeSelected) Modifier.background(Color(0xFF080A0F), shape) else Modifier.frostSoulGlass(shape))
-                .padding(horizontal = FrostSoulTheme.spacing.small, vertical = 4.dp),
+                .then(
+                    if (navSurface != null) Modifier.background(navSurface, shape)
+                    else Modifier.frostSoulGlass(shape, tint = FrostSoulTheme.colors.surface.copy(alpha = 0.90f))
+                )
+                .border(1.dp, selectedTint.copy(alpha = if (homeSelected) 0.22f else 0.14f), shape)
+                .padding(horizontal = 4.dp, vertical = 3.dp),
     ) {
         items.forEachIndexed { index, item ->
             if (onCenterClick != null && index == 2) {

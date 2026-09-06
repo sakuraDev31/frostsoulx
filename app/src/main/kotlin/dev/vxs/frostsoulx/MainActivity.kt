@@ -1972,15 +1972,8 @@ class MainActivity : ComponentActivity() {
         )
 
                                         val homeOverflowFabBottomPadding =
-                                            bottomInset +
-                                                floatingBarsBottomPadding +
-                                                navVisibleHeight +
-                                                HomeOverflowFabSpacing +
-                                                if (playerBottomSheetState.isCollapsed) {
-                                                    miniPlayerOccupiedHeight + MiniPlayerBottomSpacing
-                                                } else {
-                                                    0.dp
-                                                }
+                                            bottomInset + floatingBarsBottomPadding +
+                                                ((navVisibleHeight - HomeOverflowFabSize) / 2f).coerceAtLeast(0.dp)
                                         HomeOverflowFabVisibility(
                                             visible = showHomeOverflowFab,
                                             modifier =
@@ -2784,12 +2777,12 @@ private fun HomeOverflowFab(
         FloatingActionButton(
             onClick = { onExpandedChange(!expanded) },
             modifier = Modifier.size(HomeOverflowFabSize),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
+            containerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = if (pureBlack) Color.White else MaterialTheme.colorScheme.onSurface,
         ) {
             Icon(
-                painter = painterResource(R.drawable.more_horiz),
-                contentDescription = stringResource(R.string.more),
+                painter = painterResource(R.drawable.more_vert),
+                contentDescription = "Open FrostSoulX actions",
             )
         }
 

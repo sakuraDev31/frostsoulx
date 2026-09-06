@@ -9,7 +9,9 @@ package dev.vxs.frostsoulx.ui.component
 
 import android.os.SystemClock
 import android.view.ViewConfiguration
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,7 +31,7 @@ import dev.vxs.frostsoulx.ui.frostsoul.FSNavigationBar
 import dev.vxs.frostsoulx.ui.frostsoul.FSNavigationItem
 import dev.vxs.frostsoulx.ui.screens.Screens
 
-private val NavigationItemsMaxWidth = 360.dp
+private val NavigationItemsMaxWidth = 200.dp
 
 @Composable
 fun FloatingNavigationToolbar(
@@ -41,6 +43,7 @@ fun FloatingNavigationToolbar(
     onItemClick: (Screens, Boolean) -> Unit,
     onSearchItemDoubleClick: (() -> Unit)? = null,
     onCenterClick: (() -> Unit)? = null,
+    overflowContent: (@Composable () -> Unit)? = null,
 ) {
     val navigationItems =
         items.map { screen ->
@@ -61,26 +64,34 @@ fun FloatingNavigationToolbar(
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),
         contentAlignment = Alignment.Center,
     ) {
-        FSNavigationBar(
-            items = navigationItems,
-            selectedRoute = selectedRoute,
-            pairedWithMiniPlayer = isPairedWithMiniPlayer,
-            modifier = Modifier.widthIn(max = minOf(NavigationBarMaxWidth, NavigationItemsMaxWidth)).fillMaxWidth(),
-            onCenterClick = onCenterClick,
-            onItemClick = { item, selected ->
-                items.firstOrNull { it.route == item.route }?.let { screen ->
-                    val isSearchDoubleTap =
-                        screen == Screens.Search &&
-                            onSearchItemDoubleClick != null &&
-                            SystemClock.uptimeMillis() - lastSearchClickAt.longValue <= ViewConfiguration.getDoubleTapTimeout()
-                    lastSearchClickAt.longValue = if (isSearchDoubleTap) 0L else SystemClock.uptimeMillis()
-                    if (isSearchDoubleTap) {
-                        onSearchItemDoubleClick.invoke()
-                    } else {
-                        onItemClick(screen, selected)
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            FSNavigationBar(
+                items = navigationItems,
+                selectedRoute = selectedRoute,
+                pureBlack = pureBlack,
+                pairedWithMiniPlayer = isPairedWithMiniPlayer,
+                modifier = Modifier.weight(1f).widthIn(max = minOf(NavigationBarMaxWidth, NavigationItemsMaxWidth)),
+                onCenterClick = onCenterClick,
+                onItemClick = { item, selected ->
+                    items.firstOrNull { it.route == item.route }?.let { screen ->
+                        val isSearchDoubleTap =
+                            screen == Screens.Search &&
+                                onSearchItemDoubleClick != null &&
+                                SystemClock.uptimeMillis() - lastSearchClickAt.longValue <= ViewConfiguration.getDoubleTapTimeout()
+                        lastSearchClickAt.longValue = if (isSearchDoubleTap) 0L else SystemClock.uptimeMillis()
+                        if (isSearchDoubleTap) {
+                            onSearchItemDoubleClick.invoke()
+                        } else {
+                            onItemClick(screen, selected)
+                        }
                     }
-                }
-            },
-        )
+                },
+            )
+            overflowContent?.invoke()
+        }
     }
 }
