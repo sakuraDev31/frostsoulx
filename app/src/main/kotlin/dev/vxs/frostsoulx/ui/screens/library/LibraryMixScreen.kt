@@ -11,6 +11,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -1157,8 +1159,8 @@ private fun MostPlayedAlbumSpotlightCard(
 ) {
     val trackCountText = pluralStringResource(R.plurals.n_song, album.trackCount, album.trackCount)
     Box(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 24.dp)
-            .clip(RoundedCornerShape(28.dp)).background(Color(0xFF17191F))
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(24.dp)).frostSoulGlass(RoundedCornerShape(24.dp))
             .clickable(onClick = onOpenAlbum),
     ) {
         AsyncImage(
@@ -1229,13 +1231,12 @@ fun ShortcutCard(
         label = "ShortcutCardScale",
     )
 
-    val finalBgColor = MaterialTheme.colorScheme.surfaceContainer
     Box(
         modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(RoundedCornerShape(20.dp))
-            .background(Brush.horizontalGradient(listOf(containerColor.copy(alpha = 0.45f), finalBgColor)))
+            .frostSoulGlass(RoundedCornerShape(20.dp), tint = containerColor)
             .clickable(interactionSource = interactionSource, onClick = onClick)
-            .heightIn(min = 92.dp).padding(12.dp),
+            .heightIn(min = 104.dp).padding(16.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,

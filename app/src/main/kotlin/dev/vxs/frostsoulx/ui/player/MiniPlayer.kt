@@ -72,7 +72,7 @@ fun MiniPlayer(
 
     Box(
         modifier = modifier.fillMaxWidth()
-            .padding(horizontal = if (isPairedWithNavigation) 8.dp else 12.dp)
+            .padding(horizontal = if (isPairedWithNavigation) 12.dp else 16.dp)
             .height(MiniPlayerHeight)
             .graphicsLayer { translationX = settledOffsetX }
             .pointerInput(metadata.id, swipeThreshold) {
@@ -123,7 +123,7 @@ fun MiniPlayer(
             height = MiniPlayerHeight,
             artworkSize = 48.dp,
             peeked = false,
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(28.dp),
             interactionSource = interactionSource,
             onCardClick = {
                 onPeekChanged(false)

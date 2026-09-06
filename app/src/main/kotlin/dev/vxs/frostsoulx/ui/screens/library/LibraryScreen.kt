@@ -67,19 +67,19 @@ import dev.vxs.frostsoulx.LocalDatabase
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.constants.AppBarHeight
 import dev.vxs.frostsoulx.constants.ChipSortTypeKey
-import dev.vxs.frostsoulx.constants.DisableBlurKey
 import dev.vxs.frostsoulx.constants.LibraryFilter
 import dev.vxs.frostsoulx.constants.ShowSpotifyPlaylistsKey
 import dev.vxs.frostsoulx.constants.ShowTagsInLibraryKey
 import dev.vxs.frostsoulx.db.entities.TagEntity
 import dev.vxs.frostsoulx.ui.component.TagsManagementDialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulScreenBackground
 import dev.vxs.frostsoulx.utils.rememberEnumPreference
 import dev.vxs.frostsoulx.utils.rememberPreference
 import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
 
-internal val LibraryHeaderContentPadding = 64.dp
+internal val LibraryHeaderContentPadding = 8.dp
 internal val LibraryPullToRefreshIndicatorOffset = 0.dp
 
 @Composable
@@ -87,10 +87,9 @@ fun LibraryScreen(navController: NavController) {
     val defaultFilter by rememberEnumPreference(ChipSortTypeKey, LibraryFilter.LIBRARY)
     val database = LocalDatabase.current
     val (selectedTagIds, onSelectedTagIdsChange) = rememberPlaylistTagFilterState(database)
-    val allTags by database.allTags().collectAsState(initial = emptyList())
+    val allTags by database.allTags().collectAsStateWithLifecycle(initialValue = emptyList())
     val (showTagsInLibrary) = rememberPreference(ShowTagsInLibraryKey, defaultValue = true)
     val (showSpotifyPlaylists) = rememberPreference(ShowSpotifyPlaylistsKey, defaultValue = false)
-    val (disableBlur) = rememberPreference(DisableBlurKey, false)
     var showTagsManagementDialog by rememberSaveable { mutableStateOf(false) }
     val activeSelectedTagIds = if (showTagsInLibrary) selectedTagIds else emptySet()
     val libraryFilters =
@@ -126,33 +125,12 @@ fun LibraryScreen(navController: NavController) {
             initialPage = libraryFilters.indexOf(defaultFilter).takeIf { it >= 0 } ?: 0,
         ) { libraryFilters.size }
 
-    val tonalStart = Color(0xFF243B33)
-    val tonalMiddle = Color(0xFF162824)
-
     Box(
         modifier =
             Modifier
                 .fillMaxSize()
                 .frostSoulScreenBackground(ambient = Color(0xFF20372E)),
     ) {
-        if (!disableBlur) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(430.dp)
-                        .align(Alignment.TopCenter)
-                        .drawWithCache {
-                            val brush =
-                                Brush.verticalGradient(
-                                    0f to tonalStart.copy(alpha = 0.30f),
-                                    0.42f to tonalMiddle.copy(alpha = 0.14f),
-                                    1f to Color.Transparent,
-                                )
-                            onDrawBehind { drawRect(brush) }
-                        },
-            )
-        }
 
         Column(
             modifier =
@@ -170,6 +148,24 @@ fun LibraryScreen(navController: NavController) {
                     pagerState.scrollToPage(selectedPage)
                 }
             }
+
+            PremiumSegmentedTabs(
+                    labels = libraryFilters.map { filter ->
+                        when (filter) {
+                            LibraryFilter.LIBRARY -> stringResource(R.string.filter_library)
+                            LibraryFilter.PLAYLISTS -> stringResource(R.string.playlists)
+                            LibraryFilter.SPOTIFY -> stringResource(R.string.spotify_playlists)
+                            LibraryFilter.SONGS -> stringResource(R.string.songs)
+                            LibraryFilter.ARTISTS -> stringResource(R.string.artists)
+                            LibraryFilter.ALBUMS -> stringResource(R.string.albums)
+                        }
+                    },
+                    selectedIndex = pagerState.currentPage,
+                    onSelected = { page ->
+                        coroutineScope.launch { pagerState.animateScrollToPage(page) }
+                    },
+                    modifier = Modifier.padding(vertical = FrostSoulTheme.spacing.small),
+                )
 
             Box(
                 modifier =
@@ -267,23 +263,7 @@ fun LibraryScreen(navController: NavController) {
                 }
                 }
 
-                PremiumSegmentedTabs(
-                    labels = libraryFilters.map { filter ->
-                        when (filter) {
-                            LibraryFilter.LIBRARY -> stringResource(R.string.filter_library)
-                            LibraryFilter.PLAYLISTS -> stringResource(R.string.playlists)
-                            LibraryFilter.SPOTIFY -> stringResource(R.string.spotify_playlists)
-                            LibraryFilter.SONGS -> stringResource(R.string.songs)
-                            LibraryFilter.ARTISTS -> stringResource(R.string.artists)
-                            LibraryFilter.ALBUMS -> stringResource(R.string.albums)
-                        }
-                    },
-                    selectedIndex = pagerState.currentPage,
-                    onSelected = { page ->
-                        coroutineScope.launch { pagerState.animateScrollToPage(page) }
-                    },
-                    modifier = Modifier.padding(vertical = FrostSoulTheme.spacing.small),
-                )
+
             }
         }
     }
