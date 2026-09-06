@@ -786,7 +786,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                     val shouldShowHomeShuffleButton =
-                        currentRoute == Screens.Home.route &&
+                        currentRoute in setOf(Screens.Home.route, Screens.Library.route) &&
                             (allLocalItems.isNotEmpty() || allYtItems.isNotEmpty())
 
                     fun getBottomNavPadding(): Dp =
@@ -821,7 +821,9 @@ class MainActivity : ComponentActivity() {
                     var homeOverflowMenuExpanded by rememberSaveable { mutableStateOf(false) }
                     val showHomeOverflowFab =
                         shouldShowHomeShuffleButton &&
+                            (currentRoute == Screens.Home.route || currentRoute == Screens.Library.route) &&
                             !useRail &&
+                            !playerBottomSheetState.isExpandedOrExpanding &&
                             (playerBottomSheetState.isDismissed || playerBottomSheetState.isCollapsed)
 
                     LaunchedEffect(showHomeOverflowFab) {

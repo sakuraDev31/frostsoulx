@@ -1275,6 +1275,7 @@ if (!aodModeEnabled) {
                         }
                     },
                     sleepTimerActive = sleepTimerEnabled,
+                    sleepTimerRemainingMs = sleepTimerTimeLeft,
                     onOpenSleepTimer = {
                         if (sleepTimerEnabled) {
                             playerConnection.service.sleepTimer.clear()

@@ -703,14 +703,11 @@ internal fun FSPlayerControls(
                 onClick = { dspMenuOpen = true },
                 immersive = immersive,
             )
-            FSIconButton(
-                painter = painterResource(R.drawable.bedtime),
-                contentDescription = if (state.sleepTimerActive) "Clear sleep timer" else "Set sleep timer",
-                onClick = actions.onOpenSleepTimer,
+            FSSleepTimerButton(
                 active = state.sleepTimerActive,
-                buttonSize = 40.dp,
-                iconSize = 23.dp,
-                showContainer = false,
+                remainingMs = state.sleepTimerRemainingMs,
+                onClick = actions.onOpenSleepTimer,
+                immersive = immersive,
             )
             FrostSoulOutputDeviceButton(
                 device = state.outputDevice,
@@ -840,14 +837,57 @@ internal fun FSPlayerControls(
 }
 
 @Composable
+private fun FSSleepTimerButton(
+    active: Boolean,
+    remainingMs: Long,
+    onClick: () -> Unit,
+    immersive: Boolean,
+) {
+    val label =
+        if (!active) {
+            ""
+        } else if (remainingMs > 0L) {
+            val totalSeconds = (remainingMs / 1_000L).toInt().coerceAtLeast(0)
+            "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+        } else {
+            "END"
+        }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.height(40.dp).clickable(onClick = onClick),
+    ) {
+        FSIconButton(
+            painter = painterResource(R.drawable.bedtime),
+            contentDescription = if (active) "Cancel sleep timer ($label)" else "Set sleep timer",
+            onClick = onClick,
+            active = active,
+            buttonSize = 40.dp,
+            iconSize = 23.dp,
+            showContainer = false,
+            forceWhite = immersive,
+        )
+        if (active) {
+            Text(
+                text = label,
+                color = if (immersive) Color.White else FrostSoulTheme.colors.onSurface,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
 private fun FSDspMicButton(
     active: Boolean,
     onClick: () -> Unit,
     immersive: Boolean,
 ) {
     FSIconButton(
-        painter = painterResource(R.drawable.mic),
-        contentDescription = "Open spatial DSP controls",
+        painter = painterResource(R.drawable.waves),
+        contentDescription = "Open DSP engine controls",
         onClick = onClick,
         active = active,
         buttonSize = 40.dp,
@@ -875,37 +915,48 @@ private fun FrostSoulDspMenu(
     reverb: Float,
     onReverbChange: (Float) -> Unit,
 ) {
-    androidx.compose.material3.DropdownMenu(
-        expanded = true,
+    Dialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(22.dp),
-        containerColor = if (immersive) Color(0xFF11151A) else FrostSoulTheme.colors.surfaceRaised,
-        tonalElevation = 8.dp,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Column(modifier = Modifier.width(286.dp).padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Icon(painterResource(R.drawable.mic), "Spatial DSP", tint = FrostSoulTheme.colors.accentBright, modifier = Modifier.size(20.dp))
-                Text("Spatial DSP", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 10.dp).weight(1f))
-                androidx.compose.material3.Switch(checked = enabled, onCheckedChange = onEnabledChange)
-            }
-            Text("Native sound-field processing", color = FrostSoulOnSurfaceMuted, fontSize = 11.sp)
-            Column(modifier = Modifier.padding(top = 10.dp)) {
-                NativeSpatialDspAudioProcessor.Preset.entries.chunked(3).forEach { rowOptions ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        rowOptions.forEach { option ->
-                            androidx.compose.material3.FilterChip(
-                                selected = option == preset,
-                                onClick = { onPresetChange(option) },
-                                label = { Text(option.name.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 10.sp) },
-                            )
+        FSGlassCard(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 20.dp),
+            shape = RoundedCornerShape(28.dp),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Icon(painterResource(R.drawable.waves), "DSP engine", tint = FrostSoulTheme.colors.accentBright, modifier = Modifier.size(24.dp))
+                    Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
+                        Text("DSP Engine", color = FrostSoulTheme.colors.onSurface, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Native spatial sound-field processing", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    }
+                    androidx.compose.material3.Switch(checked = enabled, onCheckedChange = onEnabledChange)
+                }
+                Text(
+                    text = if (enabled) "DSP is active for the current playback path" else "DSP is bypassed; playback remains unchanged",
+                    color = if (enabled) FrostSoulTheme.colors.accentBright else FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 14.dp),
+                )
+                Column(modifier = Modifier.padding(top = 14.dp)) {
+                    NativeSpatialDspAudioProcessor.Preset.entries.chunked(3).forEach { rowOptions ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            rowOptions.forEach { option ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = option == preset,
+                                    onClick = { onPresetChange(option) },
+                                    label = { Text(option.name.lowercase().replaceFirstChar { it.uppercase() }, color = FrostSoulTheme.colors.onSurface, fontSize = 10.sp) },
+                                )
+                            }
                         }
                     }
                 }
+                FrostSoulDspSlider("Intensity", intensity, onIntensityChange)
+                FrostSoulDspSlider("Width", width / 2f, { onWidthChange(it * 2f) })
+                FrostSoulDspSlider("Crossfeed", crossfeed, onCrossfeedChange)
+                FrostSoulDspSlider("Room", reverb, onReverbChange)
             }
-            FrostSoulDspSlider("Intensity", intensity, onIntensityChange)
-            FrostSoulDspSlider("Width", width / 2f, { onWidthChange(it * 2f) })
-            FrostSoulDspSlider("Crossfeed", crossfeed, onCrossfeedChange)
-            FrostSoulDspSlider("Room", reverb, onReverbChange)
         }
     }
 }
