@@ -20,9 +20,7 @@ import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -230,15 +228,32 @@ fun FrostSoulDesignSystem(
     androidx.compose.runtime.CompositionLocalProvider(LocalFrostSoulTokens provides tokens, content = content)
 }
 
+/** Static glass: cached brushes only, with no backdrop capture or offscreen blur layer. */
 @Composable
-fun Modifier.frostSoulGlass(shape: Shape = FrostSoulTheme.shapes.large): Modifier {
+fun Modifier.frostSoulGlass(
+    shape: Shape = FrostSoulTheme.shapes.large,
+    tint: Color = FrostSoulTheme.colors.accent,
+): Modifier {
     val colors = FrostSoulTheme.colors
-    return this
-        .background(
-            Brush.verticalGradient(listOf(colors.surfaceGlassStrong, colors.surfaceGlass)),
-            shape,
+    val fill = remember(colors, tint) {
+        Brush.linearGradient(
+            listOf(
+                lerp(colors.surfaceGlassStrong, tint, 0.08f),
+                colors.surfaceGlass,
+                lerp(colors.surfaceGlass, tint, 0.025f),
+            ),
         )
-        .border(0.5.dp, colors.onSurface.copy(alpha = 0.12f), shape)
+    }
+    val edge = remember(colors) {
+        Brush.linearGradient(
+            listOf(
+                colors.onSurface.copy(alpha = 0.20f),
+                colors.onSurface.copy(alpha = 0.04f),
+                colors.onSurface.copy(alpha = 0.09f),
+            ),
+        )
+    }
+    return background(fill, shape).border(0.5.dp, edge, shape)
 }
 
 @Composable
@@ -246,26 +261,28 @@ fun Modifier.frostSoulGlow(
     color: Color = FrostSoulTheme.colors.accent,
     alpha: Float = FrostSoulTheme.effects.activeGlowAlpha,
 ): Modifier =
-    drawBehind {
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(color.copy(alpha = alpha), Color.Transparent),
-                center = center,
-                radius = size.maxDimension * 0.72f,
-            ),
-            radius = size.maxDimension * 0.72f,
+    drawWithCache {
+        val radius = size.maxDimension.coerceAtLeast(1f) * 0.72f
+        val glow = Brush.radialGradient(
+            colors = listOf(color.copy(alpha = alpha), Color.Transparent),
+            center = center,
+            radius = radius,
         )
+        onDrawBehind {
+            if (alpha > 0f && color.alpha > 0f) drawCircle(brush = glow, radius = radius)
+        }
     }
 
 @Composable
 fun Modifier.frostSoulScreenBackground(ambient: Color = Color(0xFF334760)): Modifier {
     val base = FrostSoulTheme.colors.background
     // Static tonal atmosphere; no full-screen blur texture or animation loop.
-    return background(
+    val wash = remember(base, ambient) {
         Brush.verticalGradient(
             0f to lerp(base, ambient, 0.20f),
             0.48f to lerp(base, ambient, 0.06f),
             1f to base,
-        ),
-    )
+        )
+    }
+    return background(wash)
 }

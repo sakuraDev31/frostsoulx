@@ -50,6 +50,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -80,7 +83,6 @@ import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
 import coil3.request.CachePolicy
-import coil3.size.Size
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import kotlin.math.abs
@@ -212,7 +214,6 @@ fun FSAlbumArt(
             .data(artworkUrl)
             .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCachePolicy(CachePolicy.ENABLED)
-            .size(Size(768, 768))
             .crossfade(true)
             .build()
     }
@@ -497,21 +498,37 @@ fun FSChip(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    containerColor: Color = FrostSoulTheme.colors.surfaceGlass,
+    leadingIcon: (@Composable () -> Unit)? = null,
 ) {
     val colors = FrostSoulTheme.colors
     val shape = FrostSoulTheme.shapes.pill
-    FSText(
-        text = label,
-        style = FrostSoulTheme.typography.label,
-        color = if (selected) Color(0xFF001416) else colors.onSurfaceMuted,
-        maxLines = 1,
-        modifier =
-            modifier
-                .clip(shape)
-                .background(if (selected) colors.accentBright else colors.surfaceGlass, shape)
-                .border(BorderStroke(1.dp, if (selected) colors.accentBright else colors.outline), shape)
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 9.dp),
+    val selectedInk = if (colors.accentBright.luminance() > 0.5f) Color.Black else Color.White
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            FSText(
+                text = label,
+                style = FrostSoulTheme.typography.label,
+                color = if (selected) selectedInk else colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        leadingIcon = leadingIcon,
+        shape = shape,
+        border = null,
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = Color.Transparent,
+            selectedContainerColor = colors.accentBright,
+            selectedLabelColor = selectedInk,
+            selectedLeadingIconColor = selectedInk,
+            iconColor = colors.onSurfaceMuted,
+        ),
+        modifier = modifier.heightIn(min = 48.dp).then(
+            if (selected) Modifier else Modifier.frostSoulGlass(shape, tint = containerColor),
+        ),
     )
 }
 

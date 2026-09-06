@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.ui.frostsoul.FSChip
+import androidx.compose.foundation.selection.selectableGroup
 import dev.vxs.frostsoulx.ui.frostsoul.FSAlbumArt
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlow
@@ -117,26 +119,14 @@ fun PremiumSegmentedTabs(
         modifier = modifier
             .fillMaxWidth()
             .horizontalScroll(scrollState)
+            .selectableGroup()
             .padding(horizontal = FrostSoulTheme.spacing.page, vertical = FrostSoulTheme.spacing.small),
     ) {
         labels.forEachIndexed { index, label ->
-            val selected = index == selectedIndex
-            val selectedTextColor =
-                if (FrostSoulTheme.colors.accentBright.luminance() > 0.5f) Color.Black else Color.White
-            Text(
-                text = label,
-                style = FrostSoulTheme.typography.label,
-                color = if (selected) selectedTextColor else FrostSoulTheme.colors.onSurfaceMuted,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                maxLines = 1,
-                modifier = Modifier
-                    .clip(FrostSoulTheme.shapes.pill)
-                    .background(
-                        if (selected) FrostSoulTheme.colors.accentBright else Color.Transparent,
-                        FrostSoulTheme.shapes.pill,
-                    )
-                    .clickable(onClick = { onSelected(index) })
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            FSChip(
+                label = label,
+                selected = index == selectedIndex,
+                onClick = { onSelected(index) },
             )
         }
     }
@@ -365,8 +355,7 @@ fun PremiumSearchBar(
             .fillMaxWidth()
             .height(52.dp)
             .clip(FrostSoulTheme.shapes.pill)
-            .background(FrostSoulTheme.colors.surfaceRaised, FrostSoulTheme.shapes.pill)
-            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.62f), FrostSoulTheme.shapes.pill)
+            .frostSoulGlass(FrostSoulTheme.shapes.pill)
             .clickable(onClick = onClick)
             .padding(horizontal = FrostSoulTheme.spacing.large),
     ) {
