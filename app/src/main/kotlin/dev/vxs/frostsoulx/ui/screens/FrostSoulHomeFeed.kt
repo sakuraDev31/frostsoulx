@@ -155,6 +155,17 @@ internal fun FrostSoulHomeFeed(
             )
         }
 
+        if (uiState.quickPicks.isNotEmpty()) {
+            item(key = "frostsoul_featured_for_you_top") {
+                FrostSoulBannerCarousel(
+                    songs = uiState.quickPicks.take(5),
+                    mediaMetadata = mediaMetadata,
+                    playerConnection = playerConnection,
+                    isPlaying = isPlaying,
+                )
+            }
+        }
+
         item(key = "frostsoul_quick_search") {
             FrostSoulQuickSearch(onOpenSearch = { openSearchPortal() })
         }
@@ -176,33 +187,6 @@ internal fun FrostSoulHomeFeed(
             }
         }
 
-        item(key = "frostsoul_home_hero") {
-            FrostSoulHomeHero(
-                track = mediaMetadata,
-                isPlaying = isPlaying,
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onNext = playerConnection::seekToNext,
-                canSkipNext = canSkipNext,
-                onQuickSearch = openSearchPortal,
-            )
-        }
-
-        item(key = "frostsoul_listening_actions") {
-            FrostSoulAstraQuickAccess(
-                hasQuickPicks = uiState.quickPicks.isNotEmpty(),
-                onSurprise = {
-                    playerConnection.playQueue(
-                        ListQueue(
-                            title = "Your soundtrack",
-                            items = uiState.quickPicks.shuffled().map { it.toMediaItem() },
-                        ),
-                    )
-                },
-                onLiked = { navController.navigate("auto_playlist/liked") },
-                onOffline = { navController.navigate("auto_playlist/downloaded") },
-            )
-        }
-
         if (uiState.keepListening.isNotEmpty()) {
             item(key = "frostsoul_continue_listening_header") {
                 FSSectionHeader(
@@ -219,18 +203,6 @@ internal fun FrostSoulHomeFeed(
                     navController = navController,
                 )
             }
-        }
-
-        if (uiState.quickPicks.isNotEmpty()) {
-            item(key = "frostsoul_home_banner_carousel") {
-                FrostSoulBannerCarousel(
-                    songs = uiState.quickPicks.take(5),
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                    isPlaying = isPlaying,
-                )
-            }
-
         }
 
         if (uiState.quickPicks.isNotEmpty()) {

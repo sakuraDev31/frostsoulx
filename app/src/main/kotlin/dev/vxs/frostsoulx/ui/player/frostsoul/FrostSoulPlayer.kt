@@ -1217,155 +1217,140 @@ private fun FrostSoulArtworkBlurAlbumPage(
     onSearchTrack: () -> Unit,
     onShowArtists: () -> Unit,
     onSeekDraggingChanged: (Boolean) -> Unit = {},
-    onOpenLyrics: () -> Unit = {},
 ) {
-    val base = remember(uiState.palette) { lerp(Color(0xFF0D0F14), uiState.palette.artworkPrimary, 0.10f) }
-    val accent = remember(uiState.palette) { lerp(uiState.palette.artworkPrimary, Color.White, 0.72f) }
-    val context = LocalContext.current
-    // Both layers share a bounded decode/cache entry, not two original-size bitmaps.
-    val artworkRequest = remember(context, uiState.track.artworkUrl) {
-        ImageRequest.Builder(context)
-            .data(uiState.track.artworkUrl)
-            .size(768, 768)
-            .build()
-    }
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(base)) {
-        val landscape = maxWidth > maxHeight
-        val viewportHeight = maxHeight
-        // Keep the existing lower edge and detail/control positions unchanged.
-        val artworkHeight = (maxHeight * 0.43f).coerceIn(180.dp, 440.dp)
-        val artwork: @Composable (Modifier) -> Unit = { artworkModifier ->
-            Box(modifier = artworkModifier.clipToBounds(), contentAlignment = Alignment.Center) {
-                val artworkScale = if (landscape) ContentScale.Fit else ContentScale.Crop
-                AsyncImage(
-                    model = artworkRequest,
-                    contentDescription = null,
-                    contentScale = artworkScale,
-                    modifier = Modifier.fillMaxSize()
-                        .blur(uiState.blurRadius.coerceIn(16f, 40f).dp, BlurredEdgeTreatment.Rectangle),
-                )
-                AsyncImage(
-                    model = artworkRequest,
-                    contentDescription = "Album artwork for ${uiState.track.title}",
-                    contentScale = artworkScale,
-                    modifier = Modifier.fillMaxSize()
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                        .drawWithCache {
-                            val dissolve = Brush.verticalGradient(
-                                0f to Color.White,
-                                0.52f to Color.White,
-                                0.82f to Color.White.copy(alpha = 0.25f),
-                                1f to Color.Transparent,
-                            )
-                            onDrawWithContent {
-                                drawContent()
-                                drawRect(dissolve, blendMode = BlendMode.DstIn)
-                            }
-                        },
-                )
-                if (uiState.track.artworkUrl.isNullOrBlank()) {
-                    Icon(painterResource(R.drawable.music_note), null, tint = accent, modifier = Modifier.size(72.dp))
-                }
-                // The sharp cover dissolves into its identically aligned blurred copy,
-                // then into the EXACT body color: no hard seam or mismatched gradient.
-                // Blur/offscreen work stays inside the artwork, never the full player.
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.24f),
-                    0.45f to Color.Transparent,
-                    0.70f to base.copy(alpha = 0.12f),
-                    0.88f to base.copy(alpha = 0.65f),
-                    1f to base,
-                )))
-            }
-        }
-        val details: @Composable () -> Unit = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = when {
-                                uiState.isBuffering -> "BUFFERING"
-                                uiState.isPlaying -> "NOW PLAYING"
-                                else -> "PAUSED"
-                            },
-                            color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp,
-                        )
-                        Text(uiState.track.title, color = Color.White, fontSize = 25.sp, lineHeight = 30.sp,
-                            fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 6.dp).clickable(onClick = onSearchTrack))
-                        Text(uiState.track.artist, color = Color.White.copy(alpha = 0.70f), fontSize = 14.sp,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.clickable(onClick = onShowArtists).padding(vertical = 8.dp))
-                    }
-                    androidx.compose.material3.IconButton(onClick = actions.onToggleLike, modifier = Modifier.size(48.dp)) {
-                        Icon(painterResource(if (uiState.track.isLiked) R.drawable.favorite else R.drawable.favorite_border),
-                            if (uiState.track.isLiked) "Remove from favorites" else "Add to favorites",
-                            tint = if (uiState.track.isLiked) Color(0xFFF08D9C) else Color.White,
-                            modifier = Modifier.size(26.dp))
-                    }
-                }
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
-                        .background(Color.White.copy(alpha = 0.05f))
-                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                        .clickable(role = Role.Button, onClickLabel = "Open lyrics", onClick = onOpenLyrics)
-                        .padding(16.dp),
-                ) {
-                    Text("LYRICS  /  OPEN", color = accent, fontSize = 10.sp,
-                        letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
-                    Text(uiState.currentLyricLine?.takeIf { it.isNotBlank() }
-                        ?: uiState.lyricPreviewLines.firstOrNull()?.takeIf { it.isNotBlank() }
-                        ?: "Follow the words", color = Color.White, fontSize = 18.sp,
-                        lineHeight = 24.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    uiState.nextLyricLine?.takeIf { it.isNotBlank() }?.let { next ->
-                        Text(next, color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                // Separate controls preserve the vinyl player's existing layout exactly.
-                FrostSoulImmersiveControls(uiState, actions, accent, onOpenQueue, onOpenOptions, onSeekDraggingChanged)
-                val next = uiState.queue.dropWhile { !it.isCurrent }.drop(1).firstOrNull()
-                if (next != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                            .background(Color.White.copy(alpha = 0.05f))
-                            .clickable(role = Role.Button, onClick = onOpenQueue).padding(12.dp),
-                    ) {
-                        AsyncImage(model = next.artworkUrl, contentDescription = null, contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("UP NEXT", color = accent, fontSize = 9.sp, letterSpacing = 1.sp)
-                            Text(next.title, color = Color.White, fontSize = 13.sp,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        Icon(painterResource(R.drawable.queue_music), "Open queue", tint = accent, modifier = Modifier.size(22.dp))
-                    }
-                }
-            }
-        }
-        if (landscape) {
-            Row(modifier = Modifier.fillMaxSize().padding(top = 42.dp)) {
-                artwork(Modifier.weight(0.44f).fillMaxHeight())
-                Column(modifier = Modifier.weight(0.56f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                    details()
-                }
-            }
+    val titleScrollState = rememberScrollState()
+    val artworkHeaderBlur =
+        if (uiState.blurRadius > 0f) {
+            (uiState.blurRadius + 18f).coerceIn(18f, 120f)
         } else {
-            // Small screens and large fonts can scroll; tall screens distribute the space.
-            Column(
-                verticalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).heightIn(min = viewportHeight),
-            ) {
-                artwork(Modifier.fillMaxWidth().height(artworkHeight))
-                details()
-            }
+            0f
         }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(bottom = 8.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Full-bleed artwork header: the image spans the whole width with no card
+       // inset, and fades edge-to-edge into the page background so the thumbnail
+            // reads as one seamless surface (QQ Music "immersive cover" behaviour).
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(PlayerLayoutTokens.ArtworkBlurHeaderHeight)
+                    .clipToBounds(),
+            ) {
+                if (!uiState.track.artworkUrl.isNullOrBlank()) {
+                    // The blurred artwork is already rendered full-screen underneath this header.
+                    // Mask the sharp cover at its lower edge instead of painting a black fade over
+                    // it; this lets the two layers actually dissolve into one another like the
+                    // original ArchiveTune Immersive Extended player.
+                    AsyncImage(
+                        model = uiState.track.artworkUrl,
+                        contentDescription = "Album artwork",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            // FS-BUG-IMMERSIVE-BORDER: BlendMode.DstIn only combines correctly
+                            // with what's *already inside this composable's own layer*. Without
+                            // an explicit offscreen layer here, this image shares the pager
+                            // page's layer, and DstIn ends up cutting into whatever else is
+                            // already drawn there instead of just fading this image's own alpha
+                            // to transparent — which is exactly why the header shows a hard
+                            // rectangular edge (the "border line square") while settled on the
+                            // current page. It only looked fixed mid-drag because the pager's
+                            // own alpha-fade on adjacent pages happened to force an offscreen
+                            // layer at that moment. Forcing it here directly makes the fade
+                            // isolated and consistent regardless of pager/drag state.
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        0.00f to Color.White,
+                                        0.48f to Color.White,
+                                        0.68f to Color.White.copy(alpha = 0.96f),
+                                        0.82f to Color.White.copy(alpha = 0.72f),
+                                        0.93f to Color.White.copy(alpha = 0.28f),
+                                        1.00f to Color.Transparent,
+                                    ),
+                                    blendMode = BlendMode.DstIn,
+                                )
+                            },
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().background(
+                            Brush.verticalGradient(
+                                colors = listOf(uiState.palette.artworkPrimary, uiState.palette.artworkSecondary),
+                            ),
+                        ),
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = PlayerLayoutTokens.MasterHorizontalPadding,
+                        end = PlayerLayoutTokens.MasterHorizontalPadding,
+                        top = 14.dp,
+                        bottom = 12.dp,
+                    ),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(titleScrollState)
+                            .clickable(onClick = onSearchTrack),
+                    ) {
+                        Text(
+                            text = uiState.track.title,
+                            color = FrostSoulOnSurface,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                    Text(
+                        text = uiState.track.artist,
+                        color = FrostSoulOnSurfaceMuted,
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp).clickable(onClick = onShowArtists),
+                    )
+                }
+                FrostSoulFullPlayerLikeButton(
+                    videoId = uiState.track.id,
+                    isLiked = uiState.track.isLiked,
+                    onClick = actions.onToggleLike,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+
+            FrostSoulMainLyricPreview(
+                uiState = uiState,
+                showExtraPreviewLines = true,
+                maxLinesPerLyric = 1,
+                modifier = Modifier.heightIn(min = 60.dp),
+            )
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        FSPlayerControls(
+            state = uiState,
+            actions = actions,
+            onOpenQueue = onOpenQueue,
+            modifier = Modifier
+                .padding(horizontal = PlayerLayoutTokens.MasterHorizontalPadding)
+                .padding(top = 18.dp),
+            immersive = true,
+            onSeekDraggingChanged = onSeekDraggingChanged,
+        )
     }
 }
 
