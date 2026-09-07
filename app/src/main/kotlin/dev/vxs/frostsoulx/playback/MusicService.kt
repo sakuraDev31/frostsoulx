@@ -8691,7 +8691,10 @@ class MusicService :
         const val DEVICE_MUTE_PLAYBACK_NOTICE_INTERVAL_MS = 1_200L
         const val MIN_AUDIO_FOCUS_VOLUME_FACTOR = 0.2f
         const val MIN_AUDIO_NORMALIZATION_FACTOR = 0.25f
-        const val MAX_AUDIO_NORMALIZATION_FACTOR = 1.414f
+        // Normalization may attenuate loud masters, but must never boost PCM above
+        // unity when DSP and EQ are bypassed; positive normalization gain was a
+        // remaining clipping source independent of sound shaping.
+        const val MAX_AUDIO_NORMALIZATION_FACTOR = 1f
         const val EFFECTIVE_VOLUME_RAMP_FRAME_MS = 16L
         const val EFFECTIVE_VOLUME_RAMP_UP_MS = 350L
         const val EFFECTIVE_VOLUME_RAMP_DOWN_MS = 180L

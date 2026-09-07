@@ -16,7 +16,7 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
     private var outputBuffer: ByteBuffer = EMPTY_BUFFER
     private var inputEnded = false
     private var nativeHandle = 0L
-    private var enabled = false
+    @Volatile private var enabled = false
     private var preset = Preset.NATURAL
     private var parameters = Parameters()
 

@@ -1062,6 +1062,11 @@ private fun FrostSoulDspMenu(
                         Text("DSP + HRTF", color = FrostSoulTheme.colors.onSurface, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                         Text("Headphone spatial audio", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
                     }
+                    androidx.compose.material3.Switch(
+                        checked = enabled,
+                        onCheckedChange = onEnabledChange,
+                        modifier = Modifier.padding(end = 4.dp),
+                    )
                     androidx.compose.material3.IconButton(onClick = onDismiss) {
                         Icon(painterResource(R.drawable.close), "Close DSP page", tint = FrostSoulTheme.colors.onSurface)
                     }
