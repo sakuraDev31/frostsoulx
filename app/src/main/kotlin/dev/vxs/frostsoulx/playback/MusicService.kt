@@ -6015,14 +6015,15 @@ class MusicService :
 
         loudnessEnhancer?.let { le ->
             val automaticHeadroomMb = -(levels.maxOrNull()?.coerceAtLeast(0) ?: 0)
+            val safeHeadroomEnabled = settings.autoHeadroomEnabled || settings.enabled
             val gainMb =
                 when {
-                    settings.autoHeadroomEnabled -> automaticHeadroomMb
+                    safeHeadroomEnabled -> automaticHeadroomMb
                     settings.outputGainEnabled -> settings.outputGainMb.coerceIn(-1500, 1500)
                     else -> 0
                 }
             runCatching { le.setTargetGain(gainMb) }
-            runCatching { le.enabled = settings.enabled && (settings.autoHeadroomEnabled || settings.outputGainEnabled) }
+            runCatching { le.enabled = settings.enabled && (safeHeadroomEnabled || settings.outputGainEnabled) }
         }
     }
 

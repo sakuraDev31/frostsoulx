@@ -34,7 +34,7 @@ import dev.vxs.frostsoulx.ui.frostsoul.FSNavigationBar
 import dev.vxs.frostsoulx.ui.frostsoul.FSNavigationItem
 import dev.vxs.frostsoulx.ui.screens.Screens
 
-private val NavigationItemsFixedWidth = 210.dp
+private val NavigationItemsFixedWidth = 340.dp
 
 @Composable
 fun FloatingNavigationToolbar(
@@ -79,7 +79,7 @@ fun FloatingNavigationToolbar(
                 selectedRoute = selectedRoute,
                 pureBlack = pureBlack,
                 pairedWithMiniPlayer = isPairedWithMiniPlayer,
-                modifier = Modifier.width(NavigationItemsFixedWidth).widthIn(max = NavigationBarMaxWidth),
+                modifier = Modifier.fillMaxWidth().widthIn(min = 280.dp, max = NavigationItemsFixedWidth).widthIn(max = NavigationBarMaxWidth),
                 onCenterClick = onCenterClick,
                 onItemClick = { item, selected ->
                     items.firstOrNull { it.route == item.route }?.let { screen ->
