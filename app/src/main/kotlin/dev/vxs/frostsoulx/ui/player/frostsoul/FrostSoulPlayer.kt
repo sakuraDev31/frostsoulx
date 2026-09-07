@@ -139,6 +139,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -772,7 +773,7 @@ internal fun FSPlayerControls(
             FSTwoDotButton(onClick = actions.onOpenOptions, immersive = immersive)
         }
         if (dspMenuOpen) {
-            FrostSoulDspMenu(
+            FrostSoulSurroundPage(
                 onDismiss = { dspMenuOpen = false },
                 immersive = immersive,
                 enabled = dspEnabled,
@@ -1024,6 +1025,172 @@ private fun FSDspMicButton(
         forceWhite = immersive,
         modifier = Modifier.graphicsLayer { rotationZ = 90f },
     )
+}
+
+@Composable
+private fun FrostSoulSurroundPage(
+    onDismiss: () -> Unit,
+    immersive: Boolean,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    mode: String,
+    onModeChange: (String) -> Unit,
+    onReset: () -> Unit,
+    spatialProfile: String,
+    hrtfScanCompleted: Boolean,
+    onSpatialProfileChange: (String) -> Unit,
+    onOpenHrtfScan: () -> Unit,
+    preset: NativeSpatialDspAudioProcessor.Preset,
+    onPresetChange: (NativeSpatialDspAudioProcessor.Preset) -> Unit,
+    intensity: Float,
+    onIntensityChange: (Float) -> Unit,
+    width: Float,
+    onWidthChange: (Float) -> Unit,
+    crossfeed: Float,
+    onCrossfeedChange: (Float) -> Unit,
+    reverb: Float,
+    onReverbChange: (Float) -> Unit,
+    hrtfMix: Float,
+    onHrtfMixChange: (Float) -> Unit,
+    hrtfAzimuth: Float,
+    onHrtfAzimuthChange: (Float) -> Unit,
+    hrtfElevation: Float,
+    onHrtfElevationChange: (Float) -> Unit,
+) {
+    val accent = Color(0xFF6EEBFF)
+    val muted = Color(0xFFAAB7C0)
+    val surface = Color(0xCC101B22)
+    val selectedPreset = when (preset) {
+        NativeSpatialDspAudioProcessor.Preset.NATURAL -> "Natural"
+        NativeSpatialDspAudioProcessor.Preset.LIVE -> "Live"
+        NativeSpatialDspAudioProcessor.Preset.WIDE -> "Wide"
+        NativeSpatialDspAudioProcessor.Preset.IMMERSIVE -> "Immersive"
+        NativeSpatialDspAudioProcessor.Preset.CUSTOM -> "Custom"
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF02080C))) {
+            Image(
+                painter = painterResource(R.drawable.frostsoul_menu_wallpaper),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alpha = 0.52f,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.48f)))
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    androidx.compose.material3.IconButton(onClick = onDismiss) {
+                        Icon(painterResource(R.drawable.arrow_back), "Back", tint = Color.White, modifier = Modifier.size(24.dp))
+                    }
+                    Text("Reset", color = Color.White, fontSize = 13.sp, modifier = Modifier
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(surface)
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(22.dp))
+                        .clickable(onClick = onReset)
+                        .padding(horizontal = 18.dp, vertical = 10.dp))
+                }
+                Text(
+                    "S T E R E O  S U R R O U N D",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    letterSpacing = 4.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                Text("Wider. Deeper. More alive.", color = muted, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.fillMaxWidth().aspectRatio(1f).padding(14.dp)) {
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        val orbitWidth = size.width * (0.82f + width.coerceIn(0.5f, 2f) * 0.06f)
+                        val orbitHeight = size.height * 0.30f
+                        drawOval(
+                            color = accent.copy(alpha = if (enabled) 0.35f else 0.14f),
+                            topLeft = Offset(center.x - orbitWidth / 2f, center.y - orbitHeight / 2f),
+                            size = androidx.compose.ui.geometry.Size(orbitWidth, orbitHeight),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()),
+                        )
+                        drawOval(
+                            color = Color.White.copy(alpha = 0.16f),
+                            topLeft = Offset(center.x - orbitWidth * 0.42f, center.y - orbitHeight * 1.9f),
+                            size = androidx.compose.ui.geometry.Size(orbitWidth * 0.84f, orbitHeight * 3.8f),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()),
+                        )
+                        drawCircle(
+                            color = Color(0xFF071219).copy(alpha = 0.94f),
+                            radius = size.minDimension * 0.13f,
+                            center = center,
+                        )
+                        drawCircle(
+                            color = accent.copy(alpha = if (enabled) 0.85f else 0.25f),
+                            radius = size.minDimension * 0.13f,
+                            center = center,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()),
+                        )
+                        val dot = Offset(center.x + orbitWidth * 0.39f, center.y - orbitHeight * 0.12f)
+                        drawCircle(color = accent.copy(alpha = if (enabled) 0.95f else 0.3f), radius = 7.dp.toPx(), center = dot)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("${(intensity.coerceIn(0f, 1f) * 100f).toInt()}%", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
+                        Text("INTENSITY", color = muted, fontSize = 11.sp, letterSpacing = 2.sp)
+                    }
+                    Text("FRONT", color = muted, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
+                    Text("L", color = muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp))
+                    Text("R", color = muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(surface).border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(22.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(painterResource(R.drawable.waves), null, tint = accent, modifier = Modifier.size(30.dp))
+                    Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text("Stereo Surround", color = Color.White, fontSize = 16.sp)
+                        Text("Enhance spatial width", color = muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    }
+                    androidx.compose.material3.Switch(checked = enabled, onCheckedChange = onEnabledChange)
+                }
+                Text("PRESET", color = muted, fontSize = 11.sp, letterSpacing = 2.sp, modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        NativeSpatialDspAudioProcessor.Preset.NATURAL to "Natural",
+                        NativeSpatialDspAudioProcessor.Preset.LIVE to "Live",
+                        NativeSpatialDspAudioProcessor.Preset.WIDE to "Wide",
+                        NativeSpatialDspAudioProcessor.Preset.IMMERSIVE to "Immersive",
+                    ).forEach { (presetValue, label) ->
+                        Text(
+                            label,
+                            color = if (selectedPreset == label) Color.Black else Color.White,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(22.dp)).background(if (selectedPreset == label) accent else surface).border(1.dp, if (selectedPreset == label) accent else Color.White.copy(alpha = 0.08f), RoundedCornerShape(22.dp)).clickable { onModeChange("preset"); onPresetChange(presetValue) }.padding(vertical = 12.dp),
+                        )
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Subtle", color = muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    Text("Immersive", color = Color.White, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                }
+                FrostSoulDspSlider("Width", (width / 2f).coerceIn(0f, 1f), { onWidthChange(it * 2f) }, enabled)
+                FrostSoulDspSlider("Room", reverb, onReverbChange, enabled)
+                Text("Stereo processing expands the stereo field while staying natural.", color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+            }
+        }
+    }
 }
 
 @Composable
