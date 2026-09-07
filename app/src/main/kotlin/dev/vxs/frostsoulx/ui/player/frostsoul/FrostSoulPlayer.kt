@@ -837,10 +837,6 @@ internal fun FSPlayerControls(
                     dspReverb = it
                     applyDspParameters()
                 },
-                spatialProfile = spatialProfile,
-                hrtfScanCompleted = hrtfScanCompleted,
-                onSpatialProfileChange = { spatialProfile = it },
-                onOpenHrtfScan = { scanFlowOpen = true },
                 hrtfEnabled = hrtfEnabled,
                 onHrtfEnabledChange = { spatialProfile = if (it) "personalized" else "generic"; applyDspParameters() },
                 hrtfMix = hrtfMix,
