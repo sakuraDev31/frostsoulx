@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -338,9 +339,22 @@ fun PlayerMenu(
             mediaMetadata.artists.joinToString(separator = " • ") { it.name }
         }
 
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF02080C)),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.frostsoul_menu_wallpaper),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alpha = 0.38f,
+            modifier = Modifier.fillMaxWidth().height(720.dp),
+        )
+        Column(modifier = Modifier.fillMaxWidth()) {
     Surface(
         shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = Color(0xD9162329),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -429,8 +443,8 @@ fun PlayerMenu(
             ),
     ) {
         item {
-            MenuSurfaceSection(modifier = Modifier.padding(vertical = 6.dp)) {
-                NewActionGrid(
+            MenuSurfaceSection(modifier = Modifier.padding(vertical = 4.dp)) {
+                    NewActionGrid(
                     actions =
                         buildList {
                             castPlayerMenuAction?.let(::add)
@@ -633,7 +647,9 @@ fun PlayerMenu(
                                 )
                             }
                         },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                    columns = 4,
+                    tileMinHeight = 82.dp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                 )
             }
         }
@@ -1446,4 +1462,6 @@ private fun multiplierToSlider(multiplier: Float): Float {
             else -> 0f
         }
     return (0.5f + y / 2f).coerceIn(0f, 1f)
+}
+}
 }

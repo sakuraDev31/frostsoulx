@@ -117,6 +117,7 @@ import dev.vxs.frostsoulx.db.entities.codecLabel
 import dev.vxs.frostsoulx.extensions.togglePlayPause
 import dev.vxs.frostsoulx.extensions.toggleRepeatMode
 import dev.vxs.frostsoulx.models.MediaMetadata
+import dev.vxs.frostsoulx.playback.NativeSpatialDspRuntime
 import dev.vxs.frostsoulx.playback.PlayerConnection
 import dev.vxs.frostsoulx.ui.component.BottomSheetPageState
 import dev.vxs.frostsoulx.ui.component.BottomSheetState
@@ -1810,6 +1811,7 @@ fun PlayerControlsContent(
 ) {
     val currentSong by playerConnection.currentSong.collectAsState(initial = null)
     val currentSongLiked = currentSong?.song?.liked == true
+    var surroundEnabled by remember { mutableStateOf(false) }
 
     val playPauseRoundness by animateDpAsState(
         targetValue = if (isPlaying) 24.dp else 36.dp,
@@ -1914,9 +1916,40 @@ fun PlayerControlsContent(
             },
     )
 
+        Spacer(Modifier.height(12.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Surface(
+            onClick = {
+                surroundEnabled = !surroundEnabled
+                NativeSpatialDspRuntime.setSurroundEnabled(surroundEnabled)
+            },
+            shape = RoundedCornerShape(50),
+            color =
+                if (surroundEnabled) {
+                    MaterialTheme.colorScheme.tertiaryContainer
+                } else {
+                    textBackgroundColor.copy(alpha = 0.08f)
+                },
+        ) {
+            Text(
+                text = if (surroundEnabled) "Surround ON" else "Surround OFF",
+                color =
+                    if (surroundEnabled) {
+                        MaterialTheme.colorScheme.onTertiaryContainer
+                    } else {
+                        textBackgroundColor.copy(alpha = 0.72f)
+                    },
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+            )
+        }
+    }
     Spacer(Modifier.height(12.dp))
-
     PlayerPlaybackControls(
+
         playerDesignStyle = playerDesignStyle,
         playbackState = playbackState,
         isPlaying = isPlaying,

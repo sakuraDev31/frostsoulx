@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 
 @Composable
@@ -55,6 +56,7 @@ fun NewActionButton(
     enabled: Boolean = true,
     backgroundColor: Color = Color.Unspecified,
     contentColor: Color = Color.Unspecified,
+    minHeight: Dp = 96.dp,
 ) {
     val containerColor = if (backgroundColor.isSpecified) backgroundColor else MaterialTheme.colorScheme.surfaceContainerHigh
     val actionContentColor = if (contentColor.isSpecified) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
@@ -64,7 +66,7 @@ fun NewActionButton(
         modifier =
             modifier
                 .fillMaxWidth()
-                .heightIn(min = 96.dp),
+                .heightIn(min = minHeight),
         enabled = enabled,
         shape = FrostSoulTheme.shapes.medium,
         colors =
@@ -160,6 +162,7 @@ fun NewActionGrid(
     actions: List<NewAction>,
     modifier: Modifier = Modifier,
     columns: Int = 3,
+    tileMinHeight: Dp = 96.dp,
 ) {
     if (actions.isEmpty()) return
 
@@ -184,6 +187,7 @@ fun NewActionGrid(
                         enabled = action.enabled,
                         backgroundColor = action.backgroundColor,
                         contentColor = action.contentColor,
+                        minHeight = tileMinHeight,
                     )
                 }
 
