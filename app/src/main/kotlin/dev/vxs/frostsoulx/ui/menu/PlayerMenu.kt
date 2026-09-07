@@ -948,6 +948,7 @@ fun PlayerMenu(
         }
     }
 }
+}
 
 @Composable
 private fun PlayerVolumeCard(
@@ -1392,8 +1393,6 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
             }
         },
     )
-}
-}
 }
 
 private enum class PitchMode {
