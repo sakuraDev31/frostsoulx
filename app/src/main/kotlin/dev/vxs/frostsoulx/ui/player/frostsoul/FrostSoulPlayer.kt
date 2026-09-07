@@ -743,7 +743,7 @@ internal fun FSPlayerControls(
                 onClick = actions.onDownload,
             )
             FSDspMicButton(
-                active = dspMenuOpen,
+                active = dspEnabled,
                 onClick = { dspMenuOpen = true },
                 immersive = immersive,
             )

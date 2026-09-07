@@ -6014,7 +6014,10 @@ class MusicService :
         }
 
         loudnessEnhancer?.let { le ->
-            val automaticHeadroomMb = -(levels.maxOrNull()?.coerceAtLeast(0) ?: 0)
+            val eqBoostMb = levels.maxOrNull()?.coerceAtLeast(0) ?: 0
+            val bassBoostHeadroomMb = if (settings.enabled && settings.bassBoostEnabled) (settings.bassBoostStrength * 400 / 1000).coerceIn(0, 400) else 0
+            val virtualizerHeadroomMb = if (settings.enabled && settings.virtualizerEnabled) (settings.virtualizerStrength * 300 / 1000).coerceIn(0, 300) else 0
+            val automaticHeadroomMb = -(eqBoostMb + bassBoostHeadroomMb + virtualizerHeadroomMb)
             val safeHeadroomEnabled = settings.autoHeadroomEnabled || settings.enabled
             val gainMb =
                 when {

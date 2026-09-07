@@ -596,9 +596,9 @@ fun FSNavigationBar(
 ) {
     val colors = FrostSoulTheme.colors
     val homeSelected = selectedRoute == "home"
-    val selectedTint = if (pureBlack) Color.White else colors.onSurface
+    val selectedTint = if (pureBlack) Color.White else Color.Black
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
-    val navSurface = if (pureBlack) Color.Black.copy(alpha = 0.94f) else null
+    val navSurface = if (pureBlack) Color.Black else Color.White
     Row(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -606,10 +606,7 @@ fun FSNavigationBar(
             modifier
                 .height(56.dp)
                 .clip(shape)
-                .then(
-                    if (navSurface != null) Modifier.background(navSurface, shape)
-                    else Modifier.frostSoulGlass(shape, tint = colors.surface.copy(alpha = 0.90f))
-                )
+                .background(navSurface, shape)
                 .border(1.dp, selectedTint.copy(alpha = if (homeSelected) 0.22f else 0.14f), shape)
                 .padding(horizontal = 4.dp, vertical = 3.dp),
     ) {

@@ -147,6 +147,17 @@ Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeProcess(
         const int chunk = std::min(remaining, static_cast<int>(kChunkFrames));
         for (int i = 0; i < chunk * 2; ++i) work[static_cast<std::size_t>(i)] = static_cast<float>(samples[offset * 2 + i]) / 32768.0f;
         dsp->processor.process(work.data(), static_cast<std::size_t>(chunk));
+        constexpr float kSafePeak = 0.8912509f; // -1 dBFS headroom before the platform output stage.
+        float peak = 0.0f;
+        for (int i = 0; i < chunk * 2; ++i) {
+            peak = std::max(peak, std::fabs(work[static_cast<std::size_t>(i)]));
+        }
+        if (peak > kSafePeak) {
+            const float scale = kSafePeak / peak;
+            for (int i = 0; i < chunk * 2; ++i) {
+                work[static_cast<std::size_t>(i)] *= scale;
+            }
+        }
         for (int i = 0; i < chunk * 2; ++i) {
             const float clamped = std::clamp(work[static_cast<std::size_t>(i)], -1.0f, 0.999969f);
             samples[offset * 2 + i] = static_cast<std::int16_t>(clamped * 32767.0f);
