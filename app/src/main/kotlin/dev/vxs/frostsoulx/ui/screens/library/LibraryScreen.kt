@@ -270,6 +270,7 @@ fun LibraryScreen(navController: NavController) {
         }
     }
 }
+}
 
 @Composable
 private fun PlaylistTagFilterRow(
