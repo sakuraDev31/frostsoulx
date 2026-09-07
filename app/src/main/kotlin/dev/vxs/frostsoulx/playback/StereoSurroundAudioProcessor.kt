@@ -139,8 +139,8 @@ object StereoSurroundRuntime {
         value.setEnabled(enabled)
     }
 
-    fun detach(value: StereoSurroundAudioProcessor) {
-        if (processor === value) processor = null
+    fun detach() {
+        processor = null
     }
 
     fun setEnabled(value: Boolean) {

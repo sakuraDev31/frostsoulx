@@ -176,6 +176,8 @@ import dev.vxs.frostsoulx.constants.PauseListenHistoryKey
 import dev.vxs.frostsoulx.constants.PauseOnDeviceMuteKey
 import dev.vxs.frostsoulx.constants.PermanentShuffleKey
 import dev.vxs.frostsoulx.constants.PersistentQueueKey
+import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
+import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
 import dev.vxs.frostsoulx.constants.PlayerStreamClient
 import dev.vxs.frostsoulx.constants.PlayerStreamClientKey
 import dev.vxs.frostsoulx.constants.PlayerVolumeKey
@@ -328,7 +330,6 @@ class MusicService :
 
     private lateinit var audioManager: AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
-    private val stereoSurroundAudioProcessor = StereoSurroundAudioProcessor()
     private var lastAudioFocusState = AudioManager.AUDIOFOCUS_NONE
     private var wasPlayingBeforeAudioFocusLoss = false
     private var pauseOnDeviceMuteEnabled = false
@@ -1062,8 +1063,10 @@ class MusicService :
 
     override fun onCreate() {
         super.onCreate()
-        // Playback uses Media3 processors plus the separately gated V1 surround processor.
-        StereoSurroundRuntime.attach(stereoSurroundAudioProcessor)
+        // Select the renderer chain from persisted state before ExoPlayer is built. When off,
+        // no surround processor or JNI library participates in the playback path at all.
+        StereoSurroundRuntime.setIntensity(dataStore.get(StereoSurroundIntensityKey, 0.5f))
+        StereoSurroundRuntime.setEnabled(dataStore.get(StereoSurroundEnabledKey, false))
         equalizerPlaybackController.attach(this)
         ensureScopesActive()
 
@@ -7922,23 +7925,33 @@ class MusicService :
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
-            ) = DefaultAudioSink
-                .Builder(context)
-                .setEnableFloatOutput(false)
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .setAudioProcessorChain(
-                    DefaultAudioSink.DefaultAudioProcessorChain(
-                        SilenceSkippingAudioProcessor(
-                            1_500_000L,
-                            0.35f,
-                            500_000L,
-                            10,
-                            150.toShort(),
-                        ),
-                        SonicAudioProcessor(),
-                        stereoSurroundAudioProcessor,
-                    ),
-                ).build()
+            ): DefaultAudioSink {
+                val silenceSkipping =
+                    SilenceSkippingAudioProcessor(
+                        1_500_000L,
+                        0.35f,
+                        500_000L,
+                        10,
+                        150.toShort(),
+                    )
+                val sonic = SonicAudioProcessor()
+                val surround =
+                    if (StereoSurroundRuntime.isEnabled()) {
+                        StereoSurroundAudioProcessor().also(StereoSurroundRuntime::attach)
+                    } else {
+                        null
+                    }
+                val chain =
+                    surround?.let {
+                        DefaultAudioSink.DefaultAudioProcessorChain(silenceSkipping, sonic, it)
+                    } ?: DefaultAudioSink.DefaultAudioProcessorChain(silenceSkipping, sonic)
+                return DefaultAudioSink
+                    .Builder(context)
+                    .setEnableFloatOutput(false)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessorChain(chain)
+                    .build()
+            }
         }
 
     override fun onPlaybackStatsReady(
@@ -8393,7 +8406,7 @@ class MusicService :
         playbackCore = null
         stopLyricsSync()
         equalizerPlaybackController.detach(this)
-        StereoSurroundRuntime.detach(stereoSurroundAudioProcessor)
+        StereoSurroundRuntime.detach()
         discordServiceStopping = true
         requestDiscordSync(
             reason = "service_destroy",
