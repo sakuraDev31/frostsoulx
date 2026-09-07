@@ -44,13 +44,16 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (inputBuffer.remaining() == 0) return
-        val frameBytes = inputBuffer.remaining()
-        if (enabled && nativeHandle != 0L && inputBuffer.isDirect && frameBytes >= BYTES_PER_FRAME) {
-            nativeProcess(nativeHandle, inputBuffer, frameBytes / BYTES_PER_FRAME)
+        // JNI GetDirectBufferAddress points at the direct buffer base, not the current
+        // ByteBuffer position. Always pass a zero-based readable slice to native code;
+        // otherwise Media3 buffers with a non-zero position can be processed/written at
+        // the wrong PCM region, producing corruption, clicks, or apparent clipping.
+        val readableBuffer = inputBuffer.slice().order(inputBuffer.order())
+        val frameBytes = readableBuffer.remaining()
+        if (enabled && nativeHandle != 0L && readableBuffer.isDirect && frameBytes >= BYTES_PER_FRAME) {
+            nativeProcess(nativeHandle, readableBuffer, frameBytes / BYTES_PER_FRAME)
         }
-        // Preserve the readable range before consuming the input buffer. Assigning the original
-        // buffer and then advancing its position makes getOutput() appear empty and mutes audio.
-        outputBuffer = inputBuffer.slice().order(inputBuffer.order())
+        outputBuffer = readableBuffer
         inputBuffer.position(inputBuffer.limit())
     }
 
