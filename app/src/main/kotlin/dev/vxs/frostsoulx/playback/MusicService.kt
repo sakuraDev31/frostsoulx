@@ -1417,7 +1417,15 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { settings ->
                 desiredEqSettings.value = settings
-                applyEqSettingsToEffects(settings)
+                if (settings.enabled) {
+                    applyEqSettingsToEffects(settings)
+                    reconcileAudioEffectSession()
+                } else {
+                    // EQ OFF must be a true bypass. Release the whole Android effect
+                    // chain instead of leaving vendor implementations attached with
+                    // enabled=false.
+                    closeAudioEffectSession()
+                }
             }
 
         combine(
@@ -6031,6 +6039,7 @@ class MusicService :
     }
 
     private fun shouldKeepAudioEffectSessionOpen(): Boolean {
+        if (!desiredEqSettings.value.enabled) return false
         val playbackState = localPlayer.playbackState
         return playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_READY
     }
@@ -6048,6 +6057,7 @@ class MusicService :
     }
 
     private fun openAudioEffectSession() {
+        if (!desiredEqSettings.value.enabled) return
         if (isAudioEffectSessionOpened) return
         val sessionId = localPlayer.audioSessionId
         if (sessionId <= 0) return
