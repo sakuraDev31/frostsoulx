@@ -926,3 +926,6 @@ enum class UpdateChannel {
             }
     }
 }
+
+val StereoSurroundEnabledKey = booleanPreferencesKey("stereoSurroundEnabled")
+val StereoSurroundIntensityKey = floatPreferencesKey("stereoSurroundIntensity")

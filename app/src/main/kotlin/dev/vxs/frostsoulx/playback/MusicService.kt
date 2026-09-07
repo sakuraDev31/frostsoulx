@@ -328,6 +328,7 @@ class MusicService :
 
     private lateinit var audioManager: AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
+    private val stereoSurroundAudioProcessor = StereoSurroundAudioProcessor()
     private var lastAudioFocusState = AudioManager.AUDIOFOCUS_NONE
     private var wasPlayingBeforeAudioFocusLoss = false
     private var pauseOnDeviceMuteEnabled = false
@@ -1061,7 +1062,8 @@ class MusicService :
 
     override fun onCreate() {
         super.onCreate()
-        // Playback uses the stable Media3 audio path.
+        // Playback uses Media3 processors plus the separately gated V1 surround processor.
+        StereoSurroundRuntime.attach(stereoSurroundAudioProcessor)
         equalizerPlaybackController.attach(this)
         ensureScopesActive()
 
@@ -7934,7 +7936,7 @@ class MusicService :
                             150.toShort(),
                         ),
                         SonicAudioProcessor(),
-                        // Keep the processor chain limited to the stable Media3 processors.
+                        stereoSurroundAudioProcessor,
                     ),
                 ).build()
         }
@@ -8391,6 +8393,7 @@ class MusicService :
         playbackCore = null
         stopLyricsSync()
         equalizerPlaybackController.detach(this)
+        StereoSurroundRuntime.detach(stereoSurroundAudioProcessor)
         discordServiceStopping = true
         requestDiscordSync(
             reason = "service_destroy",

@@ -96,6 +96,7 @@ import dev.vxs.frostsoulx.constants.ExternalDownloaderPackageKey
 import dev.vxs.frostsoulx.constants.PlayerDesignStyle
 import dev.vxs.frostsoulx.constants.PlayerDesignStyleKey
 import dev.vxs.frostsoulx.constants.SpeedDialSongIdsKey
+import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
 import dev.vxs.frostsoulx.models.MediaMetadata
 import dev.vxs.frostsoulx.playback.CanvasArtworkRefetchResult
 import dev.vxs.frostsoulx.playback.ExoDownloadService
@@ -164,6 +165,7 @@ fun PlayerMenu(
     val lowDataModeActive = rememberLowDataModeActive()
     val isCanvasArtworkRefetching by playerConnection.isCanvasArtworkRefetching.collectAsStateWithLifecycle()
     val (speedDialSongIds, onSpeedDialSongIdsChange) = rememberPreference(SpeedDialSongIdsKey, "")
+    val (surroundEnabled) = rememberPreference(StereoSurroundEnabledKey, false)
     val speedDialPins = remember(speedDialSongIds) { parseSpeedDialPins(speedDialSongIds) }
     val songPin = remember(mediaMetadata.id) { SpeedDialPin(type = SpeedDialPinType.SONG, id = mediaMetadata.id) }
     val isInSpeedDial =
@@ -433,6 +435,25 @@ fun PlayerMenu(
                 NewActionGrid(
                     actions =
                         buildList {
+                            add(
+                                NewAction(
+                                    icon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.equalizer),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(30.dp),
+                                            tint = if (surroundEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    },
+                                    text = "Surround ${if (surroundEnabled) "On" else "Off"}",
+                                    onClick = {
+                                        onDismiss()
+                                        navController.navigate("settings/surround")
+                                    },
+                                    backgroundColor = if (surroundEnabled) MaterialTheme.colorScheme.primaryContainer else Color.Unspecified,
+                                    contentColor = if (surroundEnabled) MaterialTheme.colorScheme.onPrimaryContainer else Color.Unspecified,
+                                ),
+                            )
                             castPlayerMenuAction?.let(::add)
                             if (!isLocalMedia) {
                                 add(
