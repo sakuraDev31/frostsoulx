@@ -156,19 +156,24 @@ Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeProcess(
             inputPeak = std::max(inputPeak, std::fabs(work[static_cast<std::size_t>(i)]));
         }
         dsp->processor.process(work.data(), static_cast<std::size_t>(chunk));
-        constexpr float kSafePeak = 0.8912509f; // -1 dBFS headroom before the platform output stage.
+
+        // SoundFieldProcessor already applies a per-sample soft-knee limiter
+        // (clampSample()) when DSP is enabled, and leaves samples untouched
+        // when it's disabled. No block-level rescale here: a chunk-wide gain
+        // cut with no envelope was firing on almost every buffer of normally
+        // mastered (near -1 dBFS) audio, producing an audible, continuous
+        // gain-stepping artifact regardless of the DSP/EQ toggle state.
         float peak = 0.0f;
+        std::uint64_t oversInChunk = 0;
         for (int i = 0; i < chunk * 2; ++i) {
-            peak = std::max(peak, std::fabs(work[static_cast<std::size_t>(i)]));
+            const float sample = work[static_cast<std::size_t>(i)];
+            peak = std::max(peak, std::fabs(sample));
+            const float clamped = std::clamp(sample, -1.0f, 0.999969f);
+            if (clamped != sample) ++oversInChunk;
+            samples[offset * 2 + i] = static_cast<std::int16_t>(clamped * 32767.0f);
         }
-        const bool limiterApplied = peak > kSafePeak;
-        if (limiterApplied) {
-            const float scale = kSafePeak / peak;
-            for (int i = 0; i < chunk * 2; ++i) {
-                work[static_cast<std::size_t>(i)] *= scale;
-            }
-            ++dsp->diagnosticsLimiterChunks;
-        }
+        if (oversInChunk > 0) ++dsp->diagnosticsLimiterChunks;
+
         dsp->diagnosticsFrames += static_cast<std::uint64_t>(chunk);
         dsp->diagnosticsInputPeak = std::max(dsp->diagnosticsInputPeak, inputPeak);
         dsp->diagnosticsOutputPeak = std::max(dsp->diagnosticsOutputPeak, peak);
@@ -186,10 +191,6 @@ Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeProcess(
             dsp->diagnosticsLimiterChunks = 0;
             dsp->diagnosticsInputPeak = 0.0f;
             dsp->diagnosticsOutputPeak = 0.0f;
-        }
-        for (int i = 0; i < chunk * 2; ++i) {
-            const float clamped = std::clamp(work[static_cast<std::size_t>(i)], -1.0f, 0.999969f);
-            samples[offset * 2 + i] = static_cast<std::int16_t>(clamped * 32767.0f);
         }
         offset += chunk;
         remaining -= chunk;

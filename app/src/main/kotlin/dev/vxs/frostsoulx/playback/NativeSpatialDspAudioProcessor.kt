@@ -51,9 +51,10 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
         val readableBuffer = inputBuffer.slice().order(inputBuffer.order())
         val frameBytes = readableBuffer.remaining()
         if (nativeHandle != 0L && readableBuffer.isDirect && frameBytes >= BYTES_PER_FRAME) {
-            // Native process() returns immediately when DSP is disabled, but the JNI
-            // boundary still applies the final PCM peak guard. This keeps the common
-            // output path safe in both DSP ON and DSP OFF states without sound shaping.
+            // Native process() returns immediately when DSP is disabled, leaving the
+            // buffer bit-for-bit untouched. The JNI boundary only applies a per-sample
+            // safety clamp to [-1, 1] — no block-level rescale — so normal loud/mastered
+            // audio isn't gain-stepped on every ~23ms chunk.
             nativeProcess(nativeHandle, readableBuffer, frameBytes / BYTES_PER_FRAME)
         }
         outputBuffer = readableBuffer
