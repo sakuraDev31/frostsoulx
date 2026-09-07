@@ -685,6 +685,26 @@ internal fun FSPlayerControls(
     var dspWidth by remember { mutableFloatStateOf(1f) }
     var dspCrossfeed by remember { mutableFloatStateOf(0f) }
     var dspReverb by remember { mutableFloatStateOf(0f) }
+    var hrtfEnabled by remember { mutableStateOf(false) }
+    var hrtfMix by remember { mutableFloatStateOf(0.85f) }
+    var hrtfAzimuth by remember { mutableFloatStateOf(0f) }
+    var hrtfElevation by remember { mutableFloatStateOf(0f) }
+
+    fun applyDspParameters() {
+        NativeSpatialDspRuntime.setParameters(
+            NativeSpatialDspAudioProcessor.Parameters(
+                intensity = dspIntensity,
+                width = dspWidth,
+                crossfeed = dspCrossfeed,
+                reverbMix = dspReverb,
+                hrtfEnabled = hrtfEnabled,
+                hrtfMix = hrtfMix,
+                hrtfAzimuth = hrtfAzimuth,
+                hrtfElevation = hrtfElevation,
+            ),
+        )
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
     ) {
@@ -725,6 +745,7 @@ internal fun FSPlayerControls(
                 onEnabledChange = {
                     dspEnabled = it
                     NativeSpatialDspRuntime.setEnabled(it)
+                    applyDspParameters()
                 },
                 preset = dspPreset,
                 onPresetChange = {
@@ -734,22 +755,42 @@ internal fun FSPlayerControls(
                 intensity = dspIntensity,
                 onIntensityChange = {
                     dspIntensity = it
-                    NativeSpatialDspRuntime.setParameters(NativeSpatialDspAudioProcessor.Parameters(intensity = it, width = dspWidth, crossfeed = dspCrossfeed, reverbMix = dspReverb))
+                    applyDspParameters()
                 },
                 width = dspWidth,
                 onWidthChange = {
                     dspWidth = it
-                    NativeSpatialDspRuntime.setParameters(NativeSpatialDspAudioProcessor.Parameters(intensity = dspIntensity, width = it, crossfeed = dspCrossfeed, reverbMix = dspReverb))
+                    applyDspParameters()
                 },
                 crossfeed = dspCrossfeed,
                 onCrossfeedChange = {
                     dspCrossfeed = it
-                    NativeSpatialDspRuntime.setParameters(NativeSpatialDspAudioProcessor.Parameters(intensity = dspIntensity, width = dspWidth, crossfeed = it, reverbMix = dspReverb))
+                    applyDspParameters()
                 },
                 reverb = dspReverb,
                 onReverbChange = {
                     dspReverb = it
-                    NativeSpatialDspRuntime.setParameters(NativeSpatialDspAudioProcessor.Parameters(intensity = dspIntensity, width = dspWidth, crossfeed = dspCrossfeed, reverbMix = it))
+                    applyDspParameters()
+                },
+                hrtfEnabled = hrtfEnabled,
+                onHrtfEnabledChange = {
+                    hrtfEnabled = it
+                    applyDspParameters()
+                },
+                hrtfMix = hrtfMix,
+                onHrtfMixChange = {
+                    hrtfMix = it
+                    applyDspParameters()
+                },
+                hrtfAzimuth = hrtfAzimuth,
+                onHrtfAzimuthChange = {
+                    hrtfAzimuth = it
+                    applyDspParameters()
+                },
+                hrtfElevation = hrtfElevation,
+                onHrtfElevationChange = {
+                    hrtfElevation = it
+                    applyDspParameters()
                 },
             )
         }
@@ -894,7 +935,7 @@ private fun FSDspMicButton(
         iconSize = 22.dp,
         showContainer = false,
         forceWhite = immersive,
-        modifier = Modifier.graphicsLayer { rotationZ = 65f },
+        modifier = Modifier.graphicsLayer { rotationZ = 90f },
     )
 }
 
@@ -914,31 +955,55 @@ private fun FrostSoulDspMenu(
     onCrossfeedChange: (Float) -> Unit,
     reverb: Float,
     onReverbChange: (Float) -> Unit,
+    hrtfEnabled: Boolean,
+    onHrtfEnabledChange: (Boolean) -> Unit,
+    hrtfMix: Float,
+    onHrtfMixChange: (Float) -> Unit,
+    hrtfAzimuth: Float,
+    onHrtfAzimuthChange: (Float) -> Unit,
+    hrtfElevation: Float,
+    onHrtfElevationChange: (Float) -> Unit,
 ) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         FSGlassCard(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 20.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 18.dp),
         ) {
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Icon(painterResource(R.drawable.waves), "DSP engine", tint = FrostSoulTheme.colors.accentBright, modifier = Modifier.size(24.dp))
+                    Icon(painterResource(R.drawable.waves), "DSP engine", tint = FrostSoulTheme.colors.accentBright, modifier = Modifier.size(28.dp))
                     Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
-                        Text("DSP Engine", color = FrostSoulTheme.colors.onSurface, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Native spatial sound-field processing", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                        Text("DSP + HRTF", color = FrostSoulTheme.colors.onSurface, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Headphone spatial audio", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
                     }
-                    androidx.compose.material3.Switch(checked = enabled, onCheckedChange = onEnabledChange)
+                    androidx.compose.material3.IconButton(onClick = onDismiss) {
+                        Icon(painterResource(R.drawable.close), "Close DSP page", tint = FrostSoulTheme.colors.onSurface)
+                    }
                 }
                 Text(
-                    text = if (enabled) "DSP is active for the current playback path" else "DSP is bypassed; playback remains unchanged",
+                    text = if (enabled) "DSP engine is active for the current playback path" else "DSP engine is bypassed; playback remains unchanged",
                     color = if (enabled) FrostSoulTheme.colors.accentBright else FrostSoulTheme.colors.onSurfaceMuted,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(top = 14.dp),
+                    modifier = Modifier.padding(top = 18.dp),
                 )
-                Column(modifier = Modifier.padding(top = 14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 18.dp)) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("HRTF binaural stage", color = FrostSoulTheme.colors.onSurface, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Directional headphone filtering inside the DSP engine", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+                    }
+                    androidx.compose.material3.Switch(checked = hrtfEnabled, onCheckedChange = onHrtfEnabledChange)
+                }
+                Text(
+                    text = if (hrtfEnabled) "HRTF is active" else "HRTF is off",
+                    color = if (hrtfEnabled) FrostSoulTheme.colors.accentBright else FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text("DSP preset", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 22.dp))
+                Column(modifier = Modifier.padding(top = 8.dp)) {
                     NativeSpatialDspAudioProcessor.Preset.entries.chunked(3).forEach { rowOptions ->
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             rowOptions.forEach { option ->
@@ -951,6 +1016,10 @@ private fun FrostSoulDspMenu(
                         }
                     }
                 }
+                FrostSoulDspSlider("HRTF mix", hrtfMix, onHrtfMixChange)
+                FrostSoulDspSlider("Head azimuth ${hrtfAzimuth.toInt()}°", ((hrtfAzimuth + 180f) / 360f), { onHrtfAzimuthChange(it * 360f - 180f) })
+                FrostSoulDspSlider("Head elevation ${hrtfElevation.toInt()}°", ((hrtfElevation + 90f) / 180f), { onHrtfElevationChange(it * 180f - 90f) })
+                Text("Sound-field controls", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 22.dp))
                 FrostSoulDspSlider("Intensity", intensity, onIntensityChange)
                 FrostSoulDspSlider("Width", width / 2f, { onWidthChange(it * 2f) })
                 FrostSoulDspSlider("Crossfeed", crossfeed, onCrossfeedChange)

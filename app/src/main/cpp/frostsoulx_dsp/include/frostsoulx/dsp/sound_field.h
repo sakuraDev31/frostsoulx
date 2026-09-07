@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "frostsoulx/dsp/hrtf_binaural.h"
+
 namespace frostsoulx::dsp {
 
 enum class SoundFieldPreset : std::uint8_t {
@@ -27,6 +29,10 @@ struct SoundFieldParameters {
     float reverbDecay = 0.45f;
     float outputGainDb = 0.0f;
     float limiterCeilingDb = -1.0f;
+    bool hrtfEnabled = false;
+    float hrtfMix = 0.85f;
+    float hrtfAzimuth = 0.0f;
+    float hrtfElevation = 0.0f;
 };
 
 struct SoundFieldFormat {
@@ -51,6 +57,7 @@ public:
 
 private:
     void applyPresetDefaults(SoundFieldParameters& parameters) const noexcept;
+    void configureFallbackHrtf() noexcept;
     [[nodiscard]] float lowPass(float input, float& state) const noexcept;
     [[nodiscard]] float clampSample(float sample) const noexcept;
     [[nodiscard]] float readDelay(const std::array<float, 4096>& buffer, std::size_t delay) const noexcept;
@@ -63,6 +70,11 @@ private:
     float crossfeedRight_ = 0.0f;
     std::array<float, 4096> reverbLeft_{};
     std::array<float, 4096> reverbRight_{};
+    HrtfBinauralProcessor hrtf_{};
+    std::array<float, 1024> hrtfMono_{};
+    std::array<float, 2048> hrtfStereo_{};
+    float lastHrtfAzimuth_ = 9999.0f;
+    float lastHrtfElevation_ = 9999.0f;
     std::size_t reverbIndex_ = 0;
 };
 

@@ -104,6 +104,10 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
                 value.reverbDecay,
                 value.outputGainDb,
                 value.limiterCeilingDb,
+                value.hrtfEnabled,
+                value.hrtfMix,
+                value.hrtfAzimuth,
+                value.hrtfElevation,
             )
         }
     }
@@ -126,6 +130,10 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
         val reverbDecay: Float = 0.45f,
         val outputGainDb: Float = 0.0f,
         val limiterCeilingDb: Float = -1.0f,
+        val hrtfEnabled: Boolean = false,
+        val hrtfMix: Float = 0.85f,
+        val hrtfAzimuth: Float = 0.0f,
+        val hrtfElevation: Float = 0.0f,
     )
 
     enum class Preset(val nativeValue: Int) {
@@ -157,6 +165,10 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
             reverbDecay: Float,
             outputGainDb: Float,
             limiterCeilingDb: Float,
+            hrtfEnabled: Boolean,
+            hrtfMix: Float,
+            hrtfAzimuth: Float,
+            hrtfElevation: Float,
         )
         @JvmStatic private external fun nativeProcess(handle: Long, pcmBuffer: ByteBuffer, frames: Int)
     }

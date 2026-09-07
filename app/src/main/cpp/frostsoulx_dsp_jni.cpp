@@ -29,6 +29,10 @@ struct NativeDsp final {
     std::atomic<float> reverbDecay{0.45f};
     std::atomic<float> outputGainDb{0.0f};
     std::atomic<float> limiterCeilingDb{-1.0f};
+    std::atomic<bool> hrtfEnabled{false};
+    std::atomic<float> hrtfMix{0.85f};
+    std::atomic<float> hrtfAzimuth{0.0f};
+    std::atomic<float> hrtfElevation{0.0f};
 
     void applyParameters() noexcept {
         using namespace frostsoulx::dsp;
@@ -45,6 +49,10 @@ struct NativeDsp final {
         parameters.reverbDecay = reverbDecay.load(std::memory_order_relaxed);
         parameters.outputGainDb = outputGainDb.load(std::memory_order_relaxed);
         parameters.limiterCeilingDb = limiterCeilingDb.load(std::memory_order_relaxed);
+        parameters.hrtfEnabled = hrtfEnabled.load(std::memory_order_relaxed);
+        parameters.hrtfMix = hrtfMix.load(std::memory_order_relaxed);
+        parameters.hrtfAzimuth = hrtfAzimuth.load(std::memory_order_relaxed);
+        parameters.hrtfElevation = hrtfElevation.load(std::memory_order_relaxed);
         processor.setParameters(parameters);
     }
 };
@@ -103,7 +111,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeSetParameters(
     JNIEnv*, jobject, jlong handle, jfloat intensity, jfloat width, jfloat crossfeed,
     jfloat lowFrequencyProtection, jfloat surround, jfloat reverbMix, jfloat reverbRoomSize,
-    jfloat reverbDecay, jfloat outputGainDb, jfloat limiterCeilingDb) {
+    jfloat reverbDecay, jfloat outputGainDb, jfloat limiterCeilingDb,
+    jboolean hrtfEnabled, jfloat hrtfMix, jfloat hrtfAzimuth, jfloat hrtfElevation) {
     auto* dsp = fromHandle(handle);
     if (dsp == nullptr) return;
     setFloat(dsp->intensity, intensity);
@@ -116,6 +125,10 @@ Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeSetParamet
     setFloat(dsp->reverbDecay, reverbDecay);
     setFloat(dsp->outputGainDb, outputGainDb);
     setFloat(dsp->limiterCeilingDb, limiterCeilingDb);
+    dsp->hrtfEnabled.store(hrtfEnabled == JNI_TRUE, std::memory_order_relaxed);
+    setFloat(dsp->hrtfMix, hrtfMix);
+    setFloat(dsp->hrtfAzimuth, hrtfAzimuth);
+    setFloat(dsp->hrtfElevation, hrtfElevation);
 }
 
 extern "C" JNIEXPORT void JNICALL

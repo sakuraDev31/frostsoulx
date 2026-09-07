@@ -44,7 +44,36 @@ void SoundFieldProcessor::prepare(SoundFieldFormat format) noexcept {
     if (format_.channels != 2) {
         format_.channels = 2;
     }
+    hrtf_.prepare({format_.sampleRate});
+    configureFallbackHrtf();
     reset();
+}
+
+void SoundFieldProcessor::configureFallbackHrtf() noexcept {
+    constexpr std::size_t kTaps = 32;
+    constexpr std::size_t kDirections = 5;
+    std::array<std::array<float, kTaps>, kDirections> left{};
+    std::array<std::array<float, kTaps>, kDirections> right{};
+    std::array<HrtfBinauralProcessor::DirectionalImpulseResponse, kDirections> responses{};
+    constexpr std::array<float, kDirections> azimuths{-90.0f, -45.0f, 0.0f, 45.0f, 90.0f};
+    for (std::size_t index = 0; index < kDirections; ++index) {
+        const float pan = azimuths[index] / 90.0f;
+        const float leftGain = 0.78f - 0.22f * pan;
+        const float rightGain = 0.78f + 0.22f * pan;
+        const std::size_t leftDelay = pan > 0.0f ? 4U : 1U;
+        const std::size_t rightDelay = pan < 0.0f ? 4U : 1U;
+        left[index][leftDelay] = leftGain;
+        right[index][rightDelay] = rightGain;
+        responses[index] = {
+            azimuths[index],
+            0.0f,
+            {left[index].data(), right[index].data(), kTaps},
+        };
+    }
+    hrtf_.setDirectionalResponses(responses.data(), responses.size());
+    hrtf_.setCrossfadeSamples(512U);
+    hrtf_.setDirection(0.0f, 0.0f);
+    hrtf_.setEnabled(false);
 }
 
 void SoundFieldProcessor::reset() noexcept {
@@ -54,6 +83,11 @@ void SoundFieldProcessor::reset() noexcept {
     crossfeedRight_ = 0.0f;
     reverbLeft_.fill(0.0f);
     reverbRight_.fill(0.0f);
+    hrtfMono_.fill(0.0f);
+    hrtfStereo_.fill(0.0f);
+    hrtf_.reset();
+    lastHrtfAzimuth_ = 9999.0f;
+    lastHrtfElevation_ = 9999.0f;
     reverbIndex_ = 0;
 }
 
@@ -69,6 +103,9 @@ void SoundFieldProcessor::setParameters(const SoundFieldParameters& parameters) 
     parameters_.reverbDecay = std::clamp(sanitize(parameters_.reverbDecay, 0.45f), kMinReverbDecay, kMaxReverbDecay);
     parameters_.outputGainDb = std::clamp(sanitize(parameters_.outputGainDb, 0.0f), kMinGainDb, kMaxGainDb);
     parameters_.limiterCeilingDb = std::clamp(sanitize(parameters_.limiterCeilingDb, -1.0f), kMinCeilingDb, kMaxCeilingDb);
+    parameters_.hrtfMix = std::clamp(sanitize(parameters_.hrtfMix, 0.85f), 0.0f, 1.0f);
+    parameters_.hrtfAzimuth = std::clamp(sanitize(parameters_.hrtfAzimuth, 0.0f), -180.0f, 180.0f);
+    parameters_.hrtfElevation = std::clamp(sanitize(parameters_.hrtfElevation, 0.0f), -90.0f, 90.0f);
 }
 
 const SoundFieldParameters& SoundFieldProcessor::parameters() const noexcept {
@@ -88,6 +125,9 @@ SoundFieldParameters SoundFieldProcessor::effectiveParameters() const noexcept {
     result.reverbDecay = std::clamp(result.reverbDecay, kMinReverbDecay, kMaxReverbDecay);
     result.outputGainDb = std::clamp(result.outputGainDb, kMinGainDb, kMaxGainDb);
     result.limiterCeilingDb = std::clamp(result.limiterCeilingDb, kMinCeilingDb, kMaxCeilingDb);
+    result.hrtfMix = std::clamp(result.hrtfMix, 0.0f, 1.0f);
+    result.hrtfAzimuth = std::clamp(result.hrtfAzimuth, -180.0f, 180.0f);
+    result.hrtfElevation = std::clamp(result.hrtfElevation, -90.0f, 90.0f);
     return result;
 }
 
@@ -225,6 +265,30 @@ void SoundFieldProcessor::process(float* interleavedStereo, std::size_t frames) 
 
         interleavedStereo[frame * 2U] = clampSample(processedLeft * gain);
         interleavedStereo[frame * 2U + 1U] = clampSample(processedRight * gain);
+    }
+
+    if (effective.hrtfEnabled) {
+        hrtf_.setEnabled(true);
+        if (std::fabs(effective.hrtfAzimuth - lastHrtfAzimuth_) > 0.01f ||
+            std::fabs(effective.hrtfElevation - lastHrtfElevation_) > 0.01f) {
+            hrtf_.setDirection(effective.hrtfAzimuth, effective.hrtfElevation);
+            lastHrtfAzimuth_ = effective.hrtfAzimuth;
+            lastHrtfElevation_ = effective.hrtfElevation;
+        }
+        const std::size_t boundedFrames = std::min(frames, hrtfMono_.size());
+        for (std::size_t frame = 0; frame < boundedFrames; ++frame) {
+            hrtfMono_[frame] = 0.5f * (interleavedStereo[frame * 2U] + interleavedStereo[frame * 2U + 1U]);
+        }
+        hrtf_.process(hrtfMono_.data(), hrtfStereo_.data(), boundedFrames);
+        const float mix = effective.hrtfMix;
+        const float dry = 1.0f - mix;
+        for (std::size_t frame = 0; frame < boundedFrames; ++frame) {
+            interleavedStereo[frame * 2U] = clampSample(interleavedStereo[frame * 2U] * dry + hrtfStereo_[frame * 2U] * mix);
+            interleavedStereo[frame * 2U + 1U] = clampSample(interleavedStereo[frame * 2U + 1U] * dry + hrtfStereo_[frame * 2U + 1U] * mix);
+        }
+    } else {
+        hrtf_.setEnabled(false);
+    }
     }
 }
 
