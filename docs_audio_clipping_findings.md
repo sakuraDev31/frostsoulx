@@ -1,24 +1,46 @@
-# Audio clipping investigation
+# FrostSoulX clipping investigation — corrected finding
 
-## Findings
+## User clarification
 
-Android's official LoudnessEnhancer documentation states that target gain is the maximum gain applied to the signal and that signals amplified outside the platform sample range are compressed. Therefore, LoudnessEnhancer is not a substitute for pre-gain headroom when EQ, bass boost, or other effects raise peaks.
+The reported clipping also occurred while the app equalizer and other visible sound-shaping controls were off. Therefore, an EQ boost is not a sufficient explanation for the defect.
 
-The current app has two independent audio paths. The native Media3 `NativeSpatialDspAudioProcessor` bypasses native processing when disabled and returns a slice of the original PCM buffer. The Android audio-effects path in `MusicService` independently creates Equalizer, BassBoost, Virtualizer, and LoudnessEnhancer instances for the player's audio session. Turning off the FrostSoulX native DSP control does not automatically disable these Android effects.
+## Trace result
 
-The likely clipping mechanism is cumulative gain: positive EQ bands and/or bass/virtualizer enhancement can raise peaks, while LoudnessEnhancer may still be enabled according to EQ settings. The native DSP path also needs to keep gain below the final limiter ceiling when HRTF and width/reverb are combined.
+`MusicService` was creating and retaining an Android audio-effect session while playback was ready or buffering, independently of the native DSP master switch. The effect objects were set to `enabled = false`, but the session and vendor effect chain could still remain attached to the player audio session. The neutral native-DSP bypass therefore did not guarantee a fully clean Android output path.
 
-## Planned implementation safeguards
+The native spatial processor itself has a bypass path that forwards the input buffer without native processing when disabled. Consequently, the revised fix avoids changing the neutral PCM path and instead removes the app-owned Android effect session whenever the independent equalizer master switch is off.
 
-1. Make the navigation pill solid black in pure-black mode and solid white in light mode, with fixed slim height and stretched width.
-2. Ensure the DSP master toggle updates both the persisted UI state and the service-owned processor state immediately.
-3. Keep native DSP bypass bit-transparent when off.
-4. Apply automatic EQ headroom when EQ is enabled, and avoid allowing positive output gain to bypass the safety ceiling.
-5. Add a final native output safety stage after HRTF mixing, and validate the output range in a deterministic native test where possible.
-6. Verify the audio session rebind path reapplies effect enabled states and gain parameters after player/session changes.
+## Fix in commit `7f2e4e191`
 
-## Sources
+When EQ is disabled, `MusicService` now closes and releases the entire Android audio-effect session. Session creation and reconciliation are also gated by `desiredEqSettings.enabled`. This prevents hidden or vendor-specific Android effect implementations from remaining attached during a supposedly neutral playback path.
 
-- Android LoudnessEnhancer API: https://developer.android.com/reference/android/media/audiofx/LoudnessEnhancer
-- AOSP LoudnessEnhancer source: https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/media/java/android/media/audiofx/LoudnessEnhancer.java
-- AndroidX Media3 AudioProcessor API: https://developer.android.com/reference/androidx/media3/common/audio/AudioProcessor
+When EQ is enabled, the existing effect settings and headroom logic remain available. Native DSP/HRTF behavior is unchanged.
+
+## Validation
+
+`git diff --check` passed. The local Gradle attempt could not configure the Android build because this sandbox does not have an Android SDK configured (`ANDROID_HOME`/`local.properties` missing); this is an environment limitation rather than a Kotlin compiler error.
+
+The pushed arm64 workflow is queued at:
+
+https://github.com/sakuraDev31/frostsoulx/actions/runs/34093220692
+
+SHA: `7f2e4e191b036013c75aad223eb4c9b4fb43ce3d`
+
+## Device test matrix
+
+| Test | EQ master | Native DSP | Expected result |
+|---|---:|---:|---|
+| Clean bypass | Off | Off | No app-owned Android effect session; no clipping introduced by FrostSoulX |
+| EQ path | On | Off | EQ/headroom path active and bounded |
+| Native spatial | Off | On | Native DSP/HRTF path active; Android EQ session remains released |
+| Combined | On | On | Both paths active with existing headroom and native limiter |
+
+A final device test is still required because OEM audio services may apply post-processing outside the FrostSoulX process.
+
+## References
+
+[1]: https://developer.android.com/reference/android/media/audiofx/AudioEffect Android AudioEffect API reference
+
+[2]: https://developer.android.com/reference/android/media/audiofx/Equalizer Android Equalizer API reference
+
+[3]: https://developer.android.com/reference/androidx/media3/common/audio/AudioProcessor AndroidX Media3 AudioProcessor API reference

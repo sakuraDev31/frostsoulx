@@ -49,11 +49,6 @@ android {
     defaultConfig {
     applicationId = "dev.vxs.frostsoulx"
 
-        externalNativeBuild {
-            cmake {
-                cppFlags += "-std=c++17 -fno-exceptions -fno-rtti"
-            }
-        }
         minSdk = 26
         targetSdk = 37
         versionCode = 144
@@ -100,13 +95,6 @@ android {
         buildConfigField("String", "NIGHTLY_BUILD_HASH", "\"$nightlyBuildHash\"")
         buildConfigField("String", "DISTRIBUTION", "\"gms\"")
         buildConfigField("boolean", "UPDATER_AVAILABLE", "true")
-    }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
     }
 
     flavorDimensions += listOf("distribution", "device", "abi")
