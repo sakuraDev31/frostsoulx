@@ -33,6 +33,18 @@ import coil3.compose.rememberAsyncImagePainter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import dev.vxs.frostsoulx.constants.DisableBlurKey
+import dev.vxs.frostsoulx.constants.SpatialDspEnabledKey
+import dev.vxs.frostsoulx.constants.SpatialDspModeKey
+import dev.vxs.frostsoulx.constants.SpatialDspPresetKey
+import dev.vxs.frostsoulx.constants.SpatialDspProfileKey
+import dev.vxs.frostsoulx.constants.SpatialDspHrtfScanCompletedKey
+import dev.vxs.frostsoulx.constants.SpatialDspIntensityKey
+import dev.vxs.frostsoulx.constants.SpatialDspWidthKey
+import dev.vxs.frostsoulx.constants.SpatialDspCrossfeedKey
+import dev.vxs.frostsoulx.constants.SpatialDspRoomKey
+import dev.vxs.frostsoulx.constants.SpatialDspHrtfMixKey
+import dev.vxs.frostsoulx.constants.SpatialDspHrtfAzimuthKey
+import dev.vxs.frostsoulx.constants.SpatialDspHrtfElevationKey
 import dev.vxs.frostsoulx.utils.rememberPreference
 import dev.vxs.frostsoulx.playback.NativeSpatialDspAudioProcessor
 import dev.vxs.frostsoulx.playback.NativeSpatialDspRuntime
@@ -679,16 +691,22 @@ internal fun FSPlayerControls(
     onSeekDraggingChanged: (Boolean) -> Unit = {},
 ) {
     var dspMenuOpen by remember { mutableStateOf(false) }
-    var dspEnabled by remember { mutableStateOf(false) }
-    var dspPreset by remember { mutableStateOf(NativeSpatialDspAudioProcessor.Preset.NATURAL) }
-    var dspIntensity by remember { mutableFloatStateOf(0.5f) }
-    var dspWidth by remember { mutableFloatStateOf(1f) }
-    var dspCrossfeed by remember { mutableFloatStateOf(0f) }
-    var dspReverb by remember { mutableFloatStateOf(0f) }
-    var hrtfEnabled by remember { mutableStateOf(false) }
-    var hrtfMix by remember { mutableFloatStateOf(0.85f) }
-    var hrtfAzimuth by remember { mutableFloatStateOf(0f) }
-    var hrtfElevation by remember { mutableFloatStateOf(0f) }
+    var scanFlowOpen by remember { mutableStateOf(false) }
+    var dspEnabled by rememberPreference(SpatialDspEnabledKey, false)
+    var dspMode by rememberPreference(SpatialDspModeKey, "preset")
+    var dspPresetName by rememberPreference(SpatialDspPresetKey, NativeSpatialDspAudioProcessor.Preset.NATURAL.name)
+    var spatialProfile by rememberPreference(SpatialDspProfileKey, "generic")
+    var hrtfScanCompleted by rememberPreference(SpatialDspHrtfScanCompletedKey, false)
+    var dspIntensity by rememberPreference(SpatialDspIntensityKey, 0.5f)
+    var dspWidth by rememberPreference(SpatialDspWidthKey, 1f)
+    var dspCrossfeed by rememberPreference(SpatialDspCrossfeedKey, 0f)
+    var dspReverb by rememberPreference(SpatialDspRoomKey, 0f)
+    var hrtfMix by rememberPreference(SpatialDspHrtfMixKey, 0.85f)
+    var hrtfAzimuth by rememberPreference(SpatialDspHrtfAzimuthKey, 0f)
+    var hrtfElevation by rememberPreference(SpatialDspHrtfElevationKey, 0f)
+    val dspPreset = NativeSpatialDspAudioProcessor.Preset.entries.firstOrNull { it.name == dspPresetName }
+        ?: NativeSpatialDspAudioProcessor.Preset.NATURAL
+    val hrtfEnabled = spatialProfile == "personalized"
 
     fun applyDspParameters() {
         NativeSpatialDspRuntime.setParameters(
@@ -703,6 +721,12 @@ internal fun FSPlayerControls(
                 hrtfElevation = hrtfElevation,
             ),
         )
+    }
+
+    LaunchedEffect(dspEnabled, dspPresetName, dspIntensity, dspWidth, dspCrossfeed, dspReverb, spatialProfile, hrtfMix, hrtfAzimuth, hrtfElevation) {
+        NativeSpatialDspRuntime.setPreset(dspPreset)
+        applyDspParameters()
+        NativeSpatialDspRuntime.setEnabled(dspEnabled)
     }
 
     Column(
@@ -747,51 +771,108 @@ internal fun FSPlayerControls(
                     NativeSpatialDspRuntime.setEnabled(it)
                     applyDspParameters()
                 },
+                mode = dspMode,
+                onModeChange = { dspMode = it },
+                onReset = {
+                    if (dspMode == "preset") {
+                        when (dspPreset) {
+                            NativeSpatialDspAudioProcessor.Preset.NATURAL -> { dspIntensity = 0.5f; dspWidth = 1.08f; dspCrossfeed = 0.06f; dspReverb = 0.04f }
+                            NativeSpatialDspAudioProcessor.Preset.LIVE -> { dspIntensity = 0.5f; dspWidth = 1.28f; dspCrossfeed = 0.12f; dspReverb = 0.12f }
+                            NativeSpatialDspAudioProcessor.Preset.WIDE -> { dspIntensity = 0.5f; dspWidth = 1.55f; dspCrossfeed = 0.08f; dspReverb = 0.16f }
+                            NativeSpatialDspAudioProcessor.Preset.IMMERSIVE -> { dspIntensity = 0.5f; dspWidth = 1.75f; dspCrossfeed = 0.16f; dspReverb = 0.22f }
+                            NativeSpatialDspAudioProcessor.Preset.CUSTOM -> Unit
+                        }
+                    } else {
+                        dspIntensity = 0.5f; dspWidth = 1f; dspCrossfeed = 0f; dspReverb = 0f; dspMode = "custom"
+                    }
+                    applyDspParameters()
+                },
+                spatialProfile = spatialProfile,
+                hrtfScanCompleted = hrtfScanCompleted,
+                onSpatialProfileChange = { spatialProfile = it; applyDspParameters() },
+                onOpenHrtfScan = { scanFlowOpen = true },
                 preset = dspPreset,
                 onPresetChange = {
-                    dspPreset = it
+                    dspPresetName = it.name
+                    dspMode = "preset"
                     NativeSpatialDspRuntime.setPreset(it)
+                    when (it) {
+                        NativeSpatialDspAudioProcessor.Preset.NATURAL -> {
+                            dspIntensity = 0.5f; dspWidth = 1.08f; dspCrossfeed = 0.06f; dspReverb = 0.04f
+                        }
+                        NativeSpatialDspAudioProcessor.Preset.LIVE -> {
+                            dspIntensity = 0.5f; dspWidth = 1.28f; dspCrossfeed = 0.12f; dspReverb = 0.12f
+                        }
+                        NativeSpatialDspAudioProcessor.Preset.WIDE -> {
+                            dspIntensity = 0.5f; dspWidth = 1.55f; dspCrossfeed = 0.08f; dspReverb = 0.16f
+                        }
+                        NativeSpatialDspAudioProcessor.Preset.IMMERSIVE -> {
+                            dspIntensity = 0.5f; dspWidth = 1.75f; dspCrossfeed = 0.16f; dspReverb = 0.22f
+                        }
+                        NativeSpatialDspAudioProcessor.Preset.CUSTOM -> Unit
+                    }
+                    applyDspParameters()
                 },
                 intensity = dspIntensity,
                 onIntensityChange = {
+                    dspMode = "custom"
                     dspIntensity = it
                     applyDspParameters()
                 },
                 width = dspWidth,
                 onWidthChange = {
+                    dspMode = "custom"
                     dspWidth = it
                     applyDspParameters()
                 },
                 crossfeed = dspCrossfeed,
                 onCrossfeedChange = {
+                    dspMode = "custom"
                     dspCrossfeed = it
                     applyDspParameters()
                 },
                 reverb = dspReverb,
                 onReverbChange = {
+                    dspMode = "custom"
                     dspReverb = it
                     applyDspParameters()
                 },
+                spatialProfile = spatialProfile,
+                hrtfScanCompleted = hrtfScanCompleted,
+                onSpatialProfileChange = { spatialProfile = it },
+                onOpenHrtfScan = { scanFlowOpen = true },
                 hrtfEnabled = hrtfEnabled,
-                onHrtfEnabledChange = {
-                    hrtfEnabled = it
-                    applyDspParameters()
-                },
+                onHrtfEnabledChange = { spatialProfile = if (it) "personalized" else "generic"; applyDspParameters() },
                 hrtfMix = hrtfMix,
                 onHrtfMixChange = {
+                    dspMode = "custom"
                     hrtfMix = it
                     applyDspParameters()
                 },
                 hrtfAzimuth = hrtfAzimuth,
                 onHrtfAzimuthChange = {
+                    dspMode = "custom"
                     hrtfAzimuth = it
                     applyDspParameters()
                 },
                 hrtfElevation = hrtfElevation,
                 onHrtfElevationChange = {
+                    dspMode = "custom"
                     hrtfElevation = it
                     applyDspParameters()
                 },
+            )
+        }
+        if (scanFlowOpen) {
+            FrostSoulHrtfScanFlow(
+                onDismiss = { scanFlowOpen = false },
+                onCompleted = {
+                    hrtfScanCompleted = true
+                    spatialProfile = "personalized"
+                    scanFlowOpen = false
+                    applyDspParameters()
+                },
+                immersive = immersive,
             )
         }
         FSSeekbar(
@@ -945,6 +1026,13 @@ private fun FrostSoulDspMenu(
     immersive: Boolean,
     enabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
+    mode: String,
+    onModeChange: (String) -> Unit,
+    onReset: () -> Unit,
+    spatialProfile: String,
+    hrtfScanCompleted: Boolean,
+    onSpatialProfileChange: (String) -> Unit,
+    onOpenHrtfScan: () -> Unit,
     preset: NativeSpatialDspAudioProcessor.Preset,
     onPresetChange: (NativeSpatialDspAudioProcessor.Preset) -> Unit,
     intensity: Float,
@@ -994,7 +1082,7 @@ private fun FrostSoulDspMenu(
                         Text("HRTF binaural stage", color = FrostSoulTheme.colors.onSurface, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                         Text("Directional headphone filtering inside the DSP engine", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                     }
-                    androidx.compose.material3.Switch(checked = hrtfEnabled, onCheckedChange = onHrtfEnabledChange)
+                    androidx.compose.material3.Switch(checked = hrtfEnabled, onCheckedChange = onHrtfEnabledChange, enabled = enabled)
                 }
                 Text(
                     text = if (hrtfEnabled) "HRTF is active" else "HRTF is off",
@@ -1002,37 +1090,118 @@ private fun FrostSoulDspMenu(
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 8.dp),
                 )
-                Text("DSP preset", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 22.dp))
-                Column(modifier = Modifier.padding(top = 8.dp)) {
-                    NativeSpatialDspAudioProcessor.Preset.entries.chunked(3).forEach { rowOptions ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            rowOptions.forEach { option ->
-                                androidx.compose.material3.FilterChip(
-                                    selected = option == preset,
-                                    onClick = { onPresetChange(option) },
-                                    label = { Text(option.name.lowercase().replaceFirstChar { it.uppercase() }, color = FrostSoulTheme.colors.onSurface, fontSize = 10.sp) },
-                                )
-                            }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 22.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    listOf("preset" to "Presets", "custom" to "Custom").forEach { (tab, label) ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f).clickable(enabled = enabled) { onModeChange(tab) }) {
+                            Text(label, color = if (mode == tab) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted, fontSize = 15.sp, fontWeight = if (mode == tab) FontWeight.SemiBold else FontWeight.Normal)
+                            Box(modifier = Modifier.padding(top = 8.dp).fillMaxWidth().height(2.dp).background(if (mode == tab) FrostSoulTheme.colors.onSurface else Color.Transparent))
                         }
                     }
                 }
-                FrostSoulDspSlider("HRTF mix", hrtfMix, onHrtfMixChange)
-                FrostSoulDspSlider("Head azimuth ${hrtfAzimuth.toInt()}°", ((hrtfAzimuth + 180f) / 360f), { onHrtfAzimuthChange(it * 360f - 180f) })
-                FrostSoulDspSlider("Head elevation ${hrtfElevation.toInt()}°", ((hrtfElevation + 90f) / 180f), { onHrtfElevationChange(it * 180f - 90f) })
+                if (mode == "preset") {
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            NativeSpatialDspAudioProcessor.Preset.NATURAL,
+                            NativeSpatialDspAudioProcessor.Preset.LIVE,
+                            NativeSpatialDspAudioProcessor.Preset.WIDE,
+                            NativeSpatialDspAudioProcessor.Preset.IMMERSIVE,
+                        ).forEach { option ->
+                            androidx.compose.material3.FilterChip(
+                                selected = option == preset,
+                                onClick = { if (enabled) onPresetChange(option) },
+                                label = { Text(option.name.lowercase().replaceFirstChar { it.uppercase() }, color = FrostSoulTheme.colors.onSurface, fontSize = 10.sp) },
+                            )
+                        }
+                    }
+                }
+                Text("Spatial profile", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 24.dp))
+                Column(modifier = Modifier.padding(top = 8.dp).alpha(if (enabled) 1f else 0.45f)) {
+                    androidx.compose.material3.FilterChip(
+                        selected = spatialProfile == "generic",
+                        onClick = { if (enabled) onSpatialProfileChange("generic") },
+                        label = { Text("Generic", color = FrostSoulTheme.colors.onSurface) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(14.dp)).background(FrostSoulTheme.colors.surfaceRaised).clickable(enabled = enabled) { if (hrtfScanCompleted) onSpatialProfileChange("personalized") else onOpenHrtfScan() }.padding(horizontal = 14.dp, vertical = 13.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Personalized (HRTF)", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp)
+                            Text(if (hrtfScanCompleted) "Profile available" else "Scan required", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+                        }
+                        Text(if (spatialProfile == "personalized") "✓" else "›", color = FrostSoulTheme.colors.onSurface, fontSize = 22.sp)
+                    }
+                }
+                FrostSoulDspSlider("HRTF mix", hrtfMix, onHrtfMixChange, enabled)
+                FrostSoulDspSlider("Head azimuth ${hrtfAzimuth.toInt()}°", ((hrtfAzimuth + 180f) / 360f), { onHrtfAzimuthChange(it * 360f - 180f) }, enabled)
+                FrostSoulDspSlider("Head elevation ${hrtfElevation.toInt()}°", ((hrtfElevation + 90f) / 180f), { onHrtfElevationChange(it * 180f - 90f) }, enabled)
                 Text("Sound-field controls", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 22.dp))
-                FrostSoulDspSlider("Intensity", intensity, onIntensityChange)
-                FrostSoulDspSlider("Width", width / 2f, { onWidthChange(it * 2f) })
-                FrostSoulDspSlider("Crossfeed", crossfeed, onCrossfeedChange)
-                FrostSoulDspSlider("Room", reverb, onReverbChange)
+                FrostSoulDspSlider("Intensity", intensity, onIntensityChange, enabled)
+                FrostSoulDspSlider("Width", width / 2f, { onWidthChange(it * 2f) }, enabled)
+                FrostSoulDspSlider("Crossfeed", crossfeed, onCrossfeedChange, enabled)
+                FrostSoulDspSlider("Room", reverb, onReverbChange, enabled)
+                Text("Adjusting a parameter switches the mode to Custom.", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 18.dp))
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                    Text("Reset", color = if (enabled) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp, modifier = Modifier.clickable(enabled = enabled, onClick = onReset))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun FrostSoulDspSlider(label: String, value: Float, onValueChange: (Float) -> Unit) {
-    Text(label, color = FrostSoulOnSurfaceMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-    androidx.compose.material3.Slider(value = value.coerceIn(0f, 1f), onValueChange = onValueChange)
+private fun FrostSoulHrtfScanFlow(
+    onDismiss: () -> Unit,
+    onCompleted: () -> Unit,
+    immersive: Boolean,
+) {
+    var step by remember { mutableStateOf(0) }
+    LaunchedEffect(step) {
+        if (step == 1) {
+            delay(1200)
+            step = 2
+        }
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        FSGlassCard(modifier = Modifier.fillMaxSize().padding(14.dp)) {
+            Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text("Personalized HRTF", color = FrostSoulTheme.colors.onSurface, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Create a headphone spatial profile", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                    Text(
+                        when (step) {
+                            0 -> "Use headphones in a quiet room. Keep the phone still while the profile is captured."
+                            1 -> "Capturing reference tones… keep your headphones connected."
+                            else -> "Processing the spatial response. Your profile is ready to save."
+                        },
+                        color = FrostSoulTheme.colors.onSurface,
+                        fontSize = 16.sp,
+                        modifier = Modifier.padding(top = 28.dp),
+                    )
+                }
+                Column {
+                    if (step == 0) {
+                        androidx.compose.material3.Button(onClick = { step = 1 }, modifier = Modifier.fillMaxWidth()) { Text("Start capture") }
+                    } else if (step == 1) {
+                        androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    } else {
+                        androidx.compose.material3.Button(onClick = onCompleted, modifier = Modifier.fillMaxWidth()) { Text("Save profile") }
+                    }
+                    Text("Cancel", color = if (immersive) Color.White else FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 16.dp).clickable(onClick = onDismiss))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FrostSoulDspSlider(label: String, value: Float, onValueChange: (Float) -> Unit, enabled: Boolean = true) {
+    Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = if (enabled) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
+        Text("${(value.coerceIn(0f, 1f) * 100f).toInt()}%", color = if (enabled) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
+    }
+    androidx.compose.material3.Slider(value = value.coerceIn(0f, 1f), onValueChange = onValueChange, enabled = enabled)
 }
 
 @Composable
