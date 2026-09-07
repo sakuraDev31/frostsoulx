@@ -289,7 +289,6 @@ void SoundFieldProcessor::process(float* interleavedStereo, std::size_t frames) 
     } else {
         hrtf_.setEnabled(false);
     }
-    }
 }
 
 }  // namespace frostsoulx::dsp
