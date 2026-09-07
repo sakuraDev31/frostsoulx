@@ -1892,10 +1892,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 bottomBar = {
                                     Box {
-                                        val areBottomBarsPaired =
-                                            shouldShowNavigationBar &&
-                                                !useRail &&
-                                                playerBottomSheetState.isCollapsed
+                                        // Keep the floating navigation geometry fixed. The mini-player
+                                        // must not reflow or expand the pill when it opens.
+                                        val areBottomBarsPaired = false
 
                                         if (useRail) return@Box
 

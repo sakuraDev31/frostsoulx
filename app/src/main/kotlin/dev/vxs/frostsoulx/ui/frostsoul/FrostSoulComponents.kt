@@ -608,13 +608,21 @@ fun FSNavigationBar(
                 .clip(shape)
                 .background(navSurface, shape)
                 .border(1.dp, selectedTint.copy(alpha = if (homeSelected) 0.22f else 0.14f), shape)
-                .padding(horizontal = 4.dp, vertical = 3.dp),
+                // Keep item backgrounds flush with the pill; horizontal inset here
+                // creates a visible rectangular gap at the selected item corners.
+                .padding(horizontal = 0.dp, vertical = 3.dp),
     ) {
         items.forEachIndexed { index, item ->
             if (onCenterClick != null && index == 2) {
                 FrostSoulCenterNavigationAction(onClick = onCenterClick)
             }
             val selected = selectedRoute == item.route
+            val itemShape =
+                when (index) {
+                    0 -> RoundedCornerShape(topStart = 25.dp, bottomStart = 25.dp)
+                    items.lastIndex -> RoundedCornerShape(topEnd = 25.dp, bottomEnd = 25.dp)
+                    else -> RoundedCornerShape(0.dp)
+                }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -622,7 +630,7 @@ fun FSNavigationBar(
                     Modifier
                         .weight(1f)
                         .fillMaxSize()
-                        .clip(FrostSoulTheme.shapes.medium)
+                        .clip(itemShape)
                         .background(Brush.verticalGradient(listOf(
                             if (selected) selectedTint.copy(alpha = 0.06f) else Color.Transparent,
                             if (selected) selectedTint.copy(alpha = 0.18f) else Color.Transparent,
