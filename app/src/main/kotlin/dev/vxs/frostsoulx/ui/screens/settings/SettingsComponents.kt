@@ -588,16 +588,16 @@ fun SettingsSegmentedItem(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 80.dp)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .heightIn(min = 72.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier =
                     Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(iconContentColor.copy(alpha = 0.10f)),
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(colors.onSurface.copy(alpha = 0.08f)),
                 contentAlignment = Alignment.Center,
             ) {
                 if (item.showUpdateIndicator) {
@@ -613,7 +613,7 @@ fun SettingsSegmentedItem(
                             painter = item.icon,
                             contentDescription = null,
                             tint = iconContentColor,
-                            modifier = Modifier.size(26.dp),
+                            modifier = Modifier.size(21.dp),
                         )
                     }
                 } else {
@@ -626,7 +626,7 @@ fun SettingsSegmentedItem(
                 }
             }
 
-            Spacer(modifier = Modifier.width(18.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             Column(
                 modifier = Modifier.weight(1f),
@@ -634,7 +634,7 @@ fun SettingsSegmentedItem(
             ) {
                 Text(
                     text = item.title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     color = colors.onSurface,
                     maxLines = 2,
@@ -644,8 +644,8 @@ fun SettingsSegmentedItem(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.onSurfaceMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceMuted.copy(alpha = 0.88f),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -681,8 +681,8 @@ private fun segmentedSettingsItemShape(
     index: Int,
     count: Int,
 ): Shape {
-    val large = 24.dp
-    val small = 8.dp
+    val large = SettingsDimensions.GroupCardCornerRadius
+    val small = 3.dp
     return when {
         count <= 1 -> {
             RoundedCornerShape(large)

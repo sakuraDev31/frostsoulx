@@ -267,7 +267,7 @@ internal fun FSAlbumArt(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .aspectRatio(1f)
-            .shadow(elevation = 24.dp, shape = cardShape, clip = false)
+            .shadow(elevation = 18.dp, shape = cardShape, clip = false)
             .clip(cardShape)
             .background(
                 // Deck plate: pushed much darker than before so the silver record and the
@@ -296,6 +296,18 @@ internal fun FSAlbumArt(
                 ),
             )
         }
+
+        // A soft platter well separates the record from the deck without adding another hard ring.
+        Box(
+            modifier = Modifier
+                .fillMaxSize(platterFraction + 0.035f)
+                .clip(CircleShape)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(Color(0xFF14151A), Color(0xFF050507), Color.Black.copy(alpha = 0.92f)),
+                    ),
+                ),
+        )
 
         // Spinning record: sized relative to the deck so it never overflows the card.
         Box(
@@ -446,6 +458,17 @@ internal fun FSAlbumArt(
                         .fillMaxSize()
                         .border(1.dp, Color.Black.copy(alpha = 0.22f), CircleShape),
                 )
+                Box(
+                    modifier = Modifier
+                        .size(PlayerLayoutTokens.TurntableSpindleSize)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(Color(0xFFF4F5F7), Color(0xFF888D95), Color(0xFF26282D)),
+                            ),
+                        )
+                        .border(0.5.dp, Color.White.copy(alpha = 0.38f), CircleShape),
+                )
             }
 
         }
@@ -503,9 +526,10 @@ internal fun FSAlbumArt(
         //   stopped → the arm swings OUTWARD to the right and parks on its rest post.
         Canvas(modifier = Modifier.fillMaxSize()) {
             val deck = size.minDimension
-            val pivot = Offset(size.width * 0.828f, size.height * 0.176f)
+            val pivot = Offset(size.width * 0.838f, size.height * 0.168f)
             // Playing-state stylus target: in the outer third of the groove band, lower-right.
-            val playingNeedle = Offset(size.width * 0.663f, size.height * 0.722f)
+            // The shorter reach keeps the arm proportional on narrow phones instead of stretched.
+            val playingNeedle = Offset(size.width * 0.668f, size.height * 0.692f)
             val armVector = playingNeedle - pivot
             val armSpan = hypot(armVector.x.toDouble(), armVector.y.toDouble()).toFloat()
             if (armSpan <= 0f) return@Canvas
@@ -646,17 +670,17 @@ internal fun FSAlbumArt(
                 drawPath(
                     path = tubeShadowPath,
                     color = Color.Black.copy(alpha = 0.45f),
-                    style = Stroke(width = 6.4.dp.toPx(), cap = StrokeCap.Round),
+                    style = Stroke(width = 5.8.dp.toPx(), cap = StrokeCap.Round),
                 )
                 drawPath(
                     path = tubePath,
                     brush = tubeBrush,
-                    style = Stroke(width = 5.2.dp.toPx(), cap = StrokeCap.Round),
+                    style = Stroke(width = 4.6.dp.toPx(), cap = StrokeCap.Round),
                 )
                 drawPath(
                     path = tubeHighlightPath,
                     color = Color.White.copy(alpha = 0.30f),
-                    style = Stroke(width = 1.1.dp.toPx(), cap = StrokeCap.Round),
+                    style = Stroke(width = 0.9.dp.toPx(), cap = StrokeCap.Round),
                 )
 
                 // Pivot bearing on top of the tube root.

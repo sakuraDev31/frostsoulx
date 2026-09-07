@@ -80,7 +80,7 @@ import dev.vxs.frostsoulx.utils.rememberEnumPreference
 import dev.vxs.frostsoulx.utils.rememberPreference
 import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
 
-internal val LibraryHeaderContentPadding = 8.dp
+internal val LibraryHeaderContentPadding = 12.dp
 internal val LibraryPullToRefreshIndicatorOffset = 0.dp
 
 @Composable
@@ -166,7 +166,7 @@ fun LibraryScreen(navController: NavController) {
                     onSelected = { page ->
                         coroutineScope.launch { pagerState.animateScrollToPage(page) }
                     },
-                    modifier = Modifier.padding(vertical = FrostSoulTheme.spacing.small),
+                    modifier = Modifier.padding(top = FrostSoulTheme.spacing.micro, bottom = FrostSoulTheme.spacing.small),
                 )
 
             Box(
@@ -285,7 +285,7 @@ private fun PlaylistTagFilterRow(
             modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
-        contentPadding = PaddingValues(horizontal = 24.dp),
+        contentPadding = PaddingValues(horizontal = FrostSoulTheme.spacing.page),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

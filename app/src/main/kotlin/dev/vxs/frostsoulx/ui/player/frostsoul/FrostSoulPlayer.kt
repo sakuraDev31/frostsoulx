@@ -15,6 +15,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -77,6 +78,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -172,6 +174,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.LinkedHashMap
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 internal fun FrostSoulPlayer(
@@ -265,12 +269,18 @@ internal fun FrostSoulPlayer(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(42.dp)
+                    .then(
+                        if (isImmersiveArtworkMainPage) {
+                            Modifier.windowInsetsPadding(WindowInsets.statusBars).height(48.dp)
+                        } else {
+                            Modifier.height(42.dp)
+                        },
+                    )
                     .zIndex(12f)
                     .padding(
                         start = PlayerLayoutTokens.MasterHorizontalPadding,
                         end = PlayerLayoutTokens.MasterHorizontalPadding,
-                        top = 4.dp,
+                        top = 6.dp,
                         bottom = 6.dp,
                     ),
             ) {
@@ -1554,7 +1564,7 @@ private fun FrostSoulAlbumPage(
             verticalArrangement = Arrangement.Top,
             modifier = Modifier.fillMaxSize().padding(bottom = 8.dp),
         ) {
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(8.dp))
             FSAlbumArt(
                 artworkUrl = uiState.track.artworkUrl,
                 title = uiState.track.title,
@@ -1566,7 +1576,7 @@ private fun FrostSoulAlbumPage(
             )
             Row(
                 horizontalArrangement = Arrangement.End,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, end = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp, end = 4.dp),
             ) {
                 FrostSoulFullPlayerLikeButton(
                     videoId = uiState.track.id,
@@ -1606,16 +1616,13 @@ private fun FrostSoulAlbumPage(
                 horizontalPadding = 0.dp,
                 modifier = Modifier
                     .align(Alignment.Start)
-                    .padding(bottom = 28.dp)
-                    .graphicsLayer { translationY = -12.dp.toPx() },
+                    .padding(bottom = 16.dp),
             )
             FSPlayerControls(
                     state = uiState,
                     actions = actions,
                     onOpenQueue = onOpenQueue,
-                    modifier = Modifier
-                        .padding(top = 2.dp)
-                        .graphicsLayer { translationY = -12.dp.toPx() },
+                    modifier = Modifier.padding(top = 2.dp),
                     immersive = true,
                     onSeekDraggingChanged = onSeekDraggingChanged,
             )
@@ -1776,15 +1783,17 @@ private fun FrostSoulArtworkBlurAlbumPage(
                 )
             }
 
+            Spacer(modifier = Modifier.weight(1f))
+
             FrostSoulMainLyricPreview(
                 uiState = uiState,
                 showExtraPreviewLines = true,
                 maxLinesPerLyric = 1,
-                modifier = Modifier.heightIn(min = 60.dp),
+                modifier = Modifier
+                    .heightIn(min = 60.dp)
+                    .padding(top = 10.dp, bottom = 8.dp),
             )
         }
-
-        Spacer(modifier = Modifier.weight(1f))
 
         FSPlayerControls(
             state = uiState,
@@ -2907,6 +2916,16 @@ private fun FrostSoulDynamicBackground(
         animationSpec = tween(GlowTransitionDurationMs),
         label = "vinyl-glow-secondary",
     )
+    val glowMotion = rememberInfiniteTransition(label = "vinyl-glow-motion")
+    val glowPhase by glowMotion.animateFloat(
+        initialValue = 0f,
+        targetValue = GlowTwoPi,
+        animationSpec = infiniteRepeatable(
+            animation = tween(GlowConstraints.CycleDurationMs, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "vinyl-glow-phase",
+    )
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (shouldRenderArtworkBlur) {
@@ -2954,7 +2973,14 @@ private fun FrostSoulDynamicBackground(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .height(bandHeight)
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .graphicsLayer {
+                        compositingStrategy = CompositingStrategy.Offscreen
+                        if (isAnimatedGlow) {
+                            scaleX = 1.16f
+                            translationX = sin(glowPhase) * 18.dp.toPx()
+                            alpha = 0.92f + cos(glowPhase) * GlowConstraints.BreathFraction
+                        }
+                    }
                     .drawWithCache {
                         // Four oversized, pre-softened fields overlap in the lower band. Their
                         // large radial falloffs provide a blur-like ambient pool without running

@@ -16,8 +16,8 @@ import androidx.compose.ui.unit.sp
 /** Stable geometry and typography tokens for the full-screen FrostSoul player. */
 internal object PlayerLayoutTokens {
     val MasterHorizontalPadding = 22.dp
-    val VinylDiscSize = 310.dp
-    val CenterAlbumArtSize = 190.dp
+    val VinylDiscSize = 300.dp
+    val CenterAlbumArtSize = 184.dp
 
     /** Turntable geometry — the platter is inset inside the deck card, QQ-style.
      *
@@ -25,19 +25,19 @@ internal object PlayerLayoutTokens {
      * label, and the track artwork is clipped *inside* that circular label (never a floating
      * square). Tonearm parts are sized against the deck card so the whole assembly scales with
      * whatever width the player page hands to FSAlbumArt. */
-    val TurntableCardSize = 330.dp
-    val TurntablePlatterSize = 268.dp
+    val TurntableCardSize = 312.dp
+    val TurntablePlatterSize = 258.dp
 
     /** White circular label pressed onto the record, and the circular artwork inside it. */
-    val TurntableLabelSize = 126.dp
-    val TurntableLabelArtSize = 114.dp
+    val TurntableLabelSize = 118.dp
+    val TurntableLabelArtSize = 106.dp
 
     /** Tonearm assembly: pivot housing, counterweight barrel, headshell and the parking post. */
-    val TurntableTonearmMountSize = 30.dp
-    val TurntableTonearmBaseSize = 46.dp
-    val TurntableCounterweightSize = 15.dp
-    val TurntableHeadshellSize = 11.dp
-    val TurntableRestPegSize = 15.dp
+    val TurntableTonearmMountSize = 28.dp
+    val TurntableTonearmBaseSize = 42.dp
+    val TurntableCounterweightSize = 14.dp
+    val TurntableHeadshellSize = 10.dp
+    val TurntableRestPegSize = 13.dp
     val TurntableSpindleSize = 9.dp
 
     /** Artwork-blur header height, kept full-bleed so it melts into the page. Base dimension is

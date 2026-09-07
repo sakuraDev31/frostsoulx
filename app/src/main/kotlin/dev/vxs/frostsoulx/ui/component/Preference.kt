@@ -107,12 +107,12 @@ enum class PreferenceGroupPosition { Single, First, Middle, Last }
 
 val LocalPreferenceGroupPosition = compositionLocalOf<PreferenceGroupPosition?> { null }
 
-private val PreferenceGroupLargeCorner = 24.dp
-private val PreferenceGroupSmallCorner = 8.dp
+private val PreferenceGroupLargeCorner = 18.dp
+private val PreferenceGroupSmallCorner = 3.dp
 private val PreferenceGroupHorizontalPadding = 16.dp
-private val PreferenceEntryMinHeight = 76.dp
+private val PreferenceEntryMinHeight = 72.dp
 private val PreferenceEntryHorizontalPadding = 16.dp
-private val PreferenceEntryVerticalPadding = 14.dp
+private val PreferenceEntryVerticalPadding = 12.dp
 
 @Composable
 private fun rememberPreferenceIconShape(): Shape = remember { RoundedCornerShape(14.dp) }
@@ -210,31 +210,31 @@ fun PreferenceEntry(
                     modifier =
                         Modifier
                             .align(Alignment.CenterVertically)
-                            .size(44.dp)
+                            .size(38.dp)
                             .clip(preferenceIconShape)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)),
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) {
                         icon()
                     }
                 }
-                Spacer(Modifier.width(16.dp))
+                Spacer(Modifier.width(14.dp))
             }
 
             Column(
                 verticalArrangement = Arrangement.Center,
                 modifier = Modifier.weight(1f),
             ) {
-                ProvideTextStyle(MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium)) {
+                ProvideTextStyle(MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)) {
                     title()
                 }
                 if (description != null) {
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
                     )
                 }
                 content?.invoke()
@@ -1110,7 +1110,7 @@ fun PreferenceGroup(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = PreferenceGroupHorizontalPadding),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             scope.items.forEachIndexed { index, itemContent ->
                 val position =
@@ -1146,10 +1146,11 @@ fun PreferenceGroupTitle(
     modifier: Modifier = Modifier,
 ) {
     Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = modifier.semantics { heading() }.padding(horizontal = 4.dp, vertical = 12.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        letterSpacing = MaterialTheme.typography.labelSmall.letterSpacing * 1.15f,
+        modifier = modifier.semantics { heading() }.padding(horizontal = 4.dp, vertical = 10.dp),
     )
 }
