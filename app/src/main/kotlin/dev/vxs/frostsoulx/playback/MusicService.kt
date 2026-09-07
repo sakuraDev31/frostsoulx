@@ -1061,8 +1061,7 @@ class MusicService :
 
     override fun onCreate() {
         super.onCreate()
-        // Diagnostic build: native DSP/HRTF is intentionally detached from playback.
-        // Keep the implementation in the tree for a clean rollback after clipping A/B testing.
+        // Playback uses the stable Media3 audio path.
         equalizerPlaybackController.attach(this)
         ensureScopesActive()
 
@@ -7935,8 +7934,7 @@ class MusicService :
                             150.toShort(),
                         ),
                         SonicAudioProcessor(),
-                        // Diagnostic build: intentionally no NativeSpatialDspAudioProcessor here.
-                        // This isolates decoder/Media3/AudioTrack/device behavior from the DSP library.
+                        // Keep the processor chain limited to the stable Media3 processors.
                     ),
                 ).build()
         }
@@ -8388,7 +8386,7 @@ class MusicService :
     }
 
     override fun onDestroy() {
-        // Native DSP/HRTF is detached in this diagnostic build.
+        // The playback core owns the stable Media3-only audio path.
         playbackCore?.close()
         playbackCore = null
         stopLyricsSync()
