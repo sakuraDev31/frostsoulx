@@ -848,8 +848,6 @@ internal fun FSPlayerControls(
                     dspReverb = it
                     applyDspParameters()
                 },
-                hrtfEnabled = hrtfEnabled,
-                onHrtfEnabledChange = { spatialProfile = if (it) "personalized" else "generic"; applyDspParameters() },
                 hrtfMix = hrtfMix,
                 onHrtfMixChange = {
                     dspMode = "custom"
