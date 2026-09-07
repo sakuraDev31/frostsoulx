@@ -7,7 +7,8 @@ import java.nio.ByteOrder
 
 /**
  * Media3 adapter for the standalone V1 stereo-surround processor.
- * Disabled mode is a true bypass: the native processor is not called and the PCM buffer is untouched.
+ * Disabled mode is a content-preserving bypass: the native processor is not called and the
+ * PCM bytes are copied unchanged into a dedicated output buffer owned by this processor.
  */
 class StereoSurroundAudioProcessor : AudioProcessor {
     private var inputAudioFormat = AudioProcessor.AudioFormat.NOT_SET
@@ -43,34 +44,40 @@ class StereoSurroundAudioProcessor : AudioProcessor {
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
 
-        // Strict bypass: create only the required Media3 buffer view. No PCM bytes are
-        // read, converted, written, or passed across JNI while the effect is off.
-        if (!enabled || intensity <= 0f) {
-            outputBuffer = inputBuffer.slice().order(inputBuffer.order())
-            inputBuffer.position(inputBuffer.limit())
-            return
-        }
+        val inputBytes = inputBuffer.remaining()
+        val readableBuffer = prepareOutputBuffer(inputBytes)
+        // Copy the original PCM bytes exactly before any optional processing. This avoids
+        // returning a view into Media3's input buffer, which the sink may recycle immediately.
+        readableBuffer.put(inputBuffer)
+        readableBuffer.flip()
 
-        val readableBuffer = inputBuffer.slice().order(inputBuffer.order())
+        // Strict bypass: the output bytes are identical to the input bytes. No conversion,
+        // JNI call, native state update, or sample transformation occurs while disabled.
+        if (!enabled || intensity <= 0f) return
+
         val bytesPerSample = if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) 4 else 2
         val frameBytes = bytesPerSample * 2
         val frames = readableBuffer.remaining() / frameBytes
-        if (nativeHandle != 0L && readableBuffer.isDirect && frames > 0) {
+        if (nativeHandle != 0L && frames > 0) {
             nativeProcess(nativeHandle, readableBuffer, frames, inputAudioFormat.encoding)
         }
-        outputBuffer = readableBuffer
-        inputBuffer.position(inputBuffer.limit())
+    }
+
+    private fun prepareOutputBuffer(byteCount: Int): ByteBuffer {
+        if (outputBuffer.capacity() < byteCount) {
+            outputBuffer = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
+        } else {
+            outputBuffer.clear()
+        }
+        outputBuffer.limit(byteCount)
+        return outputBuffer
     }
 
     override fun queueEndOfStream() {
         inputEnded = true
     }
 
-    override fun getOutput(): ByteBuffer {
-        val output = outputBuffer
-        outputBuffer = EMPTY_BUFFER
-        return output
-    }
+    override fun getOutput(): ByteBuffer = outputBuffer
 
     override fun isEnded(): Boolean = inputEnded && outputBuffer.remaining() == 0
 
