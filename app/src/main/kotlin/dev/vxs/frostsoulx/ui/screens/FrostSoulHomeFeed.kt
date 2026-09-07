@@ -383,8 +383,9 @@ internal fun FrostSoulHomeFeed(
                 )
             }
         }
+    }
 
-        if (showGreetingNameDialog) {
+    if (showGreetingNameDialog) {
         Dialog(
             onDismissRequest = {
                 UserGreetingPreferences.skip(context)
