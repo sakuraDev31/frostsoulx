@@ -1394,6 +1394,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
         },
     )
 }
+}
 
 private enum class PitchMode {
     Semitones,
