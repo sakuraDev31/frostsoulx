@@ -14,6 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ProvidableCompositionLocal
@@ -199,6 +200,64 @@ object FrostSoulTheme {
 }
 
 @Composable
+fun FrostSoulCalmTheme(content: @Composable () -> Unit) {
+    val parent = LocalFrostSoulTokens.current
+    val calmTokens = remember(parent) {
+        parent.copy(
+            colors = parent.colors.copy(
+                background = Color.Black,
+                surface = Color(0xFF0B0B0B),
+                surfaceRaised = Color(0xFF151515),
+                surfaceGlass = Color(0xFF111111),
+                surfaceGlassStrong = Color(0xFF181818),
+                accent = Color.White,
+                accentBright = Color.White,
+                accentMuted = Color(0xFFB6B6B6),
+                onBackground = Color(0xFFF5F5F5),
+                onSurface = Color(0xFFF5F5F5),
+                onSurfaceMuted = Color(0xFF9A9A9A),
+                outline = Color(0xFF292929),
+                scrim = Color.Black.copy(alpha = 0.78f),
+            ),
+            effects = parent.effects.copy(
+                activeGlowAlpha = 0f,
+                ambientGlowAlpha = 0f,
+            ),
+            typography = parent.typography.copy(
+                display = parent.typography.display.copy(fontFamily = FontFamily.Default),
+                title = parent.typography.title.copy(fontFamily = FontFamily.Default),
+                sectionTitle = parent.typography.sectionTitle.copy(fontFamily = FontFamily.Default),
+            ),
+        )
+    }
+    val inheritedScheme = MaterialTheme.colorScheme
+    val calmScheme = remember(inheritedScheme, calmTokens) {
+        inheritedScheme.copy(
+            background = Color.Black,
+            onBackground = calmTokens.colors.onBackground,
+            surface = calmTokens.colors.surface,
+            onSurface = calmTokens.colors.onSurface,
+            surfaceVariant = calmTokens.colors.surfaceRaised,
+            onSurfaceVariant = calmTokens.colors.onSurfaceMuted,
+            surfaceContainerLowest = Color.Black,
+            surfaceContainerLow = calmTokens.colors.surface,
+            surfaceContainer = calmTokens.colors.surfaceRaised,
+            surfaceContainerHigh = calmTokens.colors.surfaceRaised,
+            surfaceContainerHighest = Color(0xFF1D1D1D),
+            primary = Color.White,
+            onPrimary = Color.Black,
+            primaryContainer = calmTokens.colors.surfaceRaised,
+            onPrimaryContainer = calmTokens.colors.onSurface,
+            outline = calmTokens.colors.outline,
+            outlineVariant = calmTokens.colors.outline,
+        )
+    }
+    androidx.compose.runtime.CompositionLocalProvider(LocalFrostSoulTokens provides calmTokens) {
+        MaterialTheme(colorScheme = calmScheme, content = content)
+    }
+}
+
+@Composable
 fun FrostSoulDesignSystem(
     darkTheme: Boolean = true,
     content: @Composable () -> Unit,
@@ -273,6 +332,10 @@ fun Modifier.frostSoulGlow(
             if (alpha > 0f && color.alpha > 0f) drawCircle(brush = glow, radius = radius)
         }
     }
+
+@Composable
+fun Modifier.frostSoulCalmScreenBackground(): Modifier =
+    background(FrostSoulTheme.colors.background)
 
 @Composable
 fun Modifier.frostSoulScreenBackground(ambient: Color = Color(0xFF334760)): Modifier {

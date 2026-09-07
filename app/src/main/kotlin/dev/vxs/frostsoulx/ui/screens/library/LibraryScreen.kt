@@ -73,8 +73,9 @@ import dev.vxs.frostsoulx.constants.ShowTagsInLibraryKey
 import dev.vxs.frostsoulx.db.entities.TagEntity
 import dev.vxs.frostsoulx.ui.component.TagsManagementDialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
-import dev.vxs.frostsoulx.ui.frostsoul.frostSoulScreenBackground
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
 import dev.vxs.frostsoulx.utils.rememberEnumPreference
 import dev.vxs.frostsoulx.utils.rememberPreference
 import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
@@ -125,12 +126,13 @@ fun LibraryScreen(navController: NavController) {
             initialPage = libraryFilters.indexOf(defaultFilter).takeIf { it >= 0 } ?: 0,
         ) { libraryFilters.size }
 
-    Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .frostSoulScreenBackground(ambient = Color(0xFF20372E)),
-    ) {
+    FrostSoulCalmTheme {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .frostSoulCalmScreenBackground(),
+        ) {
 
         Column(
             modifier =

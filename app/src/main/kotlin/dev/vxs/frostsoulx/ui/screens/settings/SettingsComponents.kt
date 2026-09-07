@@ -13,8 +13,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
-import dev.vxs.frostsoulx.ui.frostsoul.frostSoulScreenBackground
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -74,31 +74,15 @@ import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.ui.premium.PremiumCard
 import dev.vxs.frostsoulx.ui.premium.PremiumIconAvatar
 
-/** A route-scoped theme: settings share the glass palette without changing player/dialog logic. */
+/** A calm route-scoped theme shared by Settings and every sub-settings page. */
 @Composable
 fun FrostSoulSettingsPage(content: @Composable () -> Unit) {
-    val colors = FrostSoulTheme.colors
-    val inheritedScheme = MaterialTheme.colorScheme
-    val scheme = remember(inheritedScheme, colors) {
-        inheritedScheme.copy(
-            background = Color.Transparent,
-            onBackground = colors.onBackground,
-            surface = colors.surface,
-            onSurface = colors.onSurface,
-            onSurfaceVariant = colors.onSurfaceMuted,
-            surfaceContainer = colors.surfaceRaised,
-            surfaceContainerLow = colors.surface,
-            surfaceContainerHigh = colors.surfaceRaised,
-            surfaceContainerHighest = colors.surfaceRaised,
-            primary = colors.accent,
-            onPrimary = colors.surface,
-            primaryContainer = colors.surfaceRaised,
-            onPrimaryContainer = colors.onSurface,
-            outlineVariant = colors.outline,
-        )
-    }
-    MaterialTheme(colorScheme = scheme) {
-        Box(Modifier.fillMaxSize().frostSoulScreenBackground()) {
+    FrostSoulCalmTheme {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(FrostSoulTheme.colors.background),
+        ) {
             content()
         }
     }

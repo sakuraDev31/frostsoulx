@@ -92,6 +92,7 @@ import dev.vxs.frostsoulx.ui.frostsoul.FSGlassCard
 import dev.vxs.frostsoulx.ui.frostsoul.FSTextField
 import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
 import dev.vxs.frostsoulx.ui.frostsoul.FSSectionHeader
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.premium.PremiumCard
 import dev.vxs.frostsoulx.ui.premium.PremiumHeroBanner
@@ -99,7 +100,7 @@ import dev.vxs.frostsoulx.ui.premium.PremiumListRow
 import dev.vxs.frostsoulx.ui.premium.PremiumSearchBar
 import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
 import dev.vxs.frostsoulx.ui.premium.PremiumTopBar
-import dev.vxs.frostsoulx.ui.frostsoul.frostSoulScreenBackground
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
 import dev.vxs.frostsoulx.ui.player.frostsoul.asFrostSoulTime
 import dev.vxs.frostsoulx.utils.UserGreetingPreferences
 import coil3.compose.AsyncImage
@@ -138,16 +139,17 @@ internal fun FrostSoulHomeFeed(
     }
     val pageSections = uiState.homePage?.sections.orEmpty()
 
-    LazyColumn(
-        state = lazyListState,
+    FrostSoulCalmTheme {
+        LazyColumn(
+            state = lazyListState,
         contentPadding =
             PaddingValues(
                 top = 8.dp,
                 bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 24.dp,
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = modifier.fillMaxSize().frostSoulScreenBackground(),
-    ) {
+            modifier = modifier.fillMaxSize().frostSoulCalmScreenBackground(),
+        ) {
         item(key = "frostsoul_home_header") {
             FrostSoulHomeHeader(
                 userName = greetingName,
@@ -381,9 +383,8 @@ internal fun FrostSoulHomeFeed(
                 )
             }
         }
-    }
 
-    if (showGreetingNameDialog) {
+        if (showGreetingNameDialog) {
         Dialog(
             onDismissRequest = {
                 UserGreetingPreferences.skip(context)
@@ -438,6 +439,7 @@ internal fun FrostSoulHomeFeed(
                         emphasized = true,
                     )
                 }
+            }
             }
         }
     }

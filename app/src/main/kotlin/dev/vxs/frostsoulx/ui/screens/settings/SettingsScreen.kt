@@ -39,7 +39,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import dev.vxs.frostsoulx.ui.frostsoul.frostSoulScreenBackground
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -110,11 +109,8 @@ fun SettingsScreen(
     val settingsGroups = buildSettingsGroups(navController, isAndroid12OrLater, hasUpdate, context)
 
     Scaffold(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .frostSoulScreenBackground(),
-        containerColor = Color.Transparent,
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Black,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             PremiumTopBar(
