@@ -926,3 +926,18 @@ enum class UpdateChannel {
             }
     }
 }
+
+
+// Spatial DSP + HRTF settings used by the surround player page.
+val SpatialDspEnabledKey = booleanPreferencesKey("spatialDspEnabled")
+val SpatialDspModeKey = stringPreferencesKey("spatialDspMode")
+val SpatialDspPresetKey = stringPreferencesKey("spatialDspPreset")
+val SpatialDspProfileKey = stringPreferencesKey("spatialDspProfile")
+val SpatialDspHrtfScanCompletedKey = booleanPreferencesKey("spatialDspHrtfScanCompleted")
+val SpatialDspIntensityKey = floatPreferencesKey("spatialDspIntensity")
+val SpatialDspWidthKey = floatPreferencesKey("spatialDspWidth")
+val SpatialDspCrossfeedKey = floatPreferencesKey("spatialDspCrossfeed")
+val SpatialDspRoomKey = floatPreferencesKey("spatialDspRoom")
+val SpatialDspHrtfMixKey = floatPreferencesKey("spatialDspHrtfMix")
+val SpatialDspHrtfAzimuthKey = floatPreferencesKey("spatialDspHrtfAzimuth")
+val SpatialDspHrtfElevationKey = floatPreferencesKey("spatialDspHrtfElevation")
