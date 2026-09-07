@@ -1393,6 +1393,8 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
         },
     )
 }
+}
+}
 
 private enum class PitchMode {
     Semitones,
@@ -1462,6 +1464,4 @@ private fun multiplierToSlider(multiplier: Float): Float {
             else -> 0f
         }
     return (0.5f + y / 2f).coerceIn(0f, 1f)
-}
-}
 }
