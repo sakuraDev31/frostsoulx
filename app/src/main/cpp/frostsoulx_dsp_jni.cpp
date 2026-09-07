@@ -33,6 +33,11 @@ struct NativeDsp final {
     std::atomic<float> hrtfMix{0.85f};
     std::atomic<float> hrtfAzimuth{0.0f};
     std::atomic<float> hrtfElevation{0.0f};
+    // Audio-thread-owned diagnostics; emitted at most once per ~1 second of PCM.
+    std::uint64_t diagnosticsFrames = 0;
+    std::uint64_t diagnosticsLimiterChunks = 0;
+    float diagnosticsInputPeak = 0.0f;
+    float diagnosticsOutputPeak = 0.0f;
 
     void applyParameters() noexcept {
         using namespace frostsoulx::dsp;
@@ -145,18 +150,42 @@ Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeProcess(
     int offset = 0;
     while (remaining > 0) {
         const int chunk = std::min(remaining, static_cast<int>(kChunkFrames));
-        for (int i = 0; i < chunk * 2; ++i) work[static_cast<std::size_t>(i)] = static_cast<float>(samples[offset * 2 + i]) / 32768.0f;
+        float inputPeak = 0.0f;
+        for (int i = 0; i < chunk * 2; ++i) {
+            work[static_cast<std::size_t>(i)] = static_cast<float>(samples[offset * 2 + i]) / 32768.0f;
+            inputPeak = std::max(inputPeak, std::fabs(work[static_cast<std::size_t>(i)]));
+        }
         dsp->processor.process(work.data(), static_cast<std::size_t>(chunk));
         constexpr float kSafePeak = 0.8912509f; // -1 dBFS headroom before the platform output stage.
         float peak = 0.0f;
         for (int i = 0; i < chunk * 2; ++i) {
             peak = std::max(peak, std::fabs(work[static_cast<std::size_t>(i)]));
         }
-        if (peak > kSafePeak) {
+        const bool limiterApplied = peak > kSafePeak;
+        if (limiterApplied) {
             const float scale = kSafePeak / peak;
             for (int i = 0; i < chunk * 2; ++i) {
                 work[static_cast<std::size_t>(i)] *= scale;
             }
+            ++dsp->diagnosticsLimiterChunks;
+        }
+        dsp->diagnosticsFrames += static_cast<std::uint64_t>(chunk);
+        dsp->diagnosticsInputPeak = std::max(dsp->diagnosticsInputPeak, inputPeak);
+        dsp->diagnosticsOutputPeak = std::max(dsp->diagnosticsOutputPeak, peak);
+        if (dsp->diagnosticsFrames >= 48000U) {
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                kTag,
+                "audio_diag frames=%llu dsp=%d input_peak=%.5f output_peak=%.5f limiter_chunks=%llu",
+                static_cast<unsigned long long>(dsp->diagnosticsFrames),
+                dsp->enabled.load(std::memory_order_relaxed) ? 1 : 0,
+                dsp->diagnosticsInputPeak,
+                dsp->diagnosticsOutputPeak,
+                static_cast<unsigned long long>(dsp->diagnosticsLimiterChunks));
+            dsp->diagnosticsFrames = 0;
+            dsp->diagnosticsLimiterChunks = 0;
+            dsp->diagnosticsInputPeak = 0.0f;
+            dsp->diagnosticsOutputPeak = 0.0f;
         }
         for (int i = 0; i < chunk * 2; ++i) {
             const float clamped = std::clamp(work[static_cast<std::size_t>(i)], -1.0f, 0.999969f);
