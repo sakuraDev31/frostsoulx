@@ -190,6 +190,26 @@ fun DebugSettings(navController: NavController) {
                         onClick = { navController.navigate("settings/logcat") },
                     )
                 }
+
+                item {
+                    PreferenceEntry(
+                        title = { Text("Developer DSP tuning") },
+                        description = "Temporary V1 Stereo Surround parameters and diagnostics",
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.graphic_eq),
+                                contentDescription = null,
+                            )
+                        },
+                        trailingContent = {
+                            Icon(
+                                painter = painterResource(R.drawable.navigate_next),
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = { navController.navigate("settings/misc/surround_tuning") },
+                    )
+                }
             }
 
             AnimatedVisibility(
