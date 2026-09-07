@@ -9,6 +9,7 @@
 #include <memory>
 #include <new>
 
+#include "frostsoulx/StereoSurroundProcessor.h"
 #include "frostsoulx/dsp/sound_field.h"
 
 namespace {
@@ -17,7 +18,9 @@ constexpr std::size_t kChunkFrames = 1024;
 
 struct NativeDsp final {
     frostsoulx::dsp::SoundFieldProcessor processor;
+    frostsoulx::StereoSurroundProcessor surroundProcessor;
     std::atomic<bool> enabled{false};
+    std::atomic<bool> surroundEnabled{false};
     std::atomic<int> preset{0};
     std::atomic<float> intensity{0.5f};
     std::atomic<float> width{1.0f};
@@ -59,6 +62,8 @@ struct NativeDsp final {
         parameters.hrtfAzimuth = hrtfAzimuth.load(std::memory_order_relaxed);
         parameters.hrtfElevation = hrtfElevation.load(std::memory_order_relaxed);
         processor.setParameters(parameters);
+        surroundProcessor.setEnabled(surroundEnabled.load(std::memory_order_relaxed));
+        surroundProcessor.setIntensity(parameters.intensity);
     }
 };
 
@@ -79,7 +84,9 @@ Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeCreate(
 ) {
     auto* dsp = new (std::nothrow) NativeDsp();
     if (dsp == nullptr) return 0;
-    dsp->processor.prepare({static_cast<double>(std::max(sampleRate, 8000)), 2});
+    const auto outputSampleRate = static_cast<double>(std::max(sampleRate, 8000));
+    dsp->processor.prepare({outputSampleRate, 2});
+    dsp->surroundProcessor.prepare(outputSampleRate, 2, static_cast<int>(kChunkFrames));
     dsp->applyParameters();
     __android_log_print(ANDROID_LOG_INFO, kTag, "DSP created at %d Hz", sampleRate);
     return reinterpret_cast<jlong>(dsp);
@@ -96,6 +103,7 @@ Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeReset(
     JNIEnv*, jobject, jlong handle) {
     if (auto* dsp = fromHandle(handle)) {
         dsp->processor.reset();
+        dsp->surroundProcessor.reset();
         dsp->applyParameters();
     }
 }
@@ -103,7 +111,18 @@ Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeReset(
 extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeSetEnabled(
     JNIEnv*, jobject, jlong handle, jboolean value) {
-    if (auto* dsp = fromHandle(handle)) dsp->enabled.store(value == JNI_TRUE, std::memory_order_relaxed);
+    if (auto* dsp = fromHandle(handle)) {
+        dsp->enabled.store(value == JNI_TRUE, std::memory_order_relaxed);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeSetSurroundEnabled(
+    JNIEnv*, jobject, jlong handle, jboolean value) {
+    if (auto* dsp = fromHandle(handle)) {
+        dsp->surroundEnabled.store(value == JNI_TRUE, std::memory_order_relaxed);
+        dsp->surroundProcessor.setEnabled(value == JNI_TRUE);
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -156,6 +175,11 @@ Java_dev_vxs_frostsoulx_playback_NativeSpatialDspAudioProcessor_nativeProcess(
             inputPeak = std::max(inputPeak, std::fabs(work[static_cast<std::size_t>(i)]));
         }
         dsp->processor.process(work.data(), static_cast<std::size_t>(chunk));
+        // Test integration point: the new processor consumes the existing
+        // interleaved float stereo buffer and writes back into the same path.
+        // It is disabled by default and uses the existing DSP enable/intensity
+        // controls; no separate audio pipeline is created.
+        dsp->surroundProcessor.process(work.data(), chunk);
 
         // SoundFieldProcessor already applies a per-sample soft-knee limiter
         // (clampSample()) when DSP is enabled, and leaves samples untouched

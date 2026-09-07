@@ -17,6 +17,7 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
     private var inputEnded = false
     private var nativeHandle = 0L
     @Volatile private var enabled = false
+    @Volatile private var surroundEnabled = false
     private var preset = Preset.NATURAL
     private var parameters = Parameters()
 
@@ -33,6 +34,7 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
             setPreset(preset)
             setParameters(parameters)
             setEnabled(enabled)
+            setSurroundEnabled(surroundEnabled)
         }
         outputAudioFormat = inputAudioFormat
         return outputAudioFormat
@@ -89,6 +91,11 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
     fun setEnabled(value: Boolean) {
         enabled = value
         if (nativeHandle != 0L) nativeSetEnabled(nativeHandle, value)
+    }
+
+    fun setSurroundEnabled(value: Boolean) {
+        surroundEnabled = value
+        if (nativeHandle != 0L) nativeSetSurroundEnabled(nativeHandle, value)
     }
 
     fun setPreset(value: Preset) {
@@ -159,6 +166,7 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeRelease(handle: Long)
         @JvmStatic private external fun nativeReset(handle: Long)
         @JvmStatic private external fun nativeSetEnabled(handle: Long, enabled: Boolean)
+        @JvmStatic private external fun nativeSetSurroundEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetPreset(handle: Long, preset: Int)
         @JvmStatic private external fun nativeSetParameters(
             handle: Long,
@@ -186,6 +194,7 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
 object NativeSpatialDspRuntime {
     @Volatile private var processor: NativeSpatialDspAudioProcessor? = null
     @Volatile private var enabled = false
+    @Volatile private var surroundEnabled = false
     @Volatile private var preset = NativeSpatialDspAudioProcessor.Preset.NATURAL
     @Volatile private var parameters = NativeSpatialDspAudioProcessor.Parameters()
 
@@ -194,6 +203,7 @@ object NativeSpatialDspRuntime {
         value.setPreset(preset)
         value.setParameters(parameters)
         value.setEnabled(enabled)
+        value.setSurroundEnabled(surroundEnabled)
     }
 
     fun detach(value: NativeSpatialDspAudioProcessor) {
@@ -203,6 +213,11 @@ object NativeSpatialDspRuntime {
     fun setEnabled(value: Boolean) {
         enabled = value
         processor?.setEnabled(value)
+    }
+
+    fun setSurroundEnabled(value: Boolean) {
+        surroundEnabled = value
+        processor?.setSurroundEnabled(value)
     }
 
     fun setPreset(value: NativeSpatialDspAudioProcessor.Preset) {
