@@ -1472,9 +1472,9 @@ private fun FrostSoulMainLyricPreview(
             uiState.lyricPreviewLines.drop(1).take(1).forEach { line ->
                 Text(
                     text = line,
-                    color = FrostSoulOnSurfaceMuted.copy(alpha = 0.82f),
-                    fontSize = 18.sp,
-                    lineHeight = 24.sp,
+                    color = FrostSoulOnSurfaceMuted.copy(alpha = 0.58f),
+                    fontSize = 14.sp,
+                    lineHeight = 19.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

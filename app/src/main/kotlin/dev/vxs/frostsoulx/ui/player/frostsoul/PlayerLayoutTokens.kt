@@ -43,9 +43,9 @@ internal object PlayerLayoutTokens {
     /** Artwork-blur header height, kept full-bleed so it melts into the page. Base dimension is
      * 342.dp; +42.dp accounts for the collapse-row height now reclaimed by the pager on the
      * Immersive main player page (see FrostSoulPlayer's isImmersiveArtworkMainPage), so the
-     * artwork's top edge extends to the true screen top. The extra 54.dp gives the immersive
-     * cover more vertical presence while the bottom content remains anchored below it. */
-    val ArtworkBlurHeaderHeight = 342.dp + 54.dp
+     * artwork's top edge extends to the true screen top while its bottom edge — and everything
+     * below it — stays exactly where it was before. */
+    val ArtworkBlurHeaderHeight = 342.dp + 42.dp
 
     /** Lyrics typography and rhythm, tuned against the QQ Music lyric sheet. */
     val LyricsActiveFontSize = 21.sp
