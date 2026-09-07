@@ -669,7 +669,6 @@ class MusicService :
     lateinit var downloadCache: Cache
 
     lateinit var localPlayer: ExoPlayer
-    private val spatialDspAudioProcessor = NativeSpatialDspAudioProcessor()
     lateinit var player: Player
         private set
     private lateinit var castPlaybackRepository: CastPlaybackRepository
@@ -1062,7 +1061,8 @@ class MusicService :
 
     override fun onCreate() {
         super.onCreate()
-        NativeSpatialDspRuntime.attach(spatialDspAudioProcessor)
+        // Diagnostic build: native DSP/HRTF is intentionally detached from playback.
+        // Keep the implementation in the tree for a clean rollback after clipping A/B testing.
         equalizerPlaybackController.attach(this)
         ensureScopesActive()
 
@@ -7935,7 +7935,8 @@ class MusicService :
                             150.toShort(),
                         ),
                         SonicAudioProcessor(),
-                        spatialDspAudioProcessor,
+                        // Diagnostic build: intentionally no NativeSpatialDspAudioProcessor here.
+                        // This isolates decoder/Media3/AudioTrack/device behavior from the DSP library.
                     ),
                 ).build()
         }
@@ -8387,8 +8388,7 @@ class MusicService :
     }
 
     override fun onDestroy() {
-        NativeSpatialDspRuntime.detach(spatialDspAudioProcessor)
-        spatialDspAudioProcessor.reset()
+        // Native DSP/HRTF is detached in this diagnostic build.
         playbackCore?.close()
         playbackCore = null
         stopLyricsSync()
