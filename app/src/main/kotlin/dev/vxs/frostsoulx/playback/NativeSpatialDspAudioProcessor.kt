@@ -50,7 +50,10 @@ class NativeSpatialDspAudioProcessor : AudioProcessor {
         // the wrong PCM region, producing corruption, clicks, or apparent clipping.
         val readableBuffer = inputBuffer.slice().order(inputBuffer.order())
         val frameBytes = readableBuffer.remaining()
-        if (enabled && nativeHandle != 0L && readableBuffer.isDirect && frameBytes >= BYTES_PER_FRAME) {
+        if (nativeHandle != 0L && readableBuffer.isDirect && frameBytes >= BYTES_PER_FRAME) {
+            // Native process() returns immediately when DSP is disabled, but the JNI
+            // boundary still applies the final PCM peak guard. This keeps the common
+            // output path safe in both DSP ON and DSP OFF states without sound shaping.
             nativeProcess(nativeHandle, readableBuffer, frameBytes / BYTES_PER_FRAME)
         }
         outputBuffer = readableBuffer
