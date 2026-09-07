@@ -447,8 +447,11 @@ fun PlayerMenu(
                                     },
                                     text = "Surround ${if (surroundEnabled) "On" else "Off"}",
                                     onClick = {
+                                        playerBottomSheetState.collapseSoft()
                                         onDismiss()
-                                        navController.navigate("settings/surround")
+                                        navController.navigate("settings/surround") {
+                                            launchSingleTop = true
+                                        }
                                     },
                                     backgroundColor = if (surroundEnabled) MaterialTheme.colorScheme.primaryContainer else Color.Unspecified,
                                     contentColor = if (surroundEnabled) MaterialTheme.colorScheme.onPrimaryContainer else Color.Unspecified,
