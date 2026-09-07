@@ -42,6 +42,15 @@ class StereoSurroundAudioProcessor : AudioProcessor {
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
+
+        // Strict bypass: create only the required Media3 buffer view. No PCM bytes are
+        // read, converted, written, or passed across JNI while the effect is off.
+        if (!enabled || intensity <= 0f) {
+            outputBuffer = inputBuffer.slice().order(inputBuffer.order())
+            inputBuffer.position(inputBuffer.limit())
+            return
+        }
+
         val readableBuffer = inputBuffer.slice().order(inputBuffer.order())
         val bytesPerSample = if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) 4 else 2
         val frameBytes = bytesPerSample * 2
