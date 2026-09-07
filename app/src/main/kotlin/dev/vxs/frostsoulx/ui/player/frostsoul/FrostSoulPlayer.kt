@@ -1783,17 +1783,15 @@ private fun FrostSoulArtworkBlurAlbumPage(
                 )
             }
 
-            Spacer(modifier = Modifier.weight(1f))
-
             FrostSoulMainLyricPreview(
                 uiState = uiState,
                 showExtraPreviewLines = true,
                 maxLinesPerLyric = 1,
-                modifier = Modifier
-                    .heightIn(min = 60.dp)
-                    .padding(top = 10.dp, bottom = 8.dp),
+                modifier = Modifier.heightIn(min = 60.dp),
             )
         }
+
+        Spacer(modifier = Modifier.weight(1f))
 
         FSPlayerControls(
             state = uiState,
