@@ -60,6 +60,7 @@ fun PremiumTopBar(
     title: String,
     modifier: Modifier = Modifier,
     eyebrow: String? = null,
+    eyebrowFontWeight: FontWeight = FontWeight.Medium,
     subtitle: String? = null,
     navigationIcon: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
@@ -76,7 +77,7 @@ fun PremiumTopBar(
             eyebrow?.let {
                 Text(
                     text = it.uppercase(),
-                    style = FrostSoulTheme.typography.overline,
+                    style = FrostSoulTheme.typography.overline.copy(fontWeight = eyebrowFontWeight),
                     color = FrostSoulTheme.colors.accentMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

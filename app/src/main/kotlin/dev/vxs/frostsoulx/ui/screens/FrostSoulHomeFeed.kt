@@ -154,6 +154,8 @@ internal fun FrostSoulHomeFeed(
             FrostSoulHomeHeader(
                 userName = greetingName,
                 onOpenRecent = { navController.navigate("history") },
+                onOpenNewReleases = { navController.navigate("new_release") },
+                onOpenSettings = { navController.navigate("settings") },
             )
         }
 
@@ -776,6 +778,8 @@ private fun FrostSoulQuickSearch(onOpenSearch: () -> Unit) {
 private fun FrostSoulHomeHeader(
     userName: String?,
     onOpenRecent: () -> Unit,
+    onOpenNewReleases: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
     val greeting = when (hour) {
@@ -790,16 +794,42 @@ private fun FrostSoulHomeHeader(
         title = greeting,
         subtitle = userName?.takeIf { it.isNotBlank() },
         eyebrow = "FROSTSOULX",
+        eyebrowFontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
         trailingContent = {
-            FSIconButton(
-                onClick = onOpenRecent,
-                contentDescription = "Recently played",
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                FSIcon(
-                    painter = painterResource(R.drawable.history),
+                FSIconButton(
+                    onClick = onOpenRecent,
                     contentDescription = "Recently played",
-                    tint = FrostSoulTheme.colors.onSurface,
-                )
+                ) {
+                    FSIcon(
+                        painter = painterResource(R.drawable.history),
+                        contentDescription = "Recently played",
+                        tint = FrostSoulTheme.colors.onSurface,
+                    )
+                }
+                FSIconButton(
+                    onClick = onOpenNewReleases,
+                    contentDescription = "New releases",
+                ) {
+                    FSIcon(
+                        painter = painterResource(R.drawable.new_release),
+                        contentDescription = "New releases",
+                        tint = FrostSoulTheme.colors.onSurface,
+                    )
+                }
+                FSIconButton(
+                    onClick = onOpenSettings,
+                    contentDescription = "Settings",
+                ) {
+                    FSIcon(
+                        painter = painterResource(R.drawable.settings),
+                        contentDescription = "Settings",
+                        tint = FrostSoulTheme.colors.onSurface,
+                    )
+                }
             }
         },
     )
