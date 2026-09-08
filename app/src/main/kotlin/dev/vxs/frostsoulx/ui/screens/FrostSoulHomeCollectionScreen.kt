@@ -109,10 +109,7 @@ fun FrostSoulHomeCollectionScreen(
     }
 }
 
-private fun itemTitle(item: LocalItem): String = when (item) {
-    is Playlist -> item.name
-    else -> item.title
-}
+private fun itemTitle(item: LocalItem): String = item.title
 
 private fun itemArtwork(item: LocalItem): String? = when (item) {
     is Playlist -> item.thumbnails.firstOrNull()

@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -301,6 +302,7 @@ internal fun FSLyrics(
             languageMenuExpanded = languageMenuExpanded,
             onLanguageMenuExpandedChange = { languageMenuExpanded = it },
             languages = translatorLanguages,
+            selectedLanguageCode = selectedLanguageCode,
             currentOffsetMs = document?.offsetMs ?: 0L,
             onOpenOffset = {
                 draftOffsetMs = document?.offsetMs ?: 0L
@@ -385,6 +387,7 @@ private fun BoxScope.FrostSoulLyricsBottomControls(
     languageMenuExpanded: Boolean,
     onLanguageMenuExpandedChange: (Boolean) -> Unit,
     languages: List<TranslatorLang>,
+    selectedLanguageCode: String,
     currentOffsetMs: Long,
     onOpenOffset: () -> Unit,
 ) {
