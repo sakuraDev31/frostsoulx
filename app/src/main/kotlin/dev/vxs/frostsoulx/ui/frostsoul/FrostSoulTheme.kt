@@ -317,7 +317,11 @@ fun Modifier.frostSoulGlass(
     return background(fill, shape).border(0.5.dp, edge, shape)
 }
 
-/** Deterministic, cached micro-grain layered over the existing FrostSoul glass surface. */
+/**
+ * A real, deterministic glass surface: translucent body, broad reflected light bands,
+ * soft atmospheric color pooling, and controlled micro-grain. All geometry is cached and
+ * static; this intentionally avoids a per-frame noise animation or an expensive bitmap.
+ */
 @Composable
 fun Modifier.frostSoulTexturedGlass(
     grain: Float,
@@ -327,20 +331,54 @@ fun Modifier.frostSoulTexturedGlass(
     val colors = FrostSoulTheme.colors
     val safeGrain = grain.coerceIn(0f, 1f)
     return frostSoulGlass(shape = shape, tint = tint).drawWithCache {
-        val speckCount = (safeGrain * 42f).roundToInt()
-        val alpha = (safeGrain * 0.075f).coerceIn(0f, 0.075f)
+        val speckCount = (12f + safeGrain * 96f).roundToInt()
+        val speckAlpha = (0.018f + safeGrain * 0.075f).coerceIn(0.018f, 0.095f)
+        val baseWash = if (tint.luminance() < 0.5f) {
+            Color.White.copy(alpha = 0.105f)
+        } else {
+            Color.Black.copy(alpha = 0.065f)
+        }
+        val glassWash = Brush.linearGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.075f),
+                tint.copy(alpha = 0.035f),
+                Color.Black.copy(alpha = 0.105f),
+            ),
+            start = Offset(0f, 0f),
+            end = Offset(size.width, size.height),
+        )
+        val topReflection = Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.11f),
+                Color.White.copy(alpha = 0.025f),
+                Color.Transparent,
+            ),
+            startY = 0f,
+            endY = size.height * 0.46f,
+        )
+        val atmosphere = Brush.radialGradient(
+            colors = listOf(
+                colors.accentBright.copy(alpha = 0.065f),
+                tint.copy(alpha = 0.022f),
+                Color.Transparent,
+            ),
+            center = Offset(size.width * 0.72f, size.height * 0.82f),
+            radius = size.maxDimension * 0.92f,
+        )
         onDrawWithContent {
+            drawRect(color = baseWash)
+            drawRect(brush = glassWash)
+            drawRect(brush = atmosphere)
+            drawRect(brush = topReflection)
             drawContent()
-            if (speckCount > 0 && alpha > 0f) {
-                repeat(speckCount) { index ->
-                    val x = ((index * 83 + 17) % 101) / 100f * size.width
-                    val y = ((index * 47 + 29) % 97) / 96f * size.height
-                    drawCircle(
-                        color = colors.onSurface.copy(alpha = if (index % 2 == 0) alpha else alpha * 0.55f),
-                        radius = 0.45f + ((index % 3) * 0.22f),
-                        center = Offset(x, y),
-                    )
-                }
+            repeat(speckCount) { index ->
+                val x = ((index * 83 + 17) % 101) / 100f * size.width
+                val y = ((index * 47 + 29) % 97) / 96f * size.height
+                drawCircle(
+                    color = colors.onSurface.copy(alpha = if (index % 3 == 0) speckAlpha else speckAlpha * 0.45f),
+                    radius = 0.55f + ((index % 4) * 0.28f),
+                    center = Offset(x, y),
+                )
             }
         }
     }
@@ -364,8 +402,31 @@ fun Modifier.frostSoulGlow(
     }
 
 @Composable
-fun Modifier.frostSoulCalmScreenBackground(): Modifier =
-    background(FrostSoulTheme.colors.background)
+fun Modifier.frostSoulCalmScreenBackground(): Modifier {
+    val base = FrostSoulTheme.colors.background
+    val colors = FrostSoulTheme.colors
+    return background(base).drawWithCache {
+        val atmosphere = Brush.radialGradient(
+            colors = listOf(
+                colors.surfaceGlassStrong.copy(alpha = 0.38f),
+                colors.accent.copy(alpha = 0.06f),
+                Color.Transparent,
+            ),
+            center = Offset(size.width * 0.74f, size.height * 0.14f),
+            radius = size.maxDimension * 0.92f,
+        )
+        val lowerWash = Brush.verticalGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.22f)),
+            startY = size.height * 0.40f,
+            endY = size.height,
+        )
+        onDrawWithContent {
+            drawRect(brush = atmosphere)
+            drawRect(brush = lowerWash)
+            drawContent()
+        }
+    }
+}
 
 @Composable
 fun Modifier.frostSoulScreenBackground(ambient: Color = Color(0xFF334760)): Modifier {

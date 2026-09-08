@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -61,9 +62,12 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.constants.AppBarHeight
+import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
 import dev.vxs.frostsoulx.ui.utils.YtimgResizePolicy
 import dev.vxs.frostsoulx.ui.utils.fadingEdge
 import dev.vxs.frostsoulx.ui.utils.resize
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulTexturedGlass
+import dev.vxs.frostsoulx.utils.rememberPreference
 
 @Composable
 public fun MediaDetailHero(
@@ -85,6 +89,7 @@ public fun MediaDetailHero(
     alignActionsToStart: Boolean = false,
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
     val menuState = LocalMenuState.current
     val heroContentColor =
         if (surfaceColor.luminance() > 0.5f) {
@@ -151,6 +156,12 @@ public fun MediaDetailHero(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .widthIn(max = MediaDetailContentMaxWidth)
+                    .clip(RoundedCornerShape(32.dp))
+                    .frostSoulTexturedGlass(
+                        grain = glassGrain,
+                        shape = RoundedCornerShape(32.dp),
+                        tint = surfaceColor,
+                    )
                     .padding(
                         start = MediaDetailHorizontalPadding,
                         top = systemBarsTopPadding + AppBarHeight + 96.dp,

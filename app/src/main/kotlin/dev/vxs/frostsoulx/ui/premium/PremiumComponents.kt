@@ -47,13 +47,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
 import dev.vxs.frostsoulx.ui.frostsoul.FSChip
 import androidx.compose.foundation.selection.selectableGroup
 import dev.vxs.frostsoulx.ui.frostsoul.FSAlbumArt
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlow
-import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulTexturedGlass
 import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
+import dev.vxs.frostsoulx.utils.rememberPreference
 
 @Composable
 fun PremiumTopBar(
@@ -169,10 +171,11 @@ fun PremiumCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
     Column(
         modifier = modifier
             .clip(shape)
-            .frostSoulGlass(shape)
+            .frostSoulTexturedGlass(grain = glassGrain, shape = shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(contentPadding),
         content = content,
