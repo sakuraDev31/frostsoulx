@@ -64,7 +64,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -247,7 +246,9 @@ internal fun FrostSoulPlayer(
                 Modifier
                     .fillMaxSize()
                     .windowInsetsPadding(
-                        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                        WindowInsets.systemBars.only(
+                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
+                        ),
                     ),
         ) {
             // Overlay a real, tappable header instead of constraining its children to 0dp.
@@ -256,11 +257,7 @@ internal fun FrostSoulPlayer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(
-                        if (isImmersiveArtworkMainPage) {
-                            Modifier.windowInsetsPadding(WindowInsets.statusBars).height(48.dp)
-                        } else {
-                            Modifier.height(42.dp)
-                        },
+                        Modifier.height(if (isImmersiveArtworkMainPage) 48.dp else 42.dp),
                     )
                     .zIndex(12f)
                     .padding(
