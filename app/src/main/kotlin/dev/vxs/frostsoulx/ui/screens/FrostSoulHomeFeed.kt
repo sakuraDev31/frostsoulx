@@ -192,7 +192,7 @@ internal fun FrostSoulHomeFeed(
                 FSSectionHeader(
                     title = "Continue Listening",
                     actionLabel = "See All",
-                    onAction = { navController.navigate(Screens.Library.route) },
+                    onAction = { navController.navigate("home_collection/continue") },
                 )
             }
             item(key = "frostsoul_continue_listening") {
@@ -207,7 +207,7 @@ internal fun FrostSoulHomeFeed(
 
         if (uiState.quickPicks.isNotEmpty()) {
             item(key = "frostsoul_for_this_moment_header") {
-                FSSectionHeader(title = "For This Moment", actionLabel = "See All", onAction = { openSearchPortal() })
+                FSSectionHeader(title = "For This Moment", actionLabel = "See All", onAction = { navController.navigate("home_collection/moment") })
             }
             item(key = "frostsoul_for_this_moment") {
                 FrostSoulSongShelf(

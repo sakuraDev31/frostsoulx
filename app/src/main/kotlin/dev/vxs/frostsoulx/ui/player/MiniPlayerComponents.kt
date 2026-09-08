@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
@@ -76,11 +77,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.constants.EnableHapticFeedbackKey
+import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
 import dev.vxs.frostsoulx.constants.MiniPlayerHeight
 import dev.vxs.frostsoulx.constants.NavigationBarHorizontalPadding
 import dev.vxs.frostsoulx.extensions.togglePlayPause
 import dev.vxs.frostsoulx.models.MediaMetadata
 import dev.vxs.frostsoulx.playback.PlayerConnection
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulTexturedGlass
 import dev.vxs.frostsoulx.together.isConnectedToSession
 import dev.vxs.frostsoulx.utils.rememberLowDataModeActive
 import dev.vxs.frostsoulx.utils.rememberPreference
@@ -125,6 +128,7 @@ fun SwipeableMiniPlayerBox(
 
     val view = LocalView.current
     val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
 
     val animationSpec =
         spring<Float>(
@@ -174,7 +178,13 @@ fun SwipeableMiniPlayerBox(
                                 },
                             )
                         } else {
-                            baseModifier.padding(horizontal = NavigationBarHorizontalPadding)
+                            baseModifier
+                                .frostSoulTexturedGlass(
+                                    grain = glassGrain,
+                                    shape = RoundedCornerShape(24.dp),
+                                    tint = MaterialTheme.colorScheme.surface,
+                                )
+                                .padding(horizontal = NavigationBarHorizontalPadding)
                         }
                     }.let { baseModifier ->
                         if (swipeThumbnail) {

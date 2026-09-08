@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 
 @Immutable
 data class FrostSoulColors(
@@ -314,6 +315,35 @@ fun Modifier.frostSoulGlass(
         )
     }
     return background(fill, shape).border(0.5.dp, edge, shape)
+}
+
+/** Deterministic, cached micro-grain layered over the existing FrostSoul glass surface. */
+@Composable
+fun Modifier.frostSoulTexturedGlass(
+    grain: Float,
+    shape: Shape = FrostSoulTheme.shapes.large,
+    tint: Color = FrostSoulTheme.colors.accent,
+): Modifier {
+    val colors = FrostSoulTheme.colors
+    val safeGrain = grain.coerceIn(0f, 1f)
+    return frostSoulGlass(shape = shape, tint = tint).drawWithCache {
+        val speckCount = (safeGrain * 42f).roundToInt()
+        val alpha = (safeGrain * 0.075f).coerceIn(0f, 0.075f)
+        onDrawWithContent {
+            drawContent()
+            if (speckCount > 0 && alpha > 0f) {
+                repeat(speckCount) { index ->
+                    val x = ((index * 83 + 17) % 101) / 100f * size.width
+                    val y = ((index * 47 + 29) % 97) / 96f * size.height
+                    drawCircle(
+                        color = colors.onSurface.copy(alpha = if (index % 2 == 0) alpha else alpha * 0.55f),
+                        radius = 0.45f + ((index % 3) * 0.22f),
+                        center = Offset(x, y),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

@@ -116,6 +116,15 @@ fun NavGraphBuilder.navigationBuilder(
     composable("history") {
         HistoryScreen(navController)
     }
+    composable(
+        route = "home_collection/{kind}",
+        arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+    ) { backStackEntry ->
+        FrostSoulHomeCollectionScreen(
+            navController = navController,
+            kind = backStackEntry.arguments?.getString("kind").orEmpty(),
+        )
+    }
     composable("stats") {
         StatsScreen(navController)
     }

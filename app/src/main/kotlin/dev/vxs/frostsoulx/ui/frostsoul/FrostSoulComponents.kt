@@ -82,6 +82,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
+import dev.vxs.frostsoulx.utils.rememberPreference
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -178,11 +180,12 @@ fun FSGlassCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
     Column(
         modifier =
             modifier
                 .clip(shape)
-                .frostSoulGlass(shape)
+                .frostSoulTexturedGlass(grain = glassGrain, shape = shape)
                 .then(
                     if (onClick != null) {
                         Modifier.clickable(
@@ -595,6 +598,7 @@ fun FSNavigationBar(
     onMoreClick: (() -> Unit)? = null,
 ) {
     val colors = FrostSoulTheme.colors
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
     val homeSelected = selectedRoute == "home"
     val selectedTint = if (pureBlack) Color.White else Color.Black
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
@@ -617,7 +621,11 @@ fun FSNavigationBar(
             modifier
                 .height(56.dp)
                 .clip(shape)
-                .background(navSurface, shape)
+                .frostSoulTexturedGlass(
+                    grain = glassGrain,
+                    shape = shape,
+                    tint = navSurface,
+                )
                 .border(1.dp, selectedTint.copy(alpha = if (homeSelected) 0.22f else 0.14f), shape)
                 // Keep item backgrounds flush with the pill; horizontal inset here
                 // creates a visible rectangular gap at the selected item corners.

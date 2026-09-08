@@ -82,6 +82,7 @@ public fun MediaDetailHero(
     metadata: String? = null,
     description: String? = null,
     additionalPrimaryActions: (@Composable RowScope.(Color) -> Unit)? = null,
+    alignActionsToStart: Boolean = false,
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
     val menuState = LocalMenuState.current
@@ -238,8 +239,9 @@ public fun MediaDetailHero(
                             }
                         }
                     },
-                additionalActions = additionalPrimaryActions,
                 modifier = Modifier.padding(top = 12.dp),
+                additionalActions = additionalPrimaryActions,
+                alignActionsToStart = alignActionsToStart,
             )
         }
     }
@@ -295,6 +297,7 @@ public fun MediaDetailPrimaryActions(
     onToggleAdd: (() -> Unit)?,
     modifier: Modifier = Modifier,
     additionalActions: (@Composable RowScope.(Color) -> Unit)? = null,
+    alignActionsToStart: Boolean = false,
 ) {
     val isLightTheme = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val playContainerColor = if (isLightTheme) Color.White else Color.Black
@@ -337,6 +340,7 @@ public fun MediaDetailPrimaryActions(
             MediaDetailBalancedActionLayout(
                 actionRowScope = this,
                 modifier = Modifier.widthIn(min = actionViewportWidth),
+                alignActionsToStart = alignActionsToStart,
             ) {
                 onShuffle?.let { shuffle ->
                     FilledTonalIconButton(
@@ -417,6 +421,7 @@ public fun MediaDetailPrimaryActions(
 private fun MediaDetailBalancedActionLayout(
     actionRowScope: RowScope,
     modifier: Modifier = Modifier,
+    alignActionsToStart: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
     Layout(
@@ -486,6 +491,17 @@ private fun MediaDetailBalancedActionLayout(
             }
 
         layout(layoutWidth, layoutHeight) {
+            if (alignActionsToStart) {
+                var actionX = 0
+                placeables.forEach { action ->
+                    action.placeRelative(
+                        x = actionX,
+                        y = (layoutHeight - action.height) / 2,
+                    )
+                    actionX += action.width + actionSpacing
+                }
+                return@layout
+            }
             if (playAction == null) {
                 var actionX = (layoutWidth - centeredContentWidth) / 2
                 placeables.forEach { action ->
