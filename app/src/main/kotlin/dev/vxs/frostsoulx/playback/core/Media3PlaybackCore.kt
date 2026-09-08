@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
  * MediaSession, downloads, or casting; those remain platform adapters around the same Player.
  */
 class Media3PlaybackCore(
-    private val player: Player,
+    @Volatile private var player: Player,
     private val scope: CoroutineScope,
     private val snapshotRepository: PlaybackSnapshotRepository,
     private val queueTitleProvider: () -> String? = { null },
@@ -157,6 +157,15 @@ class Media3PlaybackCore(
         val parameters = player.playbackParameters
         player.playbackParameters = PlaybackParameters(parameters.speed, pitch.coerceIn(MinPitch, MaxPitch))
         publishStateAndSnapshot()
+    }
+
+    fun replacePlayer(newPlayer: Player) {
+        val previous = player
+        if (previous === newPlayer) return
+        previous.removeListener(this)
+        player = newPlayer
+        newPlayer.addListener(this)
+        _state.value = projectState()
     }
 
     fun close() {

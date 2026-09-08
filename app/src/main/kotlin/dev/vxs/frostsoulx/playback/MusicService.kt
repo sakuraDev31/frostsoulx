@@ -1092,27 +1092,7 @@ class MusicService :
             reportException(e)
         }
 
-        localPlayer =
-            ExoPlayer
-                .Builder(this)
-                .setMediaSourceFactory(createMediaSourceFactory())
-                .setRenderersFactory(createRenderersFactory())
-                .setLoadControl(createPrimaryLoadControl())
-                .setTrackSelector(DefaultTrackSelector(this, SafeTrackSelectionFactory()))
-                .setHandleAudioBecomingNoisy(true)
-                .setWakeMode(C.WAKE_MODE_NETWORK)
-                .setAudioAttributes(
-                    playbackAudioAttributes(),
-                    false,
-                ).setSeekBackIncrementMs(5000)
-                .setSeekForwardIncrementMs(5000)
-                .setDeviceVolumeControlEnabled(true)
-                .build()
-                .apply {
-                    addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
-                    addListener(audioEffectPlayerListener)
-                    setOffloadEnabled(false)
-                }
+        localPlayer = buildLocalPlayer()
         castPlaybackRepository = CastPlaybackRepositoryLocator.get(this)
         player =
             castPlaybackRepository
@@ -1131,6 +1111,7 @@ class MusicService :
             snapshotRepository = playbackSnapshotRepository,
             queueTitleProvider = { queueTitle },
         )
+        StereoSurroundRuntime.setTransitionHandler(::requestSurroundRebuild)
         playerInitialized.value = true
         database
             .blockedArtistIds()
@@ -1153,7 +1134,7 @@ class MusicService :
         widgetUpdater =
             MusicServiceWidgetUpdater(
                 service = this,
-                player = player,
+                playerProvider = { player },
                 scope = scope,
                 loadWidgetInsights = loadWidgetInsightsUseCase,
             )
@@ -7918,6 +7899,92 @@ class MusicService :
                 CROSSFADE_MIN_BUFFER_BEFORE_START_MS.toInt(),
             ).setPrioritizeTimeOverSizeThresholds(true)
             .build()
+
+    private val surroundRebuildMutex = Mutex()
+
+    private fun buildLocalPlayer(): ExoPlayer =
+        ExoPlayer
+            .Builder(this)
+            .setMediaSourceFactory(createMediaSourceFactory())
+            .setRenderersFactory(createRenderersFactory())
+            .setLoadControl(createPrimaryLoadControl())
+            .setTrackSelector(DefaultTrackSelector(this, SafeTrackSelectionFactory()))
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setAudioAttributes(playbackAudioAttributes(), false)
+            .setSeekBackIncrementMs(5000)
+            .setSeekForwardIncrementMs(5000)
+            .setDeviceVolumeControlEnabled(true)
+            .build()
+            .apply {
+                addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
+                addListener(audioEffectPlayerListener)
+                setOffloadEnabled(false)
+            }
+
+    private fun requestSurroundRebuild(enabled: Boolean) {
+        if (!::player.isInitialized || !::localPlayer.isInitialized) return
+        scope.launch(Dispatchers.Main.immediate) {
+            surroundRebuildMutex.withLock {
+                rebuildSurroundPlayer(enabled)
+            }
+        }
+    }
+
+    private fun rebuildSurroundPlayer(enabled: Boolean) {
+        if (!::player.isInitialized || !::localPlayer.isInitialized) return
+        if (StereoSurroundRuntime.isEnabled() != enabled) return
+
+        val oldPlayer = player
+        val oldLocalPlayer = localPlayer
+        val mediaItems = List(oldPlayer.mediaItemCount) { index -> oldPlayer.getMediaItemAt(index) }
+        val currentIndex = oldPlayer.currentMediaItemIndex
+        val positionMs = oldPlayer.currentPosition.coerceAtLeast(0L)
+        val playWhenReady = oldPlayer.playWhenReady
+        val repeatMode = oldPlayer.repeatMode
+        val shuffleEnabled = oldPlayer.shuffleModeEnabled
+        val playbackParameters = oldPlayer.playbackParameters
+        val volume = oldLocalPlayer.volume
+
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        releaseSecondaryCrossfadePlayer()
+        StereoSurroundRuntime.detachProcessor()
+
+        val replacementLocal = buildLocalPlayer()
+        replacementLocal.repeatMode = repeatMode
+        replacementLocal.shuffleModeEnabled = shuffleEnabled
+        replacementLocal.playbackParameters = playbackParameters
+        replacementLocal.volume = volume
+        if (mediaItems.isNotEmpty()) {
+            replacementLocal.setMediaItems(
+                mediaItems,
+                currentIndex.coerceIn(0, mediaItems.lastIndex),
+                positionMs,
+            )
+        }
+        replacementLocal.prepare()
+        replacementLocal.playWhenReady = playWhenReady
+
+        oldPlayer.removeListener(this)
+        oldPlayer.removeListener(sleepTimer)
+        oldLocalPlayer.removeListener(audioEffectPlayerListener)
+
+        localPlayer = replacementLocal
+        player =
+            castPlaybackRepository
+                .createPlayer(
+                    context = this,
+                    localPlayer = replacementLocal,
+                    mediaItemResolver = CastMediaItemResolver(::resolveMediaItemForCast),
+                ).apply {
+                    addListener(this@MusicService)
+                    addListener(sleepTimer)
+                }
+        playbackCore?.replacePlayer(player)
+        mediaSession.setPlayer(player)
+        oldPlayer.release()
+        if (oldPlayer !== oldLocalPlayer) oldLocalPlayer.release()
+    }
 
     private fun createRenderersFactory() =
         object : DefaultRenderersFactory(this) {

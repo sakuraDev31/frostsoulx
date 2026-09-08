@@ -232,6 +232,7 @@ class StereoSurroundAudioProcessor : AudioProcessor {
 /** Service-owned runtime state shared by the quick toggle, production controls, and dev panel. */
 object StereoSurroundRuntime {
     @Volatile private var processor: StereoSurroundAudioProcessor? = null
+    @Volatile private var transitionHandler: ((Boolean) -> Unit)? = null
     @Volatile private var enabled = false
     @Volatile private var intensity = 0.5f
     @Volatile private var tuning = StereoSurroundTuningParameters.DEFAULT
@@ -243,13 +244,24 @@ object StereoSurroundRuntime {
         value.setEnabled(enabled)
     }
 
-    fun detach() {
+    fun detachProcessor() {
         processor = null
     }
 
+    fun detach() {
+        processor = null
+        transitionHandler = null
+    }
+
+    fun setTransitionHandler(handler: ((Boolean) -> Unit)?) {
+        transitionHandler = handler
+    }
+
     fun setEnabled(value: Boolean) {
+        val changed = enabled != value
         enabled = value
         processor?.setEnabled(value)
+        if (changed) transitionHandler?.invoke(value)
     }
 
     fun setIntensity(value: Float) {
