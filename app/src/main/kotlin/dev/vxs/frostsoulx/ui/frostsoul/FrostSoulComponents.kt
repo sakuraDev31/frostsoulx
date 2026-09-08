@@ -592,13 +592,24 @@ fun FSNavigationBar(
     onItemClick: (FSNavigationItem, Boolean) -> Unit,
     modifier: Modifier = Modifier,
     pairedWithMiniPlayer: Boolean = false,
-    onCenterClick: (() -> Unit)? = null,
+    onMoreClick: (() -> Unit)? = null,
 ) {
     val colors = FrostSoulTheme.colors
     val homeSelected = selectedRoute == "home"
     val selectedTint = if (pureBlack) Color.White else Color.Black
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
     val navSurface = if (pureBlack) Color.Black else Color.White
+    val displayItems =
+        if (onMoreClick != null) {
+            items + FSNavigationItem(
+                route = "__frostsoul_more__",
+                label = "More",
+                activeIcon = R.drawable.more_vert,
+                inactiveIcon = R.drawable.more_vert,
+            )
+        } else {
+            items
+        }
     Row(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -612,15 +623,13 @@ fun FSNavigationBar(
                 // creates a visible rectangular gap at the selected item corners.
                 .padding(horizontal = 0.dp, vertical = 3.dp),
     ) {
-        items.forEachIndexed { index, item ->
-            if (onCenterClick != null && index == 2) {
-                FrostSoulCenterNavigationAction(onClick = onCenterClick)
-            }
-            val selected = selectedRoute == item.route
+        displayItems.forEachIndexed { index, item ->
+            val isMore = item.route == "__frostsoul_more__"
+            val selected = !isMore && selectedRoute == item.route
             val itemShape =
                 when (index) {
                     0 -> RoundedCornerShape(topStart = 25.dp, bottomStart = 25.dp)
-                    items.lastIndex -> RoundedCornerShape(topEnd = 25.dp, bottomEnd = 25.dp)
+                    displayItems.lastIndex -> RoundedCornerShape(topEnd = 25.dp, bottomEnd = 25.dp)
                     else -> RoundedCornerShape(0.dp)
                 }
             Column(
@@ -638,7 +647,9 @@ fun FSNavigationBar(
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
-                        ) { onItemClick(item, selected) }
+                        ) {
+                            if (isMore) onMoreClick?.invoke() else onItemClick(item, selected)
+                        }
                         .padding(vertical = 4.dp),
             ) {
                 FSIcon(
@@ -656,30 +667,6 @@ fun FSNavigationBar(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun FrostSoulCenterNavigationAction(onClick: () -> Unit) {
-    val colors = FrostSoulTheme.colors
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .width(58.dp)
-            .fillMaxSize()
-            .padding(horizontal = 4.dp)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.94f), CircleShape)
-            .border(BorderStroke(1.dp, colors.onSurface.copy(alpha = 0.32f)), CircleShape)
-            .frostSoulGlow(Color.Transparent, alpha = 0f)
-            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onClick),
-    ) {
-        FSIcon(
-            painter = painterResource(R.drawable.about_appbar),
-            contentDescription = "Open FrostSoul player",
-            tint = Color.White,
-            modifier = Modifier.size(34.dp),
-        )
     }
 }
 

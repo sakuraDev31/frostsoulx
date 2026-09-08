@@ -81,7 +81,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
@@ -1902,12 +1901,6 @@ class MainActivity : ComponentActivity() {
                                                             bottom = bottomInset + floatingBarsBottomPadding,
                                                         )
                                                         .height(navVisibleHeight),
-                                                reservedEndSpace =
-                                                    if (showHomeOverflowFab) {
-                                                        HomeOverflowFabSize + 16.dp
-                                                    } else {
-                                                        0.dp
-                                                    },
                                                 isSelected = { screen ->
                                                     navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
                                                         true
@@ -1918,6 +1911,9 @@ class MainActivity : ComponentActivity() {
                                                 onSearchItemDoubleClick = {
                                                     searchSource = SearchSource.ONLINE
                                                     openSearch()
+                                                },
+                                                onMoreClick = {
+                                                    if (showHomeOverflowFab) homeOverflowMenuExpanded = !homeOverflowMenuExpanded
                                                 },
                                             )
                                         }
@@ -1936,7 +1932,7 @@ class MainActivity : ComponentActivity() {
 
                                         val homeOverflowFabBottomPadding =
                                             bottomInset + floatingBarsBottomPadding +
-                                                ((navVisibleHeight - HomeOverflowFabSize) / 2f).coerceAtLeast(0.dp)
+                                                (navVisibleHeight / 2f).coerceAtLeast(0.dp)
                                         HomeOverflowFabVisibility(
                                             visible = showHomeOverflowFab,
                                             modifier =
@@ -2684,8 +2680,6 @@ val LocalPlayerAwareWindowInsets =
 val LocalDownloadUtil = staticCompositionLocalOf<DownloadUtil> { error("No DownloadUtil provided") }
 val LocalSyncUtils = staticCompositionLocalOf<SyncUtils> { error("No SyncUtils provided") }
 
-private val HomeOverflowFabSize = 56.dp
-private val HomeOverflowFabSpacing = 12.dp
 private val HomeOverflowMenuIconSize = 40.dp
 
 @Composable
@@ -2738,18 +2732,6 @@ private fun HomeOverflowFab(
         )
 
     Box {
-        FloatingActionButton(
-            onClick = { onExpandedChange(!expanded) },
-            modifier = Modifier.size(HomeOverflowFabSize),
-            containerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = if (pureBlack) Color.White else MaterialTheme.colorScheme.onSurface,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.more_vert),
-                contentDescription = "Open FrostSoulX actions",
-            )
-        }
-
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
