@@ -53,6 +53,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import dev.vxs.frostsoulx.ui.frostsoul.FSAlbumArt
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlow
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulTexturedGlass
 import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
 import dev.vxs.frostsoulx.utils.rememberPreference
