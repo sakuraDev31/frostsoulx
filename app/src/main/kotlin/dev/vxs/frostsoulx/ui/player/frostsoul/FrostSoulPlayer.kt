@@ -1616,7 +1616,7 @@ private fun FrostSoulPlayerOptionsSheet(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 10.dp, vertical = 14.dp)
-                .height(610.dp)
+                .height(468.dp)
                 .graphicsLayer {
                     shadowElevation = 28.dp.toPx()
                     shape = RoundedCornerShape(30.dp)
@@ -1641,16 +1641,15 @@ private fun FrostSoulPlayerOptionsSheet(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "PLAYER OPTIONS",
-                        color = Color.White,
-                        fontSize = 11.sp,
+                        text = "Player controls",
+                        color = FrostSoulTheme.colors.onSurface,
+                        fontSize = 19.sp,
                         fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 1.7.sp,
                     )
                     Text(
-                        text = "QQ-style listening tools",
-                        color = FrostSoulOnSurfaceMuted,
-                        fontSize = 13.sp,
+                        text = "Quick access for this track",
+                        color = FrostSoulTheme.colors.onSurfaceMuted,
+                        fontSize = 12.sp,
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
@@ -1671,7 +1670,12 @@ private fun FrostSoulPlayerOptionsSheet(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .height(43.dp)
+                                .height(54.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    if (actionable) FrostSoulTheme.colors.surface.copy(alpha = 0.58f)
+                                    else Color.Transparent,
+                                )
                                 .clickable(enabled = actionable) {
                                     if (actionable) {
                                         when (label) {
@@ -1689,15 +1693,15 @@ private fun FrostSoulPlayerOptionsSheet(
                         Icon(
                             painter = painterResource(icon),
                             contentDescription = null,
-                            tint = if (actionable) Color.White else FrostSoulOnSurface,
-                            modifier = Modifier.size(22.dp),
+                            tint = if (actionable) accent else FrostSoulOnSurfaceMuted,
+                            modifier = Modifier.size(21.dp),
                         )
-                        Column(modifier = Modifier.padding(start = 12.dp)) {
+                        Column(modifier = Modifier.padding(start = 14.dp)) {
                             Text(
                                 text = label,
-                                color = FrostSoulOnSurface,
+                                color = FrostSoulTheme.colors.onSurface,
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )

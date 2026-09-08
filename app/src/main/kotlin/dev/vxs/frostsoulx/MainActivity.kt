@@ -193,7 +193,6 @@ import dev.vxs.frostsoulx.constants.HasPressedStarKey
 import dev.vxs.frostsoulx.constants.LaunchCountKey
 import dev.vxs.frostsoulx.constants.MiniPlayerBottomSpacing
 import dev.vxs.frostsoulx.constants.MiniPlayerHeight
-import dev.vxs.frostsoulx.constants.MiniPlayerPeekHeight
 import dev.vxs.frostsoulx.constants.MiniPlayerLastAnchorKey
 import dev.vxs.frostsoulx.constants.NavigationBarAnimationSpec
 import dev.vxs.frostsoulx.constants.NavigationBarBottomPadding
@@ -797,8 +796,9 @@ class MainActivity : ComponentActivity() {
                         label = "",
                     )
 
-                    var miniPlayerPeeked by remember { mutableStateOf(false) }
-                    val miniPlayerOccupiedHeight = if (miniPlayerPeeked) MiniPlayerPeekHeight else MiniPlayerHeight
+                    // Keep the mini-player and bottom navigation on one stable compact contract.
+                    // Opening the full player must not expand the bar beneath the center action.
+                    val miniPlayerOccupiedHeight = MiniPlayerHeight
                     val playerBottomSheetState =
                         rememberBottomSheetState(
                             dismissedBound = 0.dp,
@@ -1929,7 +1929,8 @@ class MainActivity : ComponentActivity() {
             navController = navController,
             pureBlack = pureBlack,
             isMiniPlayerPairedWithNavigation = areBottomBarsPaired,
-            onMiniPlayerPeekChanged = { miniPlayerPeeked = it },
+            // Smart-peek is intentionally disabled: the compact height is always reserved.
+            onMiniPlayerPeekChanged = {},
             modifier = Modifier.zIndex(1f),
         )
 
