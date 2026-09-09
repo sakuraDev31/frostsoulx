@@ -10,6 +10,7 @@ enum class ImmersiveProcessResult {
     Disabled,
     InvalidInput,
     SteamAudioUnavailable,
+    InvalidOutput,
     SteamAudioProcessed,
 };
 

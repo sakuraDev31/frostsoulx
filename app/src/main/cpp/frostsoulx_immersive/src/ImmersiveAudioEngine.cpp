@@ -198,6 +198,25 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
         return false;
     }
 
+    bool inputHasEnergy = false;
+    bool outputHasEnergy = false;
+    for (int frame = 0; frame < frames; ++frame) {
+        const float inputLeft = impl_->inputLeft[static_cast<std::size_t>(frame)];
+        const float inputRight = impl_->inputRight[static_cast<std::size_t>(frame)];
+        const float outputLeft = impl_->outputLeft[static_cast<std::size_t>(frame)];
+        const float outputRight = impl_->outputRight[static_cast<std::size_t>(frame)];
+        if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
+            impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
+            return false;
+        }
+        inputHasEnergy = inputHasEnergy || std::fabs(inputLeft) > 1.0e-8f || std::fabs(inputRight) > 1.0e-8f;
+        outputHasEnergy = outputHasEnergy || std::fabs(outputLeft) > 1.0e-8f || std::fabs(outputRight) > 1.0e-8f;
+    }
+    if (inputHasEnergy && !outputHasEnergy) {
+        impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
+        return false;
+    }
+
     for (int frame = 0; frame < frames; ++frame) {
         interleavedStereo[frame * 2] = impl_->outputLeft[static_cast<std::size_t>(frame)];
         interleavedStereo[frame * 2 + 1] = impl_->outputRight[static_cast<std::size_t>(frame)];
