@@ -452,7 +452,11 @@ fun FSSectionHeader(
             FSText(
                 text = title,
                 color = FrostSoulTheme.colors.onSurface,
-                style = FrostSoulTheme.typography.sectionTitle,
+                style = FrostSoulTheme.typography.sectionTitle.copy(
+                    fontSize = 18.sp,
+                    lineHeight = 23.sp,
+                    fontWeight = FontWeight.Normal,
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -507,7 +511,8 @@ fun FSChip(
 ) {
     val colors = FrostSoulTheme.colors
     val shape = FrostSoulTheme.shapes.pill
-    val selectedInk = if (colors.accentBright.luminance() > 0.5f) Color.Black else Color.White
+            val selectedInk = Color(0xFF101318)
+
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -525,7 +530,7 @@ fun FSChip(
         border = null,
         colors = FilterChipDefaults.filterChipColors(
             containerColor = Color.Transparent,
-            selectedContainerColor = colors.accentBright,
+            selectedContainerColor = Color.White,
             selectedLabelColor = selectedInk,
             selectedLeadingIconColor = selectedInk,
             iconColor = colors.onSurfaceMuted,
