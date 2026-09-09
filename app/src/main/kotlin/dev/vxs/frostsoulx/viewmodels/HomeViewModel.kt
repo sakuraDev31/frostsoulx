@@ -402,10 +402,15 @@ class HomeViewModel
             statsBySong: Map<String, SongWithStats>,
             signalsBySong: Map<String, List<RecommendationSignalEntity>>,
         ): Pair<List<Song>, List<Song>> {
+            val dislikedIds =
+                signalsBySong
+                    .filterValues { signals -> signals.firstOrNull()?.type == RecommendationSignalType.Dislike.name }
+                    .keys
             val maxPlayCount = statsBySong.values.maxOfOrNull { it.songCountListened }?.coerceAtLeast(1) ?: 1
             val ranked =
                 candidates
                     .distinctBy { it.song.id }
+                    .filterNot { it.song.id in dislikedIds }
                     .map { candidate ->
                         val stats = statsBySong[candidate.song.id]
                         val frequency = ((stats?.songCountListened ?: 0).toFloat() / maxPlayCount).coerceIn(0f, 1f)
@@ -428,6 +433,7 @@ class HomeViewModel
                                     RecommendationSignalType.Skip.name,
                                     RecommendationSignalType.Unlike.name,
                                     -> -0.22
+                                    RecommendationSignalType.Dislike.name -> -1.0
                                     else -> 0.0
                                 }
                             }.toFloat().coerceIn(-0.5f, 0.5f)

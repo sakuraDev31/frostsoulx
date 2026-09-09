@@ -216,6 +216,7 @@ internal fun FrostSoulPlayerAdapter(
                 onToggleRepeat = { playerConnection.player.toggleRepeatMode() },
                 onSeek = { targetPosition -> playerConnection.player.seekTo(targetPosition) },
                 onToggleLike = playerConnection::toggleLike,
+                onToggleDislike = playerConnection::toggleDislike,
                 onOpenAudioOutput = {
                     SystemMediaControlResolver.openMediaOutputSwitcher(applicationContext)
                 },

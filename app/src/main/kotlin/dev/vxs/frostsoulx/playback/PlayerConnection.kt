@@ -307,6 +307,10 @@ class PlayerConnection(
         service.toggleLike()
     }
 
+    fun toggleDislike() {
+        service.toggleDislike()
+    }
+
     internal suspend fun refetchCanvasArtwork(
         metadata: MediaMetadata,
         requireVertical: Boolean,

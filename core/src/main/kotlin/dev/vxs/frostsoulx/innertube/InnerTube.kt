@@ -583,6 +583,21 @@ class InnerTube {
         }
     }
 
+    suspend fun dislikeVideo(
+        client: YouTubeClient,
+        videoId: String,
+    ) = withRetry {
+        httpClient.post("like/dislike") {
+            ytClient(client, setLogin = true)
+            setBody(
+                LikeBody(
+                    context = client.toContext(locale, visitorData, dataSyncId),
+                    target = LikeBody.Target.VideoTarget(videoId),
+                ),
+            )
+        }
+    }
+
     suspend fun subscribeChannel(
         client: YouTubeClient,
         channelId: String,

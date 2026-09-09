@@ -1199,11 +1199,17 @@ private fun FrostSoulAlbumPage(
                 horizontalArrangement = Arrangement.End,
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp, end = 4.dp),
             ) {
-                FrostSoulFullPlayerLikeButton(
-                    videoId = uiState.track.id,
-                    isLiked = uiState.track.isLiked,
-                    onClick = actions.onToggleLike,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FrostSoulFullPlayerLikeButton(
+                        videoId = uiState.track.id,
+                        isLiked = uiState.track.isLiked,
+                        onClick = actions.onToggleLike,
+                    )
+                    FrostSoulFullPlayerDislikeButton(
+                        videoId = uiState.track.id,
+                        onClick = actions.onToggleDislike,
+                    )
+                }
             }
             Column(
                 horizontalAlignment = Alignment.Start,
@@ -1396,12 +1402,21 @@ private fun FrostSoulArtworkBlurAlbumPage(
                         modifier = Modifier.padding(top = 4.dp).clickable(onClick = onShowArtists),
                     )
                 }
-                FrostSoulFullPlayerLikeButton(
-                    videoId = uiState.track.id,
-                    isLiked = uiState.track.isLiked,
-                    onClick = actions.onToggleLike,
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(start = 8.dp),
-                )
+                ) {
+                    FrostSoulFullPlayerLikeButton(
+                        videoId = uiState.track.id,
+                        isLiked = uiState.track.isLiked,
+                        onClick = actions.onToggleLike,
+                    )
+                    FrostSoulFullPlayerDislikeButton(
+                        videoId = uiState.track.id,
+                        onClick = actions.onToggleDislike,
+                    )
+                }
             }
 
             FrostSoulMainLyricPreview(
@@ -1552,6 +1567,35 @@ private fun FrostSoulFullPlayerLikeButton(
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(start = 4.dp).widthIn(min = 24.dp),
+        )
+    }
+}
+
+@Composable
+private fun FrostSoulFullPlayerDislikeButton(
+    videoId: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var isDisliked by remember(videoId) { mutableStateOf(false) }
+    val tint = if (isDisliked) Color(0xFFFF6B6B) else {
+        if (FrostSoulTheme.colors.background.luminance() > 0.5f) Color.Black else Color(0xFFD7DBE0)
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .height(42.dp)
+            .clickable {
+                isDisliked = !isDisliked
+                onClick()
+            }
+            .padding(horizontal = 4.dp),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.thumb_down),
+            contentDescription = if (isDisliked) "Remove dislike" else "Dislike track",
+            tint = tint,
+            modifier = Modifier.size(23.dp),
         )
     }
 }
