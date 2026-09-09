@@ -18,7 +18,7 @@ target_compile_options(frostsoulx_immersive_engine PRIVATE
 
 if(ANDROID_ABI STREQUAL "arm64-v8a")
     set(FROSTSOULX_STEAMAUDIO_ROOT
-        ${CMAKE_CURRENT_LIST_DIR}/../../../third_party/steamaudio_sdk)
+        ${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/steamaudio_sdk)
     add_library(phonon SHARED IMPORTED)
     set_target_properties(phonon PROPERTIES
         IMPORTED_LOCATION
