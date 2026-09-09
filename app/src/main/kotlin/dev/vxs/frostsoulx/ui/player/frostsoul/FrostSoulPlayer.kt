@@ -1200,14 +1200,14 @@ private fun FrostSoulAlbumPage(
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp, end = 4.dp),
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FrostSoulFullPlayerDislikeButton(
+                        videoId = uiState.track.id,
+                        onClick = actions.onToggleDislike,
+                    )
                     FrostSoulFullPlayerLikeButton(
                         videoId = uiState.track.id,
                         isLiked = uiState.track.isLiked,
                         onClick = actions.onToggleLike,
-                    )
-                    FrostSoulFullPlayerDislikeButton(
-                        videoId = uiState.track.id,
-                        onClick = actions.onToggleDislike,
                     )
                 }
             }
