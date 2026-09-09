@@ -99,7 +99,6 @@ import dev.vxs.frostsoulx.ui.premium.PremiumHeroBanner
 import dev.vxs.frostsoulx.ui.premium.PremiumListRow
 import dev.vxs.frostsoulx.ui.premium.PremiumSearchBar
 import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
-import dev.vxs.frostsoulx.ui.premium.PremiumTopBar
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
 import dev.vxs.frostsoulx.ui.player.frostsoul.asFrostSoulTime
 import dev.vxs.frostsoulx.utils.UserGreetingPreferences
@@ -792,59 +791,91 @@ private fun FrostSoulHomeHeader(
         in 17..21 -> "Good Evening"
         else -> "Good Night"
     }
-    // A compact editorial header leaves discovery in view and avoids decoding a second cover.
-    PremiumTopBar(
-        modifier = Modifier.statusBarsPadding(),
-        title = greeting,
-        subtitle = userName?.takeIf { it.isNotBlank() },
-        eyebrow = "FROSTSOULX",
-        eyebrowFontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-        navigationIcon = {
-            FSIcon(
-                painter = painterResource(R.drawable.app_icon_small),
-                contentDescription = "FrostSoulX",
-                tint = FrostSoulTheme.colors.accent,
-                modifier = Modifier.size(30.dp),
-            )
-        },
-        trailingContent = {
+    // Keep the Home brand row at the same 35.dp icon/title scale as the Library shell header.
+    Row(
+        modifier = Modifier
+            .statusBarsPadding()
+            .fillMaxWidth()
+            .padding(horizontal = FrostSoulTheme.spacing.page, vertical = FrostSoulTheme.spacing.large),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.medium),
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro),
+        ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FSIconButton(
-                    onClick = onOpenRecent,
-                    contentDescription = "Recently played",
-                ) {
-                    FSIcon(
-                        painter = painterResource(R.drawable.history),
-                        contentDescription = "Recently played",
-                        tint = FrostSoulTheme.colors.onSurface,
-                    )
-                }
-                FSIconButton(
-                    onClick = onOpenNewReleases,
-                    contentDescription = "New releases",
-                ) {
-                    FSIcon(
-                        painter = painterResource(R.drawable.new_release),
-                        contentDescription = "New releases",
-                        tint = FrostSoulTheme.colors.onSurface,
-                    )
-                }
-                FSIconButton(
-                    onClick = onOpenSettings,
-                    contentDescription = "Settings",
-                ) {
-                    FSIcon(
-                        painter = painterResource(R.drawable.settings),
-                        contentDescription = "Settings",
-                        tint = FrostSoulTheme.colors.onSurface,
-                    )
-                }
+                FSIcon(
+                    painter = painterResource(R.drawable.app_icon_small),
+                    contentDescription = "FrostSoulX",
+                    tint = Color.White,
+                    modifier = Modifier.size(35.dp),
+                )
+                FSText(
+                    text = "FROSTSOULX",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-        },
-    )
+            FSText(
+                text = greeting,
+                style = FrostSoulTheme.typography.display.copy(fontSize = 30.sp, lineHeight = 36.sp),
+                color = FrostSoulTheme.colors.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            userName?.takeIf { it.isNotBlank() }?.let {
+                FSText(
+                    text = it,
+                    style = FrostSoulTheme.typography.body,
+                    color = FrostSoulTheme.colors.onSurfaceMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            FSIconButton(
+                onClick = onOpenRecent,
+                contentDescription = "Recently played",
+            ) {
+                FSIcon(
+                    painter = painterResource(R.drawable.history),
+                    contentDescription = "Recently played",
+                    tint = FrostSoulTheme.colors.onSurface,
+                )
+            }
+            FSIconButton(
+                onClick = onOpenNewReleases,
+                contentDescription = "New releases",
+            ) {
+                FSIcon(
+                    painter = painterResource(R.drawable.new_release),
+                    contentDescription = "New releases",
+                    tint = FrostSoulTheme.colors.onSurface,
+                )
+            }
+            FSIconButton(
+                onClick = onOpenSettings,
+                contentDescription = "Settings",
+            ) {
+                FSIcon(
+                    painter = painterResource(R.drawable.settings),
+                    contentDescription = "Settings",
+                    tint = FrostSoulTheme.colors.onSurface,
+                )
+            }
+        }
+    }
 }
 
 @Composable
