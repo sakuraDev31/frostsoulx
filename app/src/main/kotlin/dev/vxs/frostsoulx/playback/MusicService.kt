@@ -1065,8 +1065,8 @@ class MusicService :
         super.onCreate()
         // Select the renderer chain from persisted state before ExoPlayer is built. When off,
         // no surround processor or JNI library participates in the playback path at all.
-        StereoSurroundRuntime.setIntensity(dataStore.get(StereoSurroundIntensityKey, 0.5f))
-        StereoSurroundRuntime.setEnabled(dataStore.get(StereoSurroundEnabledKey, false))
+        ImmersiveAudioRuntime.setIntensity(dataStore.get(StereoSurroundIntensityKey, 0.5f))
+        ImmersiveAudioRuntime.setEnabled(dataStore.get(StereoSurroundEnabledKey, false))
         equalizerPlaybackController.attach(this)
         ensureScopesActive()
 
@@ -1111,7 +1111,7 @@ class MusicService :
             snapshotRepository = playbackSnapshotRepository,
             queueTitleProvider = { queueTitle },
         )
-        StereoSurroundRuntime.setTransitionHandler(::requestSurroundRebuild)
+        ImmersiveAudioRuntime.setTransitionHandler(::requestImmersiveRebuild)
         playerInitialized.value = true
         database
             .blockedArtistIds()
@@ -7932,7 +7932,7 @@ class MusicService :
             ).setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-    private val surroundRebuildMutex = Mutex()
+    private val immersiveRebuildMutex = Mutex()
 
     private fun buildLocalPlayer(): ExoPlayer =
         ExoPlayer
@@ -7954,18 +7954,18 @@ class MusicService :
                 setOffloadEnabled(false)
             }
 
-    private fun requestSurroundRebuild(enabled: Boolean) {
+    private fun requestImmersiveRebuild(enabled: Boolean) {
         if (!::player.isInitialized || !::localPlayer.isInitialized) return
         scope.launch(Dispatchers.Main.immediate) {
-            surroundRebuildMutex.withLock {
-                rebuildSurroundPlayer(enabled)
+            immersiveRebuildMutex.withLock {
+                rebuildImmersivePlayer(enabled)
             }
         }
     }
 
-    private fun rebuildSurroundPlayer(enabled: Boolean) {
+    private fun rebuildImmersivePlayer(enabled: Boolean) {
         if (!::player.isInitialized || !::localPlayer.isInitialized) return
-        if (StereoSurroundRuntime.isEnabled() != enabled) return
+        if (ImmersiveAudioRuntime.isEnabled() != enabled) return
 
         val oldPlayer = player
         val oldLocalPlayer = localPlayer
@@ -7980,7 +7980,7 @@ class MusicService :
 
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
         releaseSecondaryCrossfadePlayer()
-        StereoSurroundRuntime.detachProcessor()
+        ImmersiveAudioRuntime.detachProcessor()
 
         val replacementLocal = buildLocalPlayer()
         replacementLocal.repeatMode = repeatMode
@@ -8035,8 +8035,8 @@ class MusicService :
                     )
                 val sonic = SonicAudioProcessor()
                 val surround =
-                    if (StereoSurroundRuntime.isEnabled()) {
-                        StereoSurroundAudioProcessor().also(StereoSurroundRuntime::attach)
+                    if (ImmersiveAudioRuntime.isEnabled()) {
+                        ImmersiveAudioProcessor().also(ImmersiveAudioRuntime::attach)
                     } else {
                         null
                     }
@@ -8505,7 +8505,7 @@ class MusicService :
         playbackCore = null
         stopLyricsSync()
         equalizerPlaybackController.detach(this)
-        StereoSurroundRuntime.detach()
+        ImmersiveAudioRuntime.detach()
         discordServiceStopping = true
         requestDiscordSync(
             reason = "service_destroy",

@@ -40,7 +40,7 @@ import androidx.navigation.NavController
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
-import dev.vxs.frostsoulx.playback.StereoSurroundRuntime
+import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.utils.rememberPreference
 
@@ -50,8 +50,8 @@ fun StereoSurroundScreen(navController: NavController) {
     var intensity by rememberPreference(StereoSurroundIntensityKey, defaultValue = 0.5f)
 
     LaunchedEffect(enabled, intensity) {
-        StereoSurroundRuntime.setIntensity(intensity)
-        StereoSurroundRuntime.setEnabled(enabled)
+        ImmersiveAudioRuntime.setIntensity(intensity)
+        ImmersiveAudioRuntime.setEnabled(enabled)
     }
 
     Scaffold(
@@ -66,7 +66,7 @@ fun StereoSurroundScreen(navController: NavController) {
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "V1 stereo field",
+                            text = "Steam Audio HRTF",
                             color = FrostSoulTheme.colors.onSurfaceMuted,
                             fontSize = 12.sp,
                         )
@@ -120,7 +120,7 @@ fun StereoSurroundScreen(navController: NavController) {
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "The direct stereo image stays intact while a bounded rear ambience is added.",
+                            text = "Steam Audio binaural rendering is applied to the stereo stream for headphone spatialization.",
                             color = FrostSoulTheme.colors.onSurfaceMuted,
                             fontSize = 12.sp,
                             lineHeight = 17.sp,
@@ -147,13 +147,13 @@ fun StereoSurroundScreen(navController: NavController) {
                 ) {
                     Column {
                         Text(
-                            text = "Surround intensity",
+                            text = "Spatial blend",
                             color = FrostSoulTheme.colors.onSurface,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "Controls the V1 virtual-rear contribution",
+                            text = "Controls the amount of HRTF spatialization",
                             color = FrostSoulTheme.colors.onSurfaceMuted,
                             fontSize = 12.sp,
                         )
@@ -200,8 +200,8 @@ fun StereoSurroundScreen(navController: NavController) {
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text("Stereo-only V1 processing", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp)
-                Text("No HRTF, reverb, loudness normalization, or limiter is included.", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp)
+                Text("Steam Audio HRTF binaural processing", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp)
+                Text("Uses the built-in Steam Audio default HRTF; no room simulation is enabled yet.", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp)
                 Text("When bypassed, the PCM buffer is left untouched.", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp)
             }
 

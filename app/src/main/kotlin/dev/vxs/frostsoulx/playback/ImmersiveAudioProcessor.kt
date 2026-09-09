@@ -5,39 +5,7 @@ import androidx.media3.common.audio.AudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-data class StereoSurroundTuningParameters(
-    val lowFrequencyCutoffHz: Float = 180f,
-    val sideExtractionGain: Float = 0.5f,
-    val delayASamples: Int = 37,
-    val delayBSamples: Int = 59,
-    val decorrelationAInputCoefficient: Float = 0.28f,
-    val decorrelationBInputCoefficient: Float = 0.32f,
-    val sideHighMixBase: Float = 0.35f,
-    val sideHighMixIntensitySpan: Float = 0.45f,
-    val ambienceDecorrelatedAWeight: Float = 0.55f,
-    val rearAmbienceWeight: Float = 0.45f,
-    val maxRearContribution: Float = 0.22f,
-) {
-    fun validated(): StereoSurroundTuningParameters = copy(
-        lowFrequencyCutoffHz = lowFrequencyCutoffHz.takeIf(Float::isFinite)?.coerceIn(20f, 2000f) ?: 180f,
-        sideExtractionGain = sideExtractionGain.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f,
-        delayASamples = delayASamples.coerceIn(1, 255),
-        delayBSamples = delayBSamples.coerceIn(1, 255),
-        decorrelationAInputCoefficient = decorrelationAInputCoefficient.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.28f,
-        decorrelationBInputCoefficient = decorrelationBInputCoefficient.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.32f,
-        sideHighMixBase = sideHighMixBase.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.35f,
-        sideHighMixIntensitySpan = sideHighMixIntensitySpan.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.45f,
-        ambienceDecorrelatedAWeight = ambienceDecorrelatedAWeight.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.55f,
-        rearAmbienceWeight = rearAmbienceWeight.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.45f,
-        maxRearContribution = maxRearContribution.takeIf(Float::isFinite)?.coerceIn(0f, 0.5f) ?: 0.22f,
-    )
-
-    companion object {
-        val DEFAULT = StereoSurroundTuningParameters()
-    }
-}
-
-data class StereoSurroundDiagnostics(
+data class ImmersiveAudioDiagnostics(
     val inputRms: Float = 0f,
     val outputRms: Float = 0f,
     val inputPeak: Float = 0f,
@@ -49,9 +17,9 @@ data class StereoSurroundDiagnostics(
     val processCallCount: Long = 0L,
 ) {
     companion object {
-        fun fromNative(values: DoubleArray?): StereoSurroundDiagnostics {
-            if (values == null || values.size < 9) return StereoSurroundDiagnostics()
-            return StereoSurroundDiagnostics(
+        fun fromNative(values: DoubleArray?): ImmersiveAudioDiagnostics {
+            if (values == null || values.size < 9) return ImmersiveAudioDiagnostics()
+            return ImmersiveAudioDiagnostics(
                 inputRms = values[0].toFloat().takeIf(Float::isFinite) ?: 0f,
                 outputRms = values[1].toFloat().takeIf(Float::isFinite) ?: 0f,
                 inputPeak = values[2].toFloat().takeIf(Float::isFinite) ?: 0f,
@@ -66,12 +34,8 @@ data class StereoSurroundDiagnostics(
     }
 }
 
-/**
- * Media3 adapter for the standalone V1 stereo-surround processor.
- * Disabled mode is a content-preserving bypass: the native processor is not called and the
- * PCM bytes are copied unchanged into a dedicated output buffer owned by this processor.
- */
-class StereoSurroundAudioProcessor : AudioProcessor {
+/** Media3 adapter for the Steam Audio HRTF binaural engine. */
+class ImmersiveAudioProcessor : AudioProcessor {
     private var inputAudioFormat = AudioProcessor.AudioFormat.NOT_SET
     private var outputAudioFormat = AudioProcessor.AudioFormat.NOT_SET
     private var outputBuffer: ByteBuffer = EMPTY_BUFFER
@@ -79,7 +43,6 @@ class StereoSurroundAudioProcessor : AudioProcessor {
     private var nativeHandle = 0L
     @Volatile private var enabled = false
     @Volatile private var intensity = 0.0f
-    @Volatile private var tuning = StereoSurroundTuningParameters.DEFAULT
 
     override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         val supportedEncoding =
@@ -94,7 +57,6 @@ class StereoSurroundAudioProcessor : AudioProcessor {
             releaseNative()
             nativeHandle = nativeCreate(inputAudioFormat.sampleRate, inputAudioFormat.encoding)
             this.inputAudioFormat = inputAudioFormat
-            setTuning(tuning)
             setIntensity(intensity)
             setEnabled(enabled)
         }
@@ -106,17 +68,10 @@ class StereoSurroundAudioProcessor : AudioProcessor {
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-
         val inputBytes = inputBuffer.remaining()
         val readableBuffer = prepareOutputBuffer(inputBytes)
-        // Copy the original PCM bytes exactly before any optional processing. This avoids
-        // returning a view into Media3's input buffer, which the sink may recycle immediately.
         readableBuffer.put(inputBuffer)
         readableBuffer.flip()
-
-        // Strict OFF bypass: the output bytes are identical to the input bytes and the
-        // native integration is not called at all. With the processor enabled at intensity
-        // zero, JNI may collect identity diagnostics but never changes the PCM bytes.
         if (!enabled) return
 
         val bytesPerSample = if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) 4 else 2
@@ -165,31 +120,11 @@ class StereoSurroundAudioProcessor : AudioProcessor {
 
     fun setIntensity(value: Float) {
         intensity = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
-        if (nativeHandle != 0L) nativeSetIntensity(nativeHandle, intensity)
+        if (nativeHandle != 0L) nativeSetSpatialBlend(nativeHandle, intensity)
     }
 
-    fun setTuning(value: StereoSurroundTuningParameters) {
-        tuning = value.validated()
-        if (nativeHandle != 0L) {
-            nativeSetParameters(
-                nativeHandle,
-                tuning.lowFrequencyCutoffHz,
-                tuning.sideExtractionGain,
-                tuning.delayASamples,
-                tuning.delayBSamples,
-                tuning.decorrelationAInputCoefficient,
-                tuning.decorrelationBInputCoefficient,
-                tuning.sideHighMixBase,
-                tuning.sideHighMixIntensitySpan,
-                tuning.ambienceDecorrelatedAWeight,
-                tuning.rearAmbienceWeight,
-                tuning.maxRearContribution,
-            )
-        }
-    }
-
-    fun readDiagnostics(): StereoSurroundDiagnostics =
-        if (nativeHandle == 0L) StereoSurroundDiagnostics() else StereoSurroundDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
+    fun readDiagnostics(): ImmersiveAudioDiagnostics =
+        if (nativeHandle == 0L) ImmersiveAudioDiagnostics() else ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
 
     private fun releaseNative() {
         if (nativeHandle != 0L) {
@@ -202,44 +137,27 @@ class StereoSurroundAudioProcessor : AudioProcessor {
         private val EMPTY_BUFFER = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
 
         init {
-            System.loadLibrary("frostsoulx_surround_jni")
+            System.loadLibrary("frostsoulx_immersive_jni")
         }
 
         @JvmStatic private external fun nativeCreate(sampleRate: Int, encoding: Int): Long
         @JvmStatic private external fun nativeRelease(handle: Long)
         @JvmStatic private external fun nativeReset(handle: Long)
         @JvmStatic private external fun nativeSetEnabled(handle: Long, enabled: Boolean)
-        @JvmStatic private external fun nativeSetIntensity(handle: Long, intensity: Float)
-        @JvmStatic private external fun nativeSetParameters(
-            handle: Long,
-            lowCutoffHz: Float,
-            sideGain: Float,
-            delayA: Int,
-            delayB: Int,
-            decorA: Float,
-            decorB: Float,
-            sideBase: Float,
-            sideSpan: Float,
-            ambienceAWeight: Float,
-            rearAmbienceWeight: Float,
-            maxRearContribution: Float,
-        )
+        @JvmStatic private external fun nativeSetSpatialBlend(handle: Long, blend: Float)
         @JvmStatic private external fun nativeReadDiagnostics(handle: Long): DoubleArray?
         @JvmStatic private external fun nativeProcess(handle: Long, pcmBuffer: ByteBuffer, frames: Int, encoding: Int)
     }
 }
 
-/** Service-owned runtime state shared by the quick toggle, production controls, and dev panel. */
-object StereoSurroundRuntime {
-    @Volatile private var processor: StereoSurroundAudioProcessor? = null
+object ImmersiveAudioRuntime {
+    @Volatile private var processor: ImmersiveAudioProcessor? = null
     @Volatile private var transitionHandler: ((Boolean) -> Unit)? = null
     @Volatile private var enabled = false
     @Volatile private var intensity = 0.5f
-    @Volatile private var tuning = StereoSurroundTuningParameters.DEFAULT
 
-    fun attach(value: StereoSurroundAudioProcessor) {
+    fun attach(value: ImmersiveAudioProcessor) {
         processor = value
-        value.setTuning(tuning)
         value.setIntensity(intensity)
         value.setEnabled(enabled)
     }
@@ -269,14 +187,8 @@ object StereoSurroundRuntime {
         processor?.setIntensity(intensity)
     }
 
-    fun setTuning(value: StereoSurroundTuningParameters) {
-        tuning = value.validated()
-        processor?.setTuning(tuning)
-    }
-
-    fun readDiagnostics(): StereoSurroundDiagnostics = processor?.readDiagnostics() ?: StereoSurroundDiagnostics()
+    fun readDiagnostics(): ImmersiveAudioDiagnostics = processor?.readDiagnostics() ?: ImmersiveAudioDiagnostics()
 
     fun isEnabled(): Boolean = enabled
     fun intensity(): Float = intensity
-    fun tuning(): StereoSurroundTuningParameters = tuning
 }

@@ -76,7 +76,6 @@ import dev.vxs.frostsoulx.ui.screens.settings.PrivacySettings
 import dev.vxs.frostsoulx.ui.screens.settings.SettingsScreen
 import dev.vxs.frostsoulx.ui.screens.settings.StorageSettings
 import dev.vxs.frostsoulx.ui.screens.settings.StereoSurroundScreen
-import dev.vxs.frostsoulx.ui.screens.settings.StereoSurroundTuningScreen
 import dev.vxs.frostsoulx.ui.screens.settings.UpdateScreen
 import dev.vxs.frostsoulx.viewmodels.OnlineSearchSort
 
@@ -429,9 +428,6 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("settings/surround") {
         FrostSoulSettingsPage { StereoSurroundScreen(navController) }
-    }
-    composable("settings/misc/surround_tuning") {
-        FrostSoulSettingsPage { StereoSurroundTuningScreen(navController) }
     }
     composable("settings/lastfm") {
         FrostSoulSettingsPage { LastFMSettings(navController) }
