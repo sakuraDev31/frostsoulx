@@ -100,6 +100,8 @@ data class AccountChannelUiModel(
 
 private data class HomeLocalContent(
     val quickPicks: List<Song>,
+    val featuredForYou: List<Song>,
+    val forThisMoment: List<Song>,
     val speedDialItems: List<LocalItem>,
     val forgottenFavorites: List<Song>,
     val keepListening: List<LocalItem>,
@@ -121,7 +123,9 @@ private data class HomeContent(
 ) {
     val hasContent: Boolean
         get() =
-            local.quickPicks.isNotEmpty() ||
+                            local.quickPicks.isNotEmpty() ||
+                local.featuredForYou.isNotEmpty() ||
+                local.forThisMoment.isNotEmpty() ||
                 local.speedDialItems.isNotEmpty() ||
                 local.forgottenFavorites.isNotEmpty() ||
                 local.keepListening.isNotEmpty() ||
@@ -155,6 +159,8 @@ private data class HomeStateInputs(
         return HomeScreenState.Success(
             HomeUiState(
                 quickPicks = ImmutableList.copyOf(content.local.quickPicks),
+                featuredForYou = ImmutableList.copyOf(content.local.featuredForYou),
+                forThisMoment = ImmutableList.copyOf(content.local.forThisMoment),
                 speedDialItems = ImmutableList.copyOf(content.local.speedDialItems),
                 forgottenFavorites = ImmutableList.copyOf(content.local.forgottenFavorites),
                 keepListening = ImmutableList.copyOf(content.local.keepListening),
@@ -202,6 +208,8 @@ class HomeViewModel
                 }.distinctUntilChanged()
 
         private val quickPicks = MutableStateFlow<List<Song>?>(null)
+        private val featuredForYou = MutableStateFlow<List<Song>>(emptyList())
+        private val forThisMoment = MutableStateFlow<List<Song>>(emptyList())
         private val speedDialItems = MutableStateFlow<List<LocalItem>>(emptyList())
         private val forgottenFavorites = MutableStateFlow<List<Song>?>(null)
         private val keepListening = MutableStateFlow<List<LocalItem>?>(null)
@@ -231,18 +239,22 @@ class HomeViewModel
 
         private val localContent =
             combine(
-                quickPicks,
-                speedDialItems,
-                forgottenFavorites,
-                keepListening,
-                offlineMixRepository.observePersistedTopMixes(),
-            ) { quickPicks, speedDialItems, forgottenFavorites, keepListening, offlineMixes ->
+                combine(quickPicks, featuredForYou, forThisMoment, speedDialItems, forgottenFavorites) {
+                        quickPicks, featuredForYou, forThisMoment, speedDialItems, forgottenFavorites ->
+                    listOf(quickPicks.orEmpty(), featuredForYou, forThisMoment, speedDialItems, forgottenFavorites.orEmpty())
+                },
+                combine(keepListening, offlineMixRepository.observePersistedTopMixes()) { keepListening, offlineMixes ->
+                    keepListening.orEmpty() to offlineMixes
+                },
+            ) { primary, secondary ->
                 HomeLocalContent(
-                    quickPicks = quickPicks.orEmpty(),
-                    speedDialItems = speedDialItems,
-                    forgottenFavorites = forgottenFavorites.orEmpty(),
-                    keepListening = keepListening.orEmpty(),
-                    offlineMixes = offlineMixes,
+                    quickPicks = primary[0] as List<Song>,
+                    featuredForYou = primary[1] as List<Song>,
+                    forThisMoment = primary[2] as List<Song>,
+                    speedDialItems = primary[3] as List<LocalItem>,
+                    forgottenFavorites = primary[4] as List<Song>,
+                    keepListening = secondary.first,
+                    offlineMixes = secondary.second,
                 )
             }
 
@@ -541,6 +553,7 @@ class HomeViewModel
                 }
 
                 updateAllLocalItems()
+                loadHistoryRecommendations()
 
                 viewModelScope.launch(Dispatchers.IO) {
                     loadSimilarRecommendations()
@@ -562,6 +575,51 @@ class HomeViewModel
                 isInitialLoadComplete.value = true
                 isLoading.value = false
             }
+        }
+
+        /**
+         * Builds the two prominent Home shelves from actual listening history first.
+         * Related songs are only used when they are linked to a listened song; the
+         * same-artist fallback prevents an empty shelf when related mappings have not
+         * been cached yet. Every shelf is deduplicated by song id.
+         */
+        private suspend fun loadHistoryRecommendations() {
+            val fromTimeStamp = System.currentTimeMillis() - 86400000L * 30
+            val history =
+                (
+                    database.mostPlayedSongs(fromTimeStamp, limit = 40).first() +
+                        database.recentSongs(limit = 40).first()
+                ).distinctBy { it.id }
+            if (history.isEmpty()) {
+                featuredForYou.value = emptyList()
+                forThisMoment.value = emptyList()
+                return
+            }
+
+            val historyIds = history.mapTo(HashSet()) { it.id }
+            val historyArtistIds = history.flatMapTo(HashSet()) { song -> song.artists.map { it.id } }
+            val related =
+                history
+                    .asSequence()
+                    .flatMap { database.relatedSongs(it.id).asSequence() }
+                    .filterNot { it.id in historyIds }
+                    .distinctBy { it.id }
+                    .toList()
+            val sameArtistFallback =
+                database
+                    .allSongs()
+                    .first()
+                    .asSequence()
+                    .filter { song -> song.artists.any { it.id in historyArtistIds } }
+                    .filterNot { it.id in historyIds }
+                    .filterNot { song -> related.any { it.id == song.id } }
+                    .distinctBy { it.id }
+                    .toList()
+
+            // Featured is anchored in what the user actually played; Moment is the
+            // adjacent/similar pool and never loops over the same history-only rows.
+            featuredForYou.value = history.take(8)
+            forThisMoment.value = (related + sameArtistFallback).take(12)
         }
 
         private suspend fun loadSimilarRecommendations() {
@@ -823,6 +881,7 @@ class HomeViewModel
                     supervisorScope {
                         launch { load() }
                         launch { refreshQuickPicks() }
+                        launch { loadHistoryRecommendations() }
                     }
                 } catch (e: CancellationException) {
                     throw e

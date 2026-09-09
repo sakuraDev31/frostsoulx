@@ -176,10 +176,10 @@ internal fun FrostSoulHomeFeed(
             }
         }
 
-        if (uiState.quickPicks.isNotEmpty()) {
+        if (uiState.featuredForYou.isNotEmpty()) {
             item(key = "frostsoul_featured_for_you_top") {
                 FrostSoulBannerCarousel(
-                    songs = uiState.quickPicks.take(5),
+                    songs = uiState.featuredForYou.take(5),
                     mediaMetadata = mediaMetadata,
                     playerConnection = playerConnection,
                     isPlaying = isPlaying,
@@ -205,13 +205,13 @@ internal fun FrostSoulHomeFeed(
             }
         }
 
-        if (uiState.quickPicks.isNotEmpty()) {
+        if (uiState.forThisMoment.isNotEmpty()) {
             item(key = "frostsoul_for_this_moment_header") {
                 FSSectionHeader(title = "For This Moment", actionLabel = "See All", onAction = { navController.navigate("home_collection/moment") })
             }
             item(key = "frostsoul_for_this_moment") {
                 FrostSoulSongShelf(
-                    songs = uiState.quickPicks,
+                    songs = uiState.forThisMoment,
                     mediaMetadata = mediaMetadata,
                     playerConnection = playerConnection,
                     badge = "PLAY",
@@ -371,8 +371,10 @@ internal fun FrostSoulHomeFeed(
 
         if (
             uiState.keepListening.isEmpty() &&
-                uiState.quickPicks.isEmpty() &&
-                uiState.speedDialItems.isEmpty() &&
+                                uiState.featuredForYou.isEmpty() &&
+                    uiState.forThisMoment.isEmpty() &&
+                    uiState.quickPicks.isEmpty() &&
+                    uiState.speedDialItems.isEmpty() &&
                 pageSections.isEmpty()
         ) {
             item(key = "frostsoul_home_empty") {

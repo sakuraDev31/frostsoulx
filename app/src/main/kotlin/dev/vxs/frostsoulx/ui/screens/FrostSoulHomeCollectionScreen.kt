@@ -53,7 +53,7 @@ fun FrostSoulHomeCollectionScreen(
     val items: List<LocalItem> =
         when (val value = state) {
             is HomeScreenState.Success -> {
-                if (kind == "moment") value.uiState.quickPicks else value.uiState.keepListening
+                if (kind == "moment") value.uiState.forThisMoment else value.uiState.keepListening
             }
             else -> emptyList()
         }
@@ -79,7 +79,7 @@ fun FrostSoulHomeCollectionScreen(
                 .padding(horizontal = FrostSoulTheme.spacing.page),
         ) {
             Text(
-                text = if (kind == "moment") "A focused mix of songs and albums for this moment." else "Pick up where you left off, without losing the thread.",
+                text = if (kind == "moment") "Similar songs from your listening history, tuned for this moment." else "Pick up where you left off, without losing the thread.",
                 style = FrostSoulTheme.typography.bodyMuted,
                 modifier = Modifier.padding(vertical = FrostSoulTheme.spacing.medium),
             )
