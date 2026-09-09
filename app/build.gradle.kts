@@ -267,8 +267,8 @@ dependencies {
     implementation(libs.work.runtime)
     implementation("androidx.browser:browser:1.10.0")
     implementation("com.github.Dimezis:BlurView:version-3.2.0")
-    implementation("dev.chrisbanes.haze:haze:2.0.0-beta03")
-    implementation("dev.chrisbanes.haze:haze-blur:2.0.0-beta03")
+    implementation("dev.chrisbanes.haze:haze:2.0.0-beta02")
+    implementation("dev.chrisbanes.haze:haze-blur:2.0.0-beta02")
 
     implementation(libs.compose.runtime)
     implementation(libs.compose.foundation)
