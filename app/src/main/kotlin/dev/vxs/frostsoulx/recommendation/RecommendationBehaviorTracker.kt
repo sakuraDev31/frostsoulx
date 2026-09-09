@@ -82,7 +82,7 @@ class RecommendationBehaviorTracker @Inject constructor(
         ) {
             val count = meaningfulPlaySignals.incrementAndGet()
             if (count % MixRefreshPlayThreshold == 0L) {
-                OfflineRecommendationScheduler.enqueue(context)
+                OfflineRecommendationScheduler.enqueue(this@RecommendationBehaviorTracker.context)
             }
         }
     }
