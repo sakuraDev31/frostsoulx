@@ -22,6 +22,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.provider.OpenableColumns
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.MimeTypeMap
 import android.widget.Toast
@@ -127,6 +128,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -272,6 +274,7 @@ import dev.vxs.frostsoulx.ui.theme.HIGH_REFRESH_RATE_THRESHOLD_FPS
 import dev.vxs.frostsoulx.ui.theme.ArchiveTuneTheme
 import dev.vxs.frostsoulx.ui.theme.TARGET_REFRESH_RATE_FPS
 import dev.vxs.frostsoulx.ui.theme.rememberSupportedHighestFps
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulBackdropTargetTag
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.SearchTheme
 import dev.vxs.frostsoulx.ui.utils.appBarScrollBehavior
@@ -293,6 +296,7 @@ import dev.vxs.frostsoulx.viewmodels.HomeViewModel
 import dev.vxs.frostsoulx.viewmodels.NetworkBannerViewModel
 import dev.vxs.frostsoulx.viewmodels.OnlineSearchSort
 import java.util.Locale
+import eightbitlab.com.blurview.BlurTarget
 import javax.inject.Inject
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -544,7 +548,8 @@ class MainActivity : ComponentActivity() {
                 }
         }
 
-        setContent {
+        val composeRoot = ComposeView(this).apply {
+            setContent {
 
 
             val updateChannel by rememberEnumPreference(UpdateChannelKey, defaultValue = defaultUpdateChannel)
@@ -2247,7 +2252,19 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            }
         }
+        val backdropRoot = BlurTarget(this).apply {
+            tag = FrostSoulBackdropTargetTag
+            addView(
+                composeRoot,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                ),
+            )
+        }
+        setContentView(backdropRoot)
     }
 
     private fun isBackupUri(uri: Uri?): Boolean {
