@@ -101,6 +101,14 @@ data class AccountChannelUiModel(
     val isSelected: Boolean,
 )
 
+private data class HomePrimaryLocalContent(
+    val quickPicks: List<Song>,
+    val featuredForYou: List<Song>,
+    val forThisMoment: List<Song>,
+    val recentlyPlayed: List<Song>,
+    val speedDialItems: List<LocalItem>,
+)
+
 private data class HomeLocalContent(
     val quickPicks: List<Song>,
     val featuredForYou: List<Song>,
@@ -266,23 +274,38 @@ class HomeViewModel
 
         private val localContent =
             combine(
-                combine(quickPicks, featuredForYou, forThisMoment, recentlyPlayed, speedDialItems, forgottenFavorites) {
-                        quickPicks, featuredForYou, forThisMoment, recentlyPlayed, speedDialItems, forgottenFavorites ->
-                    listOf(quickPicks.orEmpty(), featuredForYou, forThisMoment, recentlyPlayed, speedDialItems, forgottenFavorites.orEmpty())
+                combine(quickPicks, featuredForYou, forThisMoment, recentlyPlayed, speedDialItems) {
+                        quickPicks: List<Song>?,
+                        featuredForYou: List<Song>,
+                        forThisMoment: List<Song>,
+                        recentlyPlayed: List<Song>,
+                        speedDialItems: List<LocalItem>,
+                    ->
+                    HomePrimaryLocalContent(
+                        quickPicks = quickPicks.orEmpty(),
+                        featuredForYou = featuredForYou,
+                        forThisMoment = forThisMoment,
+                        recentlyPlayed = recentlyPlayed,
+                        speedDialItems = speedDialItems,
+                    )
                 },
-                combine(keepListening, offlineMixRepository.observePersistedTopMixes()) { keepListening, offlineMixes ->
-                    keepListening.orEmpty() to offlineMixes
+                combine(forgottenFavorites, keepListening, offlineMixRepository.observePersistedTopMixes()) {
+                        forgottenFavorites: List<Song>?,
+                        keepListening: List<LocalItem>?,
+                        offlineMixes: List<dev.vxs.frostsoulx.library.LibraryTopMix>,
+                    ->
+                    Triple(forgottenFavorites.orEmpty(), keepListening.orEmpty(), offlineMixes)
                 },
             ) { primary, secondary ->
                 HomeLocalContent(
-                    quickPicks = primary[0] as List<Song>,
-                    featuredForYou = primary[1] as List<Song>,
-                    forThisMoment = primary[2] as List<Song>,
-                    recentlyPlayed = primary[3] as List<Song>,
-                    speedDialItems = primary[4] as List<LocalItem>,
-                    forgottenFavorites = primary[5] as List<Song>,
-                    keepListening = secondary.first,
-                    offlineMixes = secondary.second,
+                    quickPicks = primary.quickPicks,
+                    featuredForYou = primary.featuredForYou,
+                    forThisMoment = primary.forThisMoment,
+                    recentlyPlayed = primary.recentlyPlayed,
+                    speedDialItems = primary.speedDialItems,
+                    forgottenFavorites = secondary.first,
+                    keepListening = secondary.second,
+                    offlineMixes = secondary.third,
                 )
             }
 
