@@ -228,7 +228,7 @@ fun LibraryMixScreen(
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
                                 text = stringResource(R.string.recently_played),
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal),
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                                 color = MaterialTheme.colorScheme.onBackground,
                             )
