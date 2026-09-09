@@ -83,7 +83,7 @@ import dev.vxs.frostsoulx.constants.NavigationBarHorizontalPadding
 import dev.vxs.frostsoulx.extensions.togglePlayPause
 import dev.vxs.frostsoulx.models.MediaMetadata
 import dev.vxs.frostsoulx.playback.PlayerConnection
-import dev.vxs.frostsoulx.ui.frostsoul.frostSoulTexturedGlass
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulBackdropSurface
 import dev.vxs.frostsoulx.together.isConnectedToSession
 import dev.vxs.frostsoulx.utils.rememberLowDataModeActive
 import dev.vxs.frostsoulx.utils.rememberPreference
@@ -156,7 +156,7 @@ fun SwipeableMiniPlayerBox(
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
+        FrostSoulBackdropSurface(
             modifier =
                 Modifier
                     .let { baseModifier ->
@@ -178,13 +178,7 @@ fun SwipeableMiniPlayerBox(
                                 },
                             )
                         } else {
-                            baseModifier
-                                .frostSoulTexturedGlass(
-                                    grain = glassGrain,
-                                    shape = RoundedCornerShape(24.dp),
-                                    tint = MaterialTheme.colorScheme.surface,
-                                )
-                                .padding(horizontal = NavigationBarHorizontalPadding)
+                            baseModifier.padding(horizontal = NavigationBarHorizontalPadding)
                         }
                     }.let { baseModifier ->
                         if (swipeThumbnail) {
@@ -267,6 +261,10 @@ fun SwipeableMiniPlayerBox(
                             baseModifier
                         }
                     },
+            shape = RoundedCornerShape(24.dp),
+            grain = glassGrain,
+            blurRadius = 42f,
+            tint = Color.White,
         ) {
             content(offsetXAnimatable.value)
 

@@ -614,23 +614,18 @@ fun FSNavigationBar(
         } else {
             items
         }
-    Row(
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-        modifier =
-            modifier
-                .height(56.dp)
-                .clip(shape)
-                .frostSoulTexturedGlass(
-                    grain = glassGrain,
-                    shape = shape,
-                    tint = navSurface,
-                )
-                .border(1.dp, selectedTint.copy(alpha = if (homeSelected) 0.22f else 0.14f), shape)
-                // Keep item backgrounds flush with the pill; horizontal inset here
-                // creates a visible rectangular gap at the selected item corners.
-                .padding(horizontal = 0.dp, vertical = 3.dp),
+    FrostSoulBackdropSurface(
+        modifier = modifier.height(56.dp).frostSoulBackdropBorder(shape),
+        shape = shape,
+        grain = glassGrain,
+        blurRadius = 32f,
+        tint = if (pureBlack) Color.White else navSurface,
     ) {
+        Row(
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxSize().padding(vertical = 3.dp),
+        ) {
         displayItems.forEachIndexed { index, item ->
             val isMore = item.route == "__frostsoul_more__"
             val selected = !isMore && selectedRoute == item.route
@@ -673,6 +668,7 @@ fun FSNavigationBar(
                     style = FrostSoulTheme.typography.overline,
                     maxLines = 1,
                 )
+            }
             }
         }
     }
