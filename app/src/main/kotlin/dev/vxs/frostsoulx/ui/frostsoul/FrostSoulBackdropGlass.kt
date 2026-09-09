@@ -26,9 +26,6 @@ import eightbitlab.com.blurview.BlurTarget
 import eightbitlab.com.blurview.BlurView
 import kotlin.math.roundToInt
 
-/** Stable tag used by MainActivity's attached BlurTarget root. */
-const val FrostSoulBackdropTargetTag = "frostsoul-backdrop-target"
-
 /**
  * Real Android backdrop glass for Compose surfaces.
  *
@@ -47,32 +44,22 @@ fun FrostSoulBackdropSurface(
 ) {
     val safeGrain = grain.coerceIn(0f, 1f)
     val safeBlur = blurRadius.coerceIn(0f, 64f)
+
     Box(
         modifier = modifier.clip(shape),
     ) {
         AndroidView(
             factory = { context ->
                 BlurView(context).apply {
-                    // Resolve after attachment: before the ComposeView is attached,
-                    // rootView cannot find the Activity-level BlurTarget.
-                    val target = rootView.findViewWithTag<BlurTarget>(FrostSoulBackdropTargetTag)
-                    target?.let {
-                        setupWith(it)
-                            .setBlurRadius(safeBlur)
-                            .setOverlayColor(AndroidColor.TRANSPARENT)
-                        setTag(it)
-                    }
+                    // BlurView 3.x samples a sibling/ancestor BlurTarget. The target is kept
+                    // separate from this surface so the glass never captures itself.
+                    setupWith(BlurTarget(context))
+                        .setBlurRadius(safeBlur)
+                        .setOverlayColor(AndroidColor.TRANSPARENT)
                 }
             },
             update = { blurView ->
                 blurView.setBlurRadius(safeBlur)
-                val target = blurView.rootView.findViewWithTag<BlurTarget>(FrostSoulBackdropTargetTag)
-                if (target != null && blurView.getTag() !== target) {
-                    blurView.setupWith(target)
-                        .setBlurRadius(safeBlur)
-                        .setOverlayColor(AndroidColor.TRANSPARENT)
-                    blurView.setTag(target)
-                }
             },
             modifier = Modifier.fillMaxSize(),
         )
