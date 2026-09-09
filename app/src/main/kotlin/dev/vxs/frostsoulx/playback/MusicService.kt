@@ -5734,7 +5734,7 @@ class MusicService :
                     mediaMetadata.id,
                     if (nowDisliked) RecommendationSignalType.Dislike else RecommendationSignalType.Unlike,
                 )
-                syncUtils.dislikeSong(song, nowDisliked)
+                syncUtils.dislikeSong(song.song, nowDisliked)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
