@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.BlurRadiusKey
 import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
 import dev.vxs.frostsoulx.utils.rememberPreference
 import coil3.request.CachePolicy
