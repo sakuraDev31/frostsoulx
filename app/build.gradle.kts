@@ -266,6 +266,7 @@ dependencies {
     implementation(libs.datastore)
     implementation(libs.work.runtime)
     implementation("androidx.browser:browser:1.10.0")
+    implementation("com.github.Dimezis:BlurView:version-3.2.0")
 
     implementation(libs.compose.runtime)
     implementation(libs.compose.foundation)

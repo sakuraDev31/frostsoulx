@@ -123,7 +123,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.layer.rememberGraphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -179,9 +178,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import dev.vxs.frostsoulx.aod.ACTION_AOD_MODE
 import dev.vxs.frostsoulx.constants.AppBarHeight
-import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulBackdropRecorder
-import dev.vxs.frostsoulx.ui.frostsoul.LocalFrostSoulBackdropLayer
-import dev.vxs.frostsoulx.ui.frostsoul.LocalFrostSoulBackdropOrigin
 import dev.vxs.frostsoulx.constants.AppFontPreference
 import dev.vxs.frostsoulx.constants.AppLanguageKey
 import dev.vxs.frostsoulx.constants.CustomFontUriKey
@@ -1335,11 +1331,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                    val backdropLayer = rememberGraphicsLayer()
-                    val backdropOrigin = remember { mutableStateOf(IntOffset.Zero) }
                     CompositionLocalProvider(
-                        LocalFrostSoulBackdropLayer provides backdropLayer,
-                        LocalFrostSoulBackdropOrigin provides backdropOrigin,
                         LocalHapticFeedback provides customHaptic,
                         LocalAnimationsDisabled provides disableAnimations,
                         LocalDatabase provides database,
@@ -2072,10 +2064,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
 
-                                FrostSoulBackdropRecorder(
-                                    layer = backdropLayer,
-                                    modifier = Modifier.fillMaxSize(),
-                                ) {
                                 NavHost(
                                     navController = navController,
                                     startDestination =
@@ -2172,7 +2160,6 @@ class MainActivity : ComponentActivity() {
                                         searchScrollConnection = searchScrollBehavior.nestedScrollConnection,
                                         onlineSearchSort = onlineSearchSort,
                                     )
-                                }
                                 }
                             }
                         }
