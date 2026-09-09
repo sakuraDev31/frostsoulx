@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
@@ -179,7 +182,9 @@ private fun ImmersivePageTab(
     onClick: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier
+            .wrapContentWidth()
+            .clickable(onClick = onClick),
         horizontalAlignment = Alignment.Start,
     ) {
         Text(
@@ -188,12 +193,13 @@ private fun ImmersivePageTab(
             fontSize = 12.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             letterSpacing = 1.4.sp,
+            maxLines = 1,
         )
         Spacer(Modifier.height(10.dp))
         Box(
             modifier = Modifier
+                .width(IntrinsicSize.Min)
                 .height(2.dp)
-                .fillMaxWidth()
                 .background(
                     if (selected) FrostSoulTheme.colors.onSurface else Color.Transparent,
                 ),

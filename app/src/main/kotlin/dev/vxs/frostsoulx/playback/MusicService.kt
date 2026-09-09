@@ -7969,13 +7969,16 @@ class MusicService :
 
         val oldPlayer = player
         val oldLocalPlayer = localPlayer
-        val mediaItems = List(oldPlayer.mediaItemCount) { index -> oldPlayer.getMediaItemAt(index) }
-        val currentIndex = oldPlayer.currentMediaItemIndex
-        val positionMs = oldPlayer.currentPosition.coerceAtLeast(0L)
-        val playWhenReady = oldPlayer.playWhenReady
-        val repeatMode = oldPlayer.repeatMode
-        val shuffleEnabled = oldPlayer.shuffleModeEnabled
-        val playbackParameters = oldPlayer.playbackParameters
+        // Prefer local state because the AudioSink belongs to localPlayer. If a Cast session has
+        // transferred the queue, fall back to the active wrapper so the queue is not lost.
+        val statePlayer = oldLocalPlayer.takeIf { it.mediaItemCount > 0 } ?: oldPlayer
+        val mediaItems = List(statePlayer.mediaItemCount) { index -> statePlayer.getMediaItemAt(index) }
+        val currentIndex = statePlayer.currentMediaItemIndex
+        val positionMs = statePlayer.currentPosition.coerceAtLeast(0L)
+        val playWhenReady = statePlayer.playWhenReady
+        val repeatMode = statePlayer.repeatMode
+        val shuffleEnabled = statePlayer.shuffleModeEnabled
+        val playbackParameters = statePlayer.playbackParameters
         val volume = oldLocalPlayer.volume
 
         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
@@ -7995,8 +7998,6 @@ class MusicService :
             )
         }
         replacementLocal.prepare()
-        replacementLocal.playWhenReady = playWhenReady
-
         oldPlayer.removeListener(this)
         oldPlayer.removeListener(sleepTimer)
         oldLocalPlayer.removeListener(audioEffectPlayerListener)
@@ -8014,6 +8015,13 @@ class MusicService :
                 }
         playbackCore?.replacePlayer(player)
         mediaSession.setPlayer(player)
+        // Apply transport state after the replacement is visible to the core/session. This keeps
+        // play/pause and progress controllers attached to the live player after a toggle.
+        if (playWhenReady) {
+            player.play()
+        } else {
+            player.pause()
+        }
         oldPlayer.release()
         if (oldPlayer !== oldLocalPlayer) oldLocalPlayer.release()
     }
