@@ -101,6 +101,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -273,6 +275,7 @@ import dev.vxs.frostsoulx.ui.theme.ArchiveTuneTheme
 import dev.vxs.frostsoulx.ui.theme.TARGET_REFRESH_RATE_FPS
 import dev.vxs.frostsoulx.ui.theme.rememberSupportedHighestFps
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
+import dev.vxs.frostsoulx.ui.frostsoul.LocalFrostSoulHazeState
 import dev.vxs.frostsoulx.ui.frostsoul.SearchTheme
 import dev.vxs.frostsoulx.ui.utils.appBarScrollBehavior
 import dev.vxs.frostsoulx.ui.utils.backToMain
@@ -544,9 +547,9 @@ class MainActivity : ComponentActivity() {
                 }
         }
 
-        setContent {
-
-
+                setContent {
+            val frostSoulHazeState = rememberHazeState()
+            CompositionLocalProvider(LocalFrostSoulHazeState provides frostSoulHazeState) {
             val updateChannel by rememberEnumPreference(UpdateChannelKey, defaultValue = defaultUpdateChannel)
 
             LaunchedEffect(Unit) {
@@ -2137,7 +2140,7 @@ class MainActivity : ComponentActivity() {
                                                 } else {
                                                     Modifier
                                                 },
-                                            ).nestedScroll(
+                                            ).hazeSource(frostSoulHazeState).nestedScroll(
                                                 // Step 2b: the NavHost-level connection now serves
                                                 // ONLY shell-driven sub-screens (Album/Artist/
                                                 // Playlist/...). Home and Search attach their own
@@ -2247,9 +2250,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
+                }
+            }
     }
-
     private fun isBackupUri(uri: Uri?): Boolean {
         if (uri == null) return false
         val path = uri.lastPathSegment?.lowercase(Locale.US)

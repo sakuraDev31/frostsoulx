@@ -1,16 +1,12 @@
 package dev.vxs.frostsoulx.ui.frostsoul
 
-import android.graphics.Color as AndroidColor
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -19,20 +15,18 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import eightbitlab.com.blurview.BlurTarget
-import eightbitlab.com.blurview.BlurView
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 import kotlin.math.roundToInt
 
-/**
- * Real Android backdrop glass for Compose surfaces.
- *
- * BlurView samples the Android view hierarchy behind this component. Its children remain sharp,
- * while the sampled content is blurred dynamically. The Compose layers above it add only subtle
- * tint, refraction highlight, border, and deterministic fine grain.
- */
+/** Shared source state. The source is applied to the background NavHost, while glass surfaces
+ * are later siblings in the Scaffold and therefore never sample themselves. */
+val LocalFrostSoulHazeState = staticCompositionLocalOf<HazeState> { HazeState() }
+
 @Composable
 fun FrostSoulBackdropSurface(
     modifier: Modifier = Modifier,
@@ -44,26 +38,22 @@ fun FrostSoulBackdropSurface(
 ) {
     val safeGrain = grain.coerceIn(0f, 1f)
     val safeBlur = blurRadius.coerceIn(0f, 64f)
+    val hazeState = LocalFrostSoulHazeState.current
+    val blurStyle = HazeBlurStyle {
+        blurRadius(safeBlur.dp)
+        noiseFactor((safeGrain * 0.16f).coerceIn(0f, 0.16f))
+        backgroundColor(Color.Transparent)
+        fallbackColorEffect(HazeColorEffect.tint(tint.copy(alpha = 0.065f)))
+    }
 
     Box(
-        modifier = modifier.clip(shape),
+        modifier = modifier
+            .clip(shape)
+            .hazeBlur(
+                input = HazeInput.Sources(hazeState),
+                style = blurStyle,
+            ),
     ) {
-        AndroidView(
-            factory = { context ->
-                BlurView(context).apply {
-                    // BlurView 3.x samples a sibling/ancestor BlurTarget. The target is kept
-                    // separate from this surface so the glass never captures itself.
-                    setupWith(BlurTarget(context))
-                        .setBlurRadius(safeBlur)
-                        .setOverlayColor(AndroidColor.TRANSPARENT)
-                }
-            },
-            update = { blurView ->
-                blurView.setBlurRadius(safeBlur)
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
