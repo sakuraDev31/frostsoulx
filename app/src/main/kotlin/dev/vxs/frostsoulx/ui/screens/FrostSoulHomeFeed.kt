@@ -816,9 +816,9 @@ private fun FrostSoulHomeHeader(
                 )
                 FSText(
                     text = "FROSTSOULX",
-                    color = Color.White,
+                    color = Color.White.copy(alpha = 0.68f),
                     fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
+                    fontSize = 18.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

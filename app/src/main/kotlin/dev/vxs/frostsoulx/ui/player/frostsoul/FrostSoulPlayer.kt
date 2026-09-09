@@ -1407,14 +1407,14 @@ private fun FrostSoulArtworkBlurAlbumPage(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(start = 8.dp),
                 ) {
+                    FrostSoulFullPlayerDislikeButton(
+                        videoId = uiState.track.id,
+                        onClick = actions.onToggleDislike,
+                    )
                     FrostSoulFullPlayerLikeButton(
                         videoId = uiState.track.id,
                         isLiked = uiState.track.isLiked,
                         onClick = actions.onToggleLike,
-                    )
-                    FrostSoulFullPlayerDislikeButton(
-                        videoId = uiState.track.id,
-                        onClick = actions.onToggleDislike,
                     )
                 }
             }
@@ -1592,10 +1592,10 @@ private fun FrostSoulFullPlayerDislikeButton(
             .padding(horizontal = 4.dp),
     ) {
         Icon(
-            painter = painterResource(R.drawable.thumb_down),
+            painter = painterResource(R.drawable.favorite_dislike),
             contentDescription = if (isDisliked) "Remove dislike" else "Dislike track",
             tint = tint,
-            modifier = Modifier.size(23.dp),
+            modifier = Modifier.size(25.dp),
         )
     }
 }
