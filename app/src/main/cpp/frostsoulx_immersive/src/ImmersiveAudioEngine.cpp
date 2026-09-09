@@ -16,6 +16,8 @@ struct ImmersiveAudioEngine::Impl {
     bool prepared = false;
     bool enabled = false;
     float spatialBlend = 1.0f;
+    ImmersiveProcessResult lastResult = ImmersiveProcessResult::NotPrepared;
+    int lastState = -1;
 
     std::vector<float> inputLeft;
     std::vector<float> inputRight;
@@ -53,6 +55,8 @@ struct ImmersiveAudioEngine::Impl {
         inputChannels[1] = nullptr;
         outputChannels[0] = nullptr;
         outputChannels[1] = nullptr;
+        lastResult = ImmersiveProcessResult::NotPrepared;
+        lastState = -1;
     }
 };
 
@@ -64,6 +68,7 @@ ImmersiveAudioEngine::~ImmersiveAudioEngine() {
 
 bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
     if (sampleRate < 8000 || maxFrames <= 0) return false;
+
     impl_->release();
     impl_->sampleRate = sampleRate;
     impl_->maxFrames = maxFrames;
@@ -79,7 +84,7 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
     IPLContextSettings contextSettings{};
     contextSettings.version = STEAMAUDIO_VERSION;
-    if (iplContextCreate(&contextSettings, &impl_->context) != IPL_STATUS_SUCCESS) {
+    if (iplContextCreate(&contextSettings, &impl_->context) != IPL_STATUS_SUCCESS || impl_->context == nullptr) {
         impl_->release();
         return false;
     }
@@ -91,14 +96,14 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
     IPLHRTFSettings hrtfSettings{};
     hrtfSettings.type = IPL_HRTFTYPE_DEFAULT;
     hrtfSettings.volume = 1.0f;
-    if (iplHRTFCreate(impl_->context, &audioSettings, &hrtfSettings, &impl_->hrtf) != IPL_STATUS_SUCCESS) {
+    if (iplHRTFCreate(impl_->context, &audioSettings, &hrtfSettings, &impl_->hrtf) != IPL_STATUS_SUCCESS || impl_->hrtf == nullptr) {
         impl_->release();
         return false;
     }
 
     IPLBinauralEffectSettings effectSettings{};
     effectSettings.hrtf = impl_->hrtf;
-    if (iplBinauralEffectCreate(impl_->context, &audioSettings, &effectSettings, &impl_->effect) != IPL_STATUS_SUCCESS) {
+    if (iplBinauralEffectCreate(impl_->context, &audioSettings, &effectSettings, &impl_->effect) != IPL_STATUS_SUCCESS || impl_->effect == nullptr) {
         impl_->release();
         return false;
     }
@@ -108,6 +113,7 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
 #endif
 
     impl_->prepared = true;
+    impl_->lastResult = ImmersiveProcessResult::Disabled;
     return true;
 }
 
@@ -117,10 +123,15 @@ void ImmersiveAudioEngine::reset() noexcept {
         iplBinauralEffectReset(impl_->effect);
     }
 #endif
+    impl_->lastResult = impl_->prepared ? ImmersiveProcessResult::Disabled : ImmersiveProcessResult::NotPrepared;
+    impl_->lastState = -1;
 }
 
 void ImmersiveAudioEngine::setEnabled(bool enabled) noexcept {
     impl_->enabled = enabled;
+    if (!enabled && impl_->prepared) {
+        impl_->lastResult = ImmersiveProcessResult::Disabled;
+    }
 }
 
 void ImmersiveAudioEngine::setSpatialBlend(float blend) noexcept {
@@ -131,8 +142,29 @@ bool ImmersiveAudioEngine::isPrepared() const noexcept {
     return impl_->prepared;
 }
 
+int ImmersiveAudioEngine::maxFrames() const noexcept {
+    return impl_->maxFrames;
+}
+
+ImmersiveProcessResult ImmersiveAudioEngine::lastProcessResult() const noexcept {
+    return impl_->lastResult;
+}
+
+int ImmersiveAudioEngine::lastEffectState() const noexcept {
+    return impl_->lastState;
+}
+
 bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcept {
-    if (!impl_->prepared || !impl_->enabled || interleavedStereo == nullptr || frames <= 0 || frames > impl_->maxFrames) {
+    if (!impl_->prepared) {
+        impl_->lastResult = ImmersiveProcessResult::NotPrepared;
+        return false;
+    }
+    if (!impl_->enabled) {
+        impl_->lastResult = ImmersiveProcessResult::Disabled;
+        return false;
+    }
+    if (interleavedStereo == nullptr || frames <= 0 || frames > impl_->maxFrames) {
+        impl_->lastResult = ImmersiveProcessResult::InvalidInput;
         return false;
     }
 
@@ -159,14 +191,23 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
     params.hrtf = impl_->hrtf;
     params.peakDelays = nullptr;
 
-    (void)iplBinauralEffectApply(impl_->effect, &params, &input, &output);
+    const IPLAudioEffectState state = iplBinauralEffectApply(impl_->effect, &params, &input, &output);
+    impl_->lastState = static_cast<int>(state);
+    if (state != IPL_AUDIOEFFECTSTATE_TAILCOMPLETE && state != IPL_AUDIOEFFECTSTATE_TAILREMAINING) {
+        impl_->lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
+        return false;
+    }
+
     for (int frame = 0; frame < frames; ++frame) {
         interleavedStereo[frame * 2] = impl_->outputLeft[static_cast<std::size_t>(frame)];
         interleavedStereo[frame * 2 + 1] = impl_->outputRight[static_cast<std::size_t>(frame)];
     }
+    impl_->lastResult = ImmersiveProcessResult::SteamAudioProcessed;
     return true;
-#endif
+#else
+    impl_->lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
     return false;
+#endif
 }
 
 } // namespace frostsoulx

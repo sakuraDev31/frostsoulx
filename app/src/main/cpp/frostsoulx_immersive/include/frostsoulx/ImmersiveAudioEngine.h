@@ -5,6 +5,14 @@
 
 namespace frostsoulx {
 
+enum class ImmersiveProcessResult {
+    NotPrepared,
+    Disabled,
+    InvalidInput,
+    SteamAudioUnavailable,
+    SteamAudioProcessed,
+};
+
 class ImmersiveAudioEngine final {
 public:
     ImmersiveAudioEngine();
@@ -18,6 +26,9 @@ public:
     void setEnabled(bool enabled) noexcept;
     void setSpatialBlend(float blend) noexcept;
     bool isPrepared() const noexcept;
+    int maxFrames() const noexcept;
+    ImmersiveProcessResult lastProcessResult() const noexcept;
+    int lastEffectState() const noexcept;
     bool process(float* interleavedStereo, int frames) noexcept;
 
 private:

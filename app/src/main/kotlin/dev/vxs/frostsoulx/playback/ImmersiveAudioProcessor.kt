@@ -15,6 +15,8 @@ data class ImmersiveAudioDiagnostics(
     val nanCount: Long = 0L,
     val infCount: Long = 0L,
     val processCallCount: Long = 0L,
+    val processedFrames: Long = 0L,
+    val nativeStatus: Int = 0,
 ) {
     companion object {
         fun fromNative(values: DoubleArray?): ImmersiveAudioDiagnostics {
@@ -29,6 +31,8 @@ data class ImmersiveAudioDiagnostics(
                 nanCount = values[6].toLong().coerceAtLeast(0L),
                 infCount = values[7].toLong().coerceAtLeast(0L),
                 processCallCount = values[8].toLong().coerceAtLeast(0L),
+                processedFrames = values.getOrNull(9)?.toLong()?.coerceAtLeast(0L) ?: 0L,
+                nativeStatus = values.getOrNull(10)?.toInt() ?: 0,
             )
         }
     }

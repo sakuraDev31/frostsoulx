@@ -22,6 +22,8 @@ struct Diagnostics {
     int nanCount = 0;
     int infCount = 0;
     int processCallCount = 0;
+    int processedFrames = 0;
+    int nativeStatus = 0;
 };
 
 struct Handle {
@@ -55,7 +57,7 @@ float sampleRms(const float* values, int samples, float* peak, int* nanCount, in
     return finiteSamples > 0 ? static_cast<float>(std::sqrt(sumSquares / finiteSamples)) : 0.0f;
 }
 
-void publishDiagnostics(Handle& handle, const float* input, const float* output, int samples) noexcept {
+void publishDiagnostics(Handle& handle, const float* input, const float* output, int samples, int frames) noexcept {
     float inputPeak = 0.0f;
     float outputPeak = 0.0f;
     int inputNan = 0;
@@ -83,6 +85,7 @@ void publishDiagnostics(Handle& handle, const float* input, const float* output,
         : 0.0f;
     handle.diagnostics.nanCount = inputNan + outputNan;
     handle.diagnostics.infCount = inputInf + outputInf;
+    handle.diagnostics.processedFrames += frames;
     ++handle.diagnostics.processCallCount;
 }
 
@@ -96,6 +99,10 @@ std::int16_t writePcm16(float sample) noexcept {
     return static_cast<std::int16_t>(std::clamp(scaled, -32768, 32767));
 }
 
+int resultCode(frostsoulx::ImmersiveProcessResult result) noexcept {
+    return static_cast<int>(result);
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -105,6 +112,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeCreate(
     if (!handle->engine.prepare(sampleRate, kMaxFrames)) return 0L;
     handle->engine.setEnabled(false);
     handle->engine.setSpatialBlend(0.0f);
+    handle->diagnostics.nativeStatus = resultCode(handle->engine.lastProcessResult());
     return reinterpret_cast<jlong>(handle.release());
 }
 
@@ -120,6 +128,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReset(
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         handle->engine.reset();
         handle->diagnostics = Diagnostics{};
+        handle->diagnostics.nativeStatus = resultCode(handle->engine.lastProcessResult());
     }
 }
 
@@ -129,6 +138,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetEnabled(
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         handle->enabled = enabled == JNI_TRUE;
         handle->engine.setEnabled(handle->enabled);
+        handle->diagnostics.nativeStatus = resultCode(handle->engine.lastProcessResult());
     }
 }
 
@@ -144,7 +154,7 @@ extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReadDiagnostics(
     JNIEnv* env, jclass, jlong address) {
     const auto* handle = reinterpret_cast<const Handle*>(address);
-    const jdouble values[9] = {
+    const jdouble values[11] = {
         handle != nullptr ? handle->diagnostics.inputRms : 0.0,
         handle != nullptr ? handle->diagnostics.outputRms : 0.0,
         handle != nullptr ? handle->diagnostics.inputPeak : 0.0,
@@ -154,9 +164,11 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReadDiagnostics(
         handle != nullptr ? static_cast<jdouble>(handle->diagnostics.nanCount) : 0.0,
         handle != nullptr ? static_cast<jdouble>(handle->diagnostics.infCount) : 0.0,
         handle != nullptr ? static_cast<jdouble>(handle->diagnostics.processCallCount) : 0.0,
+        handle != nullptr ? static_cast<jdouble>(handle->diagnostics.processedFrames) : 0.0,
+        handle != nullptr ? static_cast<jdouble>(handle->diagnostics.nativeStatus) : 0.0,
     };
-    const jdoubleArray result = env->NewDoubleArray(9);
-    if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 9, values);
+    const jdoubleArray result = env->NewDoubleArray(11);
+    if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 11, values);
     return result;
 }
 
@@ -168,31 +180,49 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
 
     auto* bytes = static_cast<std::uint8_t*>(env->GetDirectBufferAddress(pcmBuffer));
     if (bytes == nullptr) return;
-    const int boundedFrames = std::min(frames, kMaxFrames);
-    const int samples = boundedFrames * 2;
 
-    if (encoding == 4) {
-        auto* samplesFloat = reinterpret_cast<float*>(bytes);
-        std::copy(samplesFloat, samplesFloat + samples, handle->inputSnapshot.begin());
-        std::copy(samplesFloat, samplesFloat + samples, handle->scratch.begin());
-        handle->engine.process(handle->scratch.data(), boundedFrames);
-        std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, samplesFloat);
-        publishDiagnostics(*handle, handle->inputSnapshot.data(), samplesFloat, samples);
+    const int totalFrames = frames;
+    int frameOffset = 0;
+    while (frameOffset < totalFrames) {
+        const int chunkFrames = std::min(kMaxFrames, totalFrames - frameOffset);
+        const int samples = chunkFrames * 2;
+        const int sampleOffset = frameOffset * 2;
+
+        if (encoding == 4) {
+            auto* samplesFloat = reinterpret_cast<float*>(bytes) + sampleOffset;
+            std::copy(samplesFloat, samplesFloat + samples, handle->inputSnapshot.begin());
+            std::copy(samplesFloat, samplesFloat + samples, handle->scratch.begin());
+            const bool processed = handle->engine.process(handle->scratch.data(), chunkFrames);
+            handle->diagnostics.nativeStatus = resultCode(handle->engine.lastProcessResult());
+            if (processed) {
+                std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, samplesFloat);
+                publishDiagnostics(*handle, handle->inputSnapshot.data(), samplesFloat, samples, chunkFrames);
+            }
+            frameOffset += chunkFrames;
+            continue;
+        }
+
+        if (encoding == 2) {
+            auto* samples16 = reinterpret_cast<std::int16_t*>(bytes) + sampleOffset;
+            for (int frame = 0; frame < chunkFrames; ++frame) {
+                handle->scratch[frame * 2] = readPcm16(samples16[frame * 2]);
+                handle->scratch[frame * 2 + 1] = readPcm16(samples16[frame * 2 + 1]);
+            }
+            std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, handle->inputSnapshot.begin());
+            const bool processed = handle->engine.process(handle->scratch.data(), chunkFrames);
+            handle->diagnostics.nativeStatus = resultCode(handle->engine.lastProcessResult());
+            if (processed) {
+                publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->scratch.data(), samples, chunkFrames);
+                for (int frame = 0; frame < chunkFrames; ++frame) {
+                    samples16[frame * 2] = writePcm16(handle->scratch[frame * 2]);
+                    samples16[frame * 2 + 1] = writePcm16(handle->scratch[frame * 2 + 1]);
+                }
+            }
+            frameOffset += chunkFrames;
+            continue;
+        }
+
+        handle->diagnostics.nativeStatus = resultCode(frostsoulx::ImmersiveProcessResult::InvalidInput);
         return;
-    }
-
-    if (encoding == 2) {
-        auto* samples16 = reinterpret_cast<std::int16_t*>(bytes);
-        for (int frame = 0; frame < boundedFrames; ++frame) {
-            handle->scratch[frame * 2] = readPcm16(samples16[frame * 2]);
-            handle->scratch[frame * 2 + 1] = readPcm16(samples16[frame * 2 + 1]);
-        }
-        std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, handle->inputSnapshot.begin());
-        handle->engine.process(handle->scratch.data(), boundedFrames);
-        publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->scratch.data(), samples);
-        for (int frame = 0; frame < boundedFrames; ++frame) {
-            samples16[frame * 2] = writePcm16(handle->scratch[frame * 2]);
-            samples16[frame * 2 + 1] = writePcm16(handle->scratch[frame * 2 + 1]);
-        }
     }
 }
