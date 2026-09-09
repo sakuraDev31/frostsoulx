@@ -49,6 +49,7 @@ import dev.vxs.frostsoulx.home.ObserveHomePresentationPreferencesUseCase
 import dev.vxs.frostsoulx.innertube.YouTube
 import dev.vxs.frostsoulx.innertube.models.AccountChannel
 import dev.vxs.frostsoulx.innertube.models.PlaylistItem
+import dev.vxs.frostsoulx.innertube.models.SongItem
 import dev.vxs.frostsoulx.innertube.models.WatchEndpoint
 import dev.vxs.frostsoulx.innertube.models.YTItem
 import dev.vxs.frostsoulx.innertube.models.filterExplicit
@@ -57,6 +58,8 @@ import dev.vxs.frostsoulx.innertube.pages.HomePage
 import dev.vxs.frostsoulx.innertube.utils.completed
 import dev.vxs.frostsoulx.innertube.utils.hasYouTubeLoginCookie
 import dev.vxs.frostsoulx.models.SimilarRecommendation
+import dev.vxs.frostsoulx.models.toMediaMetadata
+import dev.vxs.frostsoulx.recommendation.RecommendationSignalType
 import dev.vxs.frostsoulx.repository.LibraryTopMixRepository
 import dev.vxs.frostsoulx.utils.SavedAccount
 import dev.vxs.frostsoulx.utils.SpeedDialPinType
@@ -102,6 +105,7 @@ private data class HomeLocalContent(
     val quickPicks: List<Song>,
     val featuredForYou: List<Song>,
     val forThisMoment: List<Song>,
+    val recentlyPlayed: List<Song>,
     val speedDialItems: List<LocalItem>,
     val forgottenFavorites: List<Song>,
     val keepListening: List<LocalItem>,
@@ -126,6 +130,7 @@ private data class HomeContent(
                             local.quickPicks.isNotEmpty() ||
                 local.featuredForYou.isNotEmpty() ||
                 local.forThisMoment.isNotEmpty() ||
+                local.recentlyPlayed.isNotEmpty() ||
                 local.speedDialItems.isNotEmpty() ||
                 local.forgottenFavorites.isNotEmpty() ||
                 local.keepListening.isNotEmpty() ||
@@ -156,16 +161,37 @@ private data class HomeStateInputs(
             return HomeScreenState.Empty
         }
 
+        // Reserve IDs in visual priority order so one local song/item cannot occupy
+        // multiple Home shelves in the same emission.
+        val usedLocalIds = HashSet<String>()
+        fun <T : LocalItem> dedupe(items: List<T>): List<T> =
+            items.filter { usedLocalIds.add(it.id) }
+        val featured = dedupe(content.local.featuredForYou)
+        val moment = dedupe(content.local.forThisMoment)
+        val recentlyPlayed = dedupe(content.local.recentlyPlayed)
+        val keepListening = dedupe(content.local.keepListening)
+        val quickPicks = dedupe(content.local.quickPicks)
+        val forgottenFavorites = dedupe(content.local.forgottenFavorites)
+        val speedDialItems = dedupe(content.local.speedDialItems)
+        val similarRecommendations =
+            content.remote.similarRecommendations
+                .map { recommendation ->
+                    recommendation.copy(
+                        items = recommendation.items.filter { usedLocalIds.add(it.id) }.distinctBy { it.id },
+                    )
+                }.filter { it.items.isNotEmpty() }
+
         return HomeScreenState.Success(
             HomeUiState(
-                quickPicks = ImmutableList.copyOf(content.local.quickPicks),
-                featuredForYou = ImmutableList.copyOf(content.local.featuredForYou),
-                forThisMoment = ImmutableList.copyOf(content.local.forThisMoment),
-                speedDialItems = ImmutableList.copyOf(content.local.speedDialItems),
-                forgottenFavorites = ImmutableList.copyOf(content.local.forgottenFavorites),
-                keepListening = ImmutableList.copyOf(content.local.keepListening),
+                quickPicks = ImmutableList.copyOf(quickPicks),
+                featuredForYou = ImmutableList.copyOf(featured),
+                forThisMoment = ImmutableList.copyOf(moment),
+                recentlyPlayed = ImmutableList.copyOf(recentlyPlayed),
+                speedDialItems = ImmutableList.copyOf(speedDialItems),
+                forgottenFavorites = ImmutableList.copyOf(forgottenFavorites),
+                keepListening = ImmutableList.copyOf(keepListening),
                 offlineMixes = ImmutableList.copyOf(content.local.offlineMixes),
-                similarRecommendations = ImmutableList.copyOf(content.remote.similarRecommendations),
+                similarRecommendations = ImmutableList.copyOf(similarRecommendations),
                 accountPlaylists = ImmutableList.copyOf(content.remote.accountPlaylists),
                 homePage = content.remote.homePage,
                 selectedChip = content.selectedChip,
@@ -210,6 +236,7 @@ class HomeViewModel
         private val quickPicks = MutableStateFlow<List<Song>?>(null)
         private val featuredForYou = MutableStateFlow<List<Song>>(emptyList())
         private val forThisMoment = MutableStateFlow<List<Song>>(emptyList())
+        private val recentlyPlayed = MutableStateFlow<List<Song>>(emptyList())
         private val speedDialItems = MutableStateFlow<List<LocalItem>>(emptyList())
         private val forgottenFavorites = MutableStateFlow<List<Song>?>(null)
         private val keepListening = MutableStateFlow<List<LocalItem>?>(null)
@@ -239,9 +266,9 @@ class HomeViewModel
 
         private val localContent =
             combine(
-                combine(quickPicks, featuredForYou, forThisMoment, speedDialItems, forgottenFavorites) {
-                        quickPicks, featuredForYou, forThisMoment, speedDialItems, forgottenFavorites ->
-                    listOf(quickPicks.orEmpty(), featuredForYou, forThisMoment, speedDialItems, forgottenFavorites.orEmpty())
+                combine(quickPicks, featuredForYou, forThisMoment, recentlyPlayed, speedDialItems, forgottenFavorites) {
+                        quickPicks, featuredForYou, forThisMoment, recentlyPlayed, speedDialItems, forgottenFavorites ->
+                    listOf(quickPicks.orEmpty(), featuredForYou, forThisMoment, recentlyPlayed, speedDialItems, forgottenFavorites.orEmpty())
                 },
                 combine(keepListening, offlineMixRepository.observePersistedTopMixes()) { keepListening, offlineMixes ->
                     keepListening.orEmpty() to offlineMixes
@@ -251,8 +278,9 @@ class HomeViewModel
                     quickPicks = primary[0] as List<Song>,
                     featuredForYou = primary[1] as List<Song>,
                     forThisMoment = primary[2] as List<Song>,
-                    speedDialItems = primary[3] as List<LocalItem>,
-                    forgottenFavorites = primary[4] as List<Song>,
+                    recentlyPlayed = primary[3] as List<Song>,
+                    speedDialItems = primary[4] as List<LocalItem>,
+                    forgottenFavorites = primary[5] as List<Song>,
                     keepListening = secondary.first,
                     offlineMixes = secondary.second,
                 )
@@ -326,11 +354,102 @@ class HomeViewModel
                 it.title.contains("podcasts", ignoreCase = true)
             }
 
+        private enum class HomeCandidateSource {
+            HISTORY,
+            RELATED,
+            SAME_ARTIST,
+            LIBRARY,
+        }
+
+        private data class HomeCandidate(
+            val song: Song,
+            val source: HomeCandidateSource,
+        )
+
         private fun List<Song>.toQuickPickSample(): List<Song> =
             filter { song -> song.artists.none { it.blockedAt != null } }
                 .distinctBy { it.id }
                 .shuffled()
                 .take(20)
+
+        private fun rankHomeCandidates(
+            candidates: List<HomeCandidate>,
+            historyIds: Set<String>,
+            recentIds: Set<String>,
+            statsBySong: Map<String, SongWithStats>,
+            signalsBySong: Map<String, List<RecommendationSignalEntity>>,
+        ): Pair<List<Song>, List<Song>> {
+            val maxPlayCount = statsBySong.values.maxOfOrNull { it.songCountListened }?.coerceAtLeast(1) ?: 1
+            val ranked =
+                candidates
+                    .distinctBy { it.song.id }
+                    .map { candidate ->
+                        val stats = statsBySong[candidate.song.id]
+                        val frequency = ((stats?.songCountListened ?: 0).toFloat() / maxPlayCount).coerceIn(0f, 1f)
+                        val recency = if (candidate.song.id in recentIds) 1f else 0.2f
+                        val similarity =
+                            when (candidate.source) {
+                                HomeCandidateSource.RELATED -> 1f
+                                HomeCandidateSource.SAME_ARTIST -> 0.72f
+                                HomeCandidateSource.HISTORY -> 0.58f
+                                HomeCandidateSource.LIBRARY -> 0.25f
+                            }
+                        val novelty = (1f - frequency).coerceIn(0f, 1f)
+                        val feedback =
+                            signalsBySong[candidate.song.id].orEmpty().sumOf { signal ->
+                                when (signal.type) {
+                                    RecommendationSignalType.Favorite.name -> 0.25
+                                    RecommendationSignalType.Complete.name,
+                                    RecommendationSignalType.Replay.name,
+                                    -> 0.12
+                                    RecommendationSignalType.Skip.name,
+                                    RecommendationSignalType.Unlike.name,
+                                    -> -0.22
+                                    else -> 0.0
+                                }
+                            }.toFloat().coerceIn(-0.5f, 0.5f)
+                        val contextBoost =
+                            if (signalsBySong[candidate.song.id].orEmpty().any { it.contextFlags != 0 }) 0.08f else 0f
+                        val score =
+                            (recency * 0.28f) +
+                                (frequency * 0.22f) +
+                                (similarity * 0.25f) +
+                                (novelty * 0.15f) +
+                                (feedback * 0.08f) +
+                                contextBoost
+                        candidate to score
+                    }.sortedByDescending { it.second }
+
+            fun diversify(items: List<HomeCandidate>): List<Song> {
+                val artistCounts = HashMap<String, Int>()
+                return buildList {
+                    items.forEach { candidate ->
+                        val artistKey = candidate.song.artists.firstOrNull()?.id
+                            ?: candidate.song.artists.firstOrNull()?.name.orEmpty()
+                        val count = artistCounts[artistKey] ?: 0
+                        if (artistKey.isNotBlank() && count >= 2) return@forEach
+                        artistCounts[artistKey] = count + 1
+                        add(candidate.song)
+                    }
+                }
+            }
+
+            val featured =
+                diversify(
+                    ranked
+                        .filter { it.first.song.id in historyIds }
+                        .map { it.first },
+                ).take(8)
+            val moment =
+                diversify(
+                    ranked
+                        .filter { it.first.song.id !in historyIds }
+                        .sortedByDescending { (candidate, score) ->
+                            score + if (candidate.source == HomeCandidateSource.RELATED) 0.18f else 0f
+                        }.map { it.first },
+                ).take(12)
+            return featured to moment
+        }
 
         private fun List<Song>.hasSameSongIdsAs(other: List<Song>): Boolean {
             if (size != other.size) return false
@@ -350,8 +469,14 @@ class HomeViewModel
 
         private fun updateAllLocalItems() {
             _allLocalItems.value =
-                (quickPicks.value.orEmpty() + forgottenFavorites.value.orEmpty() + keepListening.value.orEmpty())
-                    .filter { it is Song || it is Album }
+                (
+                    quickPicks.value.orEmpty() +
+                        featuredForYou.value +
+                        forThisMoment.value +
+                        recentlyPlayed.value +
+                        forgottenFavorites.value.orEmpty() +
+                        keepListening.value.orEmpty()
+                ).filter { it is Song || it is Album }
         }
 
         private suspend fun quickPicksWithFallback(primary: List<Song>): List<Song> {
@@ -497,6 +622,15 @@ class HomeViewModel
                     }
 
                     launch {
+                        recentlyPlayed.value =
+                            database
+                                .recentSongs(limit = 20)
+                                .first()
+                                .filter { song -> song.artists.none { it.blockedAt != null } }
+                                .take(20)
+                    }
+
+                    launch {
                         val keepListeningSongs =
                             database
                                 .mostPlayedSongs(fromTimeStamp, limit = 15, offset = 5)
@@ -616,10 +750,84 @@ class HomeViewModel
                     .distinctBy { it.id }
                     .toList()
 
-            // Featured is anchored in what the user actually played; Moment is the
-            // adjacent/similar pool and never loops over the same history-only rows.
-            featuredForYou.value = history.take(8)
-            forThisMoment.value = (related + sameArtistFallback).take(12)
+            val liveRelated =
+                if (related.size < 8) {
+                    loadLiveRelatedSongs(history, historyIds)
+                } else {
+                    emptyList()
+                }
+
+            val libraryCandidates =
+                database
+                    .allSongs()
+                    .first()
+                    .filterNot { it.id in historyIds }
+                    .filterNot { song -> related.any { it.id == song.id } }
+                    .filterNot { song -> liveRelated.any { it.id == song.id } }
+                    .take(200)
+            val candidates =
+                history.map { HomeCandidate(it, HomeCandidateSource.HISTORY) } +
+                    related.map { HomeCandidate(it, HomeCandidateSource.RELATED) } +
+                    liveRelated.map { HomeCandidate(it, HomeCandidateSource.RELATED) } +
+                    sameArtistFallback.map { HomeCandidate(it, HomeCandidateSource.SAME_ARTIST) } +
+                    libraryCandidates.map { HomeCandidate(it, HomeCandidateSource.LIBRARY) }
+            val statsBySong =
+                database
+                    .mostPlayedSongsStats(fromTimeStamp, limit = 200)
+                    .first()
+                    .associateBy { it.id }
+            val signalsBySong =
+                database
+                    .recentRecommendationSignals(limit = 2_000)
+                    .groupBy { it.songId }
+            val (rankedFeatured, rankedMoment) =
+                rankHomeCandidates(
+                    candidates = candidates,
+                    historyIds = historyIds,
+                    recentIds = recentlyPlayed.value.mapTo(HashSet()) { it.id },
+                    statsBySong = statsBySong,
+                    signalsBySong = signalsBySong,
+                )
+            featuredForYou.value = rankedFeatured
+            forThisMoment.value = rankedMoment
+        }
+
+        private suspend fun loadLiveRelatedSongs(
+            history: List<Song>,
+            historyIds: Set<String>,
+        ): List<Song> {
+            val remoteItems = ArrayList<SongItem>(24)
+            for (historySong in history.take(4)) {
+                val endpoint =
+                    YouTube
+                        .next(WatchEndpoint(videoId = historySong.id))
+                        .getOrNull()
+                        ?.relatedEndpoint
+                        ?: continue
+                val page = YouTube.related(endpoint).getOrNull() ?: continue
+                remoteItems += page.songs
+                if (remoteItems.size >= 24) break
+            }
+
+            val uniqueItems =
+                remoteItems
+                    .asSequence()
+                    .filterNot { it.id in historyIds }
+                    .filter { item -> item.artists.any { artist -> artist.name.isNotBlank() } }
+                    .distinctBy { it.id }
+                    .take(24)
+                    .toList()
+            if (uniqueItems.isEmpty()) return emptyList()
+
+            // Reuse the existing metadata insertion path so live results become normal
+            // local Song objects and remain available when the device goes offline.
+            database.withTransaction {
+                uniqueItems.forEach { insert(it.toMediaMetadata()) }
+            }
+            return database
+                .getSongsByIds(uniqueItems.map { it.id })
+                .filterNot { it.id in historyIds }
+                .distinctBy { it.id }
         }
 
         private suspend fun loadSimilarRecommendations() {

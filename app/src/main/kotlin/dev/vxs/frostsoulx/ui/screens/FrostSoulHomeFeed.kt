@@ -133,7 +133,7 @@ internal fun FrostSoulHomeFeed(
     var greetingNameDraft by rememberSaveable { mutableStateOf("") }
     val albums = remember(uiState.speedDialItems) { uiState.speedDialItems.filterIsInstance<Album>() }
     val artists = remember(uiState.speedDialItems) { uiState.speedDialItems.filterIsInstance<Artist>() }
-    val recentItems = remember(uiState.keepListening) { uiState.keepListening.take(6) }
+    val recentItems = remember(uiState.recentlyPlayed) { uiState.recentlyPlayed.take(6) }
     val openSearchPortal: () -> Unit = {
         navController.currentBackStackEntry?.savedStateHandle?.set("openSearch", true)
     }
@@ -236,7 +236,8 @@ internal fun FrostSoulHomeFeed(
 
         if (uiState.forgottenFavorites.isNotEmpty()) {
             item(key = "frostsoul_recently_added_header") {
-                FSSectionHeader(title = "Recently Added", actionLabel = "See All", onAction = { navController.navigate(Screens.Library.route) })
+                FSSectionHeader(title = "Rediscover",
+                    actionLabel = "See All", onAction = { navController.navigate(Screens.Library.route) })
             }
             item(key = "frostsoul_recently_added") {
                 FrostSoulSongShelf(
@@ -371,6 +372,7 @@ internal fun FrostSoulHomeFeed(
 
         if (
             uiState.keepListening.isEmpty() &&
+                uiState.recentlyPlayed.isEmpty() &&
                                 uiState.featuredForYou.isEmpty() &&
                     uiState.forThisMoment.isEmpty() &&
                     uiState.quickPicks.isEmpty() &&
