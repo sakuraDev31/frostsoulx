@@ -394,8 +394,8 @@ fun AppearanceSettings(navController: NavController) {
 
                 item {
                     PreferenceEntry(
-                        title = { Text(stringResource(R.string.blur_intensity)) },
-                        description = stringResource(R.string.blur_intensity_value, blurRadius.roundToInt()),
+                        title = { Text("Glass blur radius") },
+                        description = "Nav bar and mini-player backdrop blur: ${blurRadius.roundToInt()}dp",
                         icon = { Icon(painterResource(R.drawable.blur_on), null) },
                         isEnabled = !disableBlur,
                         content = {
@@ -414,8 +414,8 @@ fun AppearanceSettings(navController: NavController) {
 
                 item {
                     PreferenceEntry(
-                        title = { Text("Glass texture") },
-                        description = "Nav bar and mini-player grain: ${(glassGrainIntensity * 100f).roundToInt()}%",
+                        title = { Text("Glass grain intensity") },
+                        description = "Nav bar and mini-player fine grain: ${(glassGrainIntensity * 100f).roundToInt()}%",
                         icon = { Icon(painterResource(R.drawable.tune), null) },
                         content = {
                             Spacer(modifier = Modifier.height(10.dp))

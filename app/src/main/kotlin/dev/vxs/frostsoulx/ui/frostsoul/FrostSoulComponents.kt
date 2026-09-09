@@ -599,6 +599,7 @@ fun FSNavigationBar(
 ) {
     val colors = FrostSoulTheme.colors
     val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
+    val (glassBlurRadius) = rememberPreference(BlurRadiusKey, defaultValue = 32f)
     val homeSelected = selectedRoute == "home"
     val selectedTint = if (pureBlack) Color.White else Color.Black
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
@@ -618,7 +619,7 @@ fun FSNavigationBar(
         modifier = modifier.height(56.dp).frostSoulBackdropBorder(shape),
         shape = shape,
         grain = glassGrain,
-        blurRadius = 32f,
+        blurRadius = glassBlurRadius.coerceIn(0f, 64f),
         tint = if (pureBlack) Color.White else navSurface,
     ) {
         Row(

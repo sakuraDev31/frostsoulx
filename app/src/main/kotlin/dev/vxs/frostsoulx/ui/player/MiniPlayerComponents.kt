@@ -76,6 +76,7 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.BlurRadiusKey
 import dev.vxs.frostsoulx.constants.EnableHapticFeedbackKey
 import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
 import dev.vxs.frostsoulx.constants.MiniPlayerHeight
@@ -129,6 +130,7 @@ fun SwipeableMiniPlayerBox(
     val view = LocalView.current
     val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
     val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
+    val (glassBlurRadius) = rememberPreference(BlurRadiusKey, defaultValue = 32f)
 
     val animationSpec =
         spring<Float>(
@@ -263,7 +265,7 @@ fun SwipeableMiniPlayerBox(
                     },
             shape = RoundedCornerShape(24.dp),
             grain = glassGrain,
-            blurRadius = 42f,
+            blurRadius = (glassBlurRadius + 10f).coerceIn(0f, 64f),
             tint = Color.White,
         ) {
             content(offsetXAnimatable.value)
