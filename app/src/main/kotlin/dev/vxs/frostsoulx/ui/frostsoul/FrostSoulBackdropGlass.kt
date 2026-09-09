@@ -1,8 +1,6 @@
 package dev.vxs.frostsoulx.ui.frostsoul
 
 import android.graphics.Color as AndroidColor
-import android.graphics.drawable.ColorDrawable
-import android.view.ViewGroup
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -21,13 +19,11 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import eightbitlab.com.blurview.BlurTarget
 import eightbitlab.com.blurview.BlurView
-import eightbitlab.com.blurview.RenderEffectBlur
 import kotlin.math.roundToInt
 
 /**
@@ -46,29 +42,27 @@ fun FrostSoulBackdropSurface(
     tint: Color = Color.White,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val composeView = LocalView.current
-    val rootView = remember(composeView) { composeView.rootView as? ViewGroup }
     val safeGrain = grain.coerceIn(0f, 1f)
     val safeBlur = blurRadius.coerceIn(0f, 64f)
 
     Box(
         modifier = modifier.clip(shape),
     ) {
-        if (rootView != null) {
-            AndroidView(
-                factory = { context ->
-                    BlurView(context).apply {
-                        setupWith(rootView, RenderEffectBlur())
-                            .setFrameClearDrawable(ColorDrawable(AndroidColor.TRANSPARENT))
-                            .setBlurRadius(safeBlur)
-                    }
-                },
-                update = { blurView ->
-                    blurView.setBlurRadius(safeBlur)
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+        AndroidView(
+            factory = { context ->
+                BlurView(context).apply {
+                    // BlurView 3.x samples a sibling/ancestor BlurTarget. The target is kept
+                    // separate from this surface so the glass never captures itself.
+                    setupWith(BlurTarget(context))
+                        .setBlurRadius(safeBlur)
+                        .setOverlayColor(AndroidColor.TRANSPARENT)
+                }
+            },
+            update = { blurView ->
+                blurView.setBlurRadius(safeBlur)
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
 
         Box(
             modifier = Modifier
