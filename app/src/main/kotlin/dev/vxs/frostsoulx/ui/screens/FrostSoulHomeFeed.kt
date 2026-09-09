@@ -799,6 +799,14 @@ private fun FrostSoulHomeHeader(
         subtitle = userName?.takeIf { it.isNotBlank() },
         eyebrow = "FROSTSOULX",
         eyebrowFontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+        navigationIcon = {
+            FSIcon(
+                painter = painterResource(R.drawable.app_icon_small),
+                contentDescription = "FrostSoulX",
+                tint = FrostSoulTheme.colors.accent,
+                modifier = Modifier.size(30.dp),
+            )
+        },
         trailingContent = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
