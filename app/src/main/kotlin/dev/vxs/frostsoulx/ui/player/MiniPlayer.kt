@@ -72,7 +72,7 @@ fun MiniPlayer(
 
     Box(
         modifier = modifier.fillMaxWidth()
-            .padding(horizontal = if (isPairedWithNavigation) 12.dp else 16.dp)
+            .padding(horizontal = 16.dp)
             .height(MiniPlayerHeight)
             .graphicsLayer { translationX = settledOffsetX }
             .pointerInput(metadata.id, swipeThreshold) {
@@ -121,7 +121,7 @@ fun MiniPlayer(
             isPlaying = isPlaying,
             palette = palette,
             height = MiniPlayerHeight,
-            artworkSize = 48.dp,
+            artworkSize = 50.dp,
             peeked = false,
             shape = RoundedCornerShape(28.dp),
             interactionSource = interactionSource,

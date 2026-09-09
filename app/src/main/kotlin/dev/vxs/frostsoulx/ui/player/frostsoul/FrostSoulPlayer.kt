@@ -485,13 +485,13 @@ internal fun FSMiniPlayer(
                 .fillMaxWidth()
                 .height(height)
                 .graphicsLayer {
-                    shadowElevation = if (isPlaying) 18.dp.toPx() else 8.dp.toPx()
+                    shadowElevation = if (isPlaying) 6.dp.toPx() else 2.dp.toPx()
                     this.shape = shape
                     clip = false
                 }
                 .clip(shape)
-                .background(backgroundColor.copy(alpha = 0.94f))
-                .border(1.dp, palette.accent.copy(alpha = if (isPlaying) 0.48f else 0.20f), shape)
+                .background(backgroundColor.copy(alpha = 0.88f))
+                .border(1.dp, palette.accent.copy(alpha = if (isPlaying) 0.32f else 0.16f), shape)
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = null,
@@ -501,7 +501,8 @@ internal fun FSMiniPlayer(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 5.dp),
+
         ) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -608,7 +609,7 @@ internal fun FSMiniPlayer(
                     withStyle(
                         SpanStyle(
                             color = primaryTextColor,
-                            fontSize = 15.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
                         ),
                     ) {
@@ -618,7 +619,7 @@ internal fun FSMiniPlayer(
                         withStyle(
                             SpanStyle(
                                 color = mutedTextColor,
-                                fontSize = 13.sp,
+                                fontSize = 14.sp,
                             ),
                         ) {
                             append("  -  ${track.artist}")
