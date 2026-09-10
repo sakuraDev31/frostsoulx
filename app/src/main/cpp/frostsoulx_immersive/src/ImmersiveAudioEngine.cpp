@@ -212,7 +212,6 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
 
         bool inputHasEnergy = false;
         bool outputHasEnergy = false;
-        float outputPeak = 0.0f;
         for (int frame = 0; frame < activeFrames; ++frame) {
             const float inputLeft = impl_->inputLeft[static_cast<std::size_t>(frame)];
             const float inputRight = impl_->inputRight[static_cast<std::size_t>(frame)];
@@ -224,7 +223,6 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
             }
             inputHasEnergy = inputHasEnergy || std::fabs(inputLeft) > 1.0e-8f || std::fabs(inputRight) > 1.0e-8f;
             outputHasEnergy = outputHasEnergy || std::fabs(outputLeft) > 1.0e-8f || std::fabs(outputRight) > 1.0e-8f;
-            outputPeak = std::max(outputPeak, std::max(std::fabs(outputLeft), std::fabs(outputRight)));
         }
         if (inputHasEnergy && !outputHasEnergy) {
             impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
@@ -232,17 +230,17 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
         }
         anyInputEnergy = anyInputEnergy || inputHasEnergy;
         anyOutputEnergy = anyOutputEnergy || outputHasEnergy;
-        // Steam Audio can produce a positive peak above full scale when the
-        // binaural channels add. Attenuate only when necessary; never boost.
+        // Binaural channel summing can add peak energy. Use fixed headroom
+        // rather than per-block normalization: a changing block gain causes
+        // audible pumping and can sound like crackling on sustained bass.
         // This stage exists exclusively on the enabled path, so OFF remains
         // a byte-for-byte bypass through Media3.
-        constexpr float kSafePeak = 0.95f;
-        const float outputScale = outputPeak > kSafePeak ? kSafePeak / outputPeak : 1.0f;
+        constexpr float kSteamAudioOutputGain = 0.70710678f; // -3 dB
         for (int frame = 0; frame < activeFrames; ++frame) {
             interleavedStereo[(frameOffset + frame) * 2] =
-                impl_->outputLeft[static_cast<std::size_t>(frame)] * outputScale;
+                impl_->outputLeft[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
             interleavedStereo[(frameOffset + frame) * 2 + 1] =
-                impl_->outputRight[static_cast<std::size_t>(frame)] * outputScale;
+                impl_->outputRight[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
         }
         frameOffset += activeFrames;
     }
