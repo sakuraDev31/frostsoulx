@@ -42,6 +42,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
@@ -1561,9 +1562,10 @@ class MainActivity : ComponentActivity() {
                                                 title = {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         // app icon
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.app_icon_small),
+                                                        Image(
+                                                            painter = painterResource(R.mipmap.ic_launcher_foreground),
                                                             contentDescription = null,
+                                                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                                                             modifier =
                                                                 Modifier
                                                                     .size(35.dp)

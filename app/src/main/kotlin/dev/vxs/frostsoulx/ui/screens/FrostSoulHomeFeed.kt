@@ -7,6 +7,7 @@
 
 package dev.vxs.frostsoulx.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -808,10 +809,10 @@ private fun FrostSoulHomeHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FSIcon(
-                    painter = painterResource(R.drawable.app_icon_small),
+                Image(
+                    painter = painterResource(R.mipmap.ic_launcher_foreground),
                     contentDescription = "FrostSoulX",
-                    tint = Color.White,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier.size(35.dp),
                 )
                 FSText(

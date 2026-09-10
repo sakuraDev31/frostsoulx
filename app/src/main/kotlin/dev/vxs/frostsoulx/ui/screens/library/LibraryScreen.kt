@@ -151,29 +151,6 @@ fun LibraryScreen(navController: NavController) {
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = FrostSoulTheme.spacing.page)
-                    .padding(top = FrostSoulTheme.spacing.micro, bottom = FrostSoulTheme.spacing.small),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.app_icon_small),
-                    contentDescription = "FrostSoulX",
-                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
-                    modifier = Modifier.size(24.dp),
-                )
-                Text(
-                    text = "FROSTSOULX",
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-            }
-
             PremiumSegmentedTabs(
                     labels = libraryFilters.map { filter ->
                         when (filter) {
