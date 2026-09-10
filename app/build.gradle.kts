@@ -56,8 +56,8 @@ android {
         }
         minSdk = 26
         targetSdk = 37
-        versionCode = 144
-        versionName = "14.0.5" // Release provenance: lyrics compiler fix c52f0f955
+        versionCode = 145
+        versionName = "14.0.6" // Release provenance: low-latency audio and UI polish
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

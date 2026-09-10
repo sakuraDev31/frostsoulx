@@ -636,12 +636,10 @@ fun FSNavigationBar(
         displayItems.forEachIndexed { index, item ->
             val isMore = item.route == "__frostsoul_more__"
             val selected = !isMore && selectedRoute == item.route
-            val itemShape =
-                when (index) {
-                    0 -> RoundedCornerShape(topStart = 25.dp, bottomStart = 25.dp)
-                    displayItems.lastIndex -> RoundedCornerShape(topEnd = 25.dp, bottomEnd = 25.dp)
-                    else -> RoundedCornerShape(0.dp)
-                }
+            // The selected surface is inset inside the 56dp outer capsule;
+            // use the same radius so it follows the nav bar instead of forming
+            // a mismatched rectangular overlay at either edge.
+            val itemShape = shape
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
