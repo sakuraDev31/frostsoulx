@@ -14,19 +14,27 @@
 
 ## Screenshots
 
-The current visual direction uses a near-black canvas, artwork-led atmosphere, restrained glass surfaces, compact playback controls, and a persistent mini-player above the navigation bar.
+The current visual direction uses a near-black canvas, artwork-led atmosphere, restrained glass surfaces, compact playback controls, and a persistent mini-player above the navigation bar. Each screen is shown at full width so the complete phone layout remains readable.
 
-| Immersive player | Library overview |
-| --- | --- |
-| ![FrostSoulX immersive player](docs/screenshots/immersive-player.jpg) | ![FrostSoulX Library overview](docs/screenshots/library-overview.jpg) |
+### Immersive player
 
-| Most Played library | Recommendations |
-| --- | --- |
-| ![FrostSoulX Most Played library](docs/screenshots/library-most-played.jpg) | ![FrostSoulX recommendations](docs/screenshots/recommendations.jpg) |
+![FrostSoulX immersive player](docs/screenshots/immersive-player.jpg)
 
-| Lyrics |
-| --- |
-| ![FrostSoulX lyrics](docs/screenshots/lyrics.jpg) |
+### Library overview
+
+![FrostSoulX Library overview](docs/screenshots/library-overview.jpg)
+
+### Most Played library
+
+![FrostSoulX Most Played library](docs/screenshots/library-most-played.jpg)
+
+### Recommendations
+
+![FrostSoulX recommendations](docs/screenshots/recommendations.jpg)
+
+### Lyrics
+
+![FrostSoulX lyrics](docs/screenshots/lyrics.jpg)
 
 ## Features
 

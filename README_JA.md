@@ -64,11 +64,11 @@
 
 <div align="center">
 
-<img src="docs/screenshots/immersive-player.jpg" alt="没入型プレイヤー" width="30%" />
-<img src="docs/screenshots/library-overview.jpg" alt="ライブラリ" width="30%" />
-<img src="docs/screenshots/library-most-played.jpg" alt="Most Played" width="30%" />
-<img src="docs/screenshots/recommendations.jpg" alt="おすすめ" width="30%" />
-<img src="docs/screenshots/lyrics.jpg" alt="歌詞" width="30%" />
+![FrostSoulX 没入型プレイヤー](docs/screenshots/immersive-player.jpg)
+![FrostSoulX ライブラリ](docs/screenshots/library-overview.jpg)
+![FrostSoulX Most Played](docs/screenshots/library-most-played.jpg)
+![FrostSoulX おすすめ](docs/screenshots/recommendations.jpg)
+![FrostSoulX 歌詞](docs/screenshots/lyrics.jpg)
 
 </div>
 
