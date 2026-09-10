@@ -67,7 +67,20 @@ fun FrostSoulHomeCollectionScreen(
     val title = if (kind == "moment") "For This Moment" else "Continue Listening"
     val items: List<LocalItem> =
         when (val value = state) {
-            is HomeScreenState.Success -> if (kind == "moment") value.uiState.forThisMoment else value.uiState.keepListening
+            is HomeScreenState.Success -> {
+                if (kind != "moment") {
+                    value.uiState.keepListening
+                } else {
+                    // HomeViewModel ranks this list from history, replay/completion,
+                    // negative feedback, related candidates, and artist diversity.
+                    // Keep the detail page useful when the primary remote shelf is empty.
+                    value.uiState.forThisMoment
+                        .ifEmpty { value.uiState.featuredForYou }
+                        .ifEmpty { value.uiState.recentlyPlayed }
+                        .ifEmpty { value.uiState.quickPicks }
+                        .ifEmpty { value.uiState.keepListening.filterIsInstance<Song>() }
+                }
+            }
             else -> emptyList()
         }
 
