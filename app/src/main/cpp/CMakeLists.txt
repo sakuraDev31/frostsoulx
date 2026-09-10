@@ -16,13 +16,18 @@ target_compile_features(frostsoulx_immersive_engine PUBLIC cxx_std_17)
 target_compile_options(frostsoulx_immersive_engine PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 
-if(ANDROID_ABI STREQUAL "arm64-v8a")
+if(ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "x86_64")
     set(FROSTSOULX_STEAMAUDIO_ROOT
         ${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/steamaudio_sdk)
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+        set(FROSTSOULX_STEAMAUDIO_LIB_DIR "android-armv8")
+    else()
+        set(FROSTSOULX_STEAMAUDIO_LIB_DIR "android-x64")
+    endif()
     add_library(phonon SHARED IMPORTED)
     set_target_properties(phonon PROPERTIES
         IMPORTED_LOCATION
-            ${FROSTSOULX_STEAMAUDIO_ROOT}/lib/android-armv8/libphonon.so
+            ${FROSTSOULX_STEAMAUDIO_ROOT}/lib/${FROSTSOULX_STEAMAUDIO_LIB_DIR}/libphonon.so
         INTERFACE_INCLUDE_DIRECTORIES
             ${FROSTSOULX_STEAMAUDIO_ROOT}/include)
     target_compile_definitions(frostsoulx_immersive_engine PRIVATE
