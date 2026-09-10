@@ -46,7 +46,12 @@ import androidx.navigation.NavController
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
+import dev.vxs.frostsoulx.constants.StereoSurroundRoomPresetKey
+import dev.vxs.frostsoulx.constants.StereoSurroundRoomMixKey
+import dev.vxs.frostsoulx.constants.StereoSurroundReflectionAmountKey
+import dev.vxs.frostsoulx.constants.StereoSurroundReverbTimeKey
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
+import dev.vxs.frostsoulx.playback.ImmersiveRoomPreset
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.utils.rememberPreference
 import kotlinx.coroutines.delay
@@ -62,9 +67,20 @@ fun StereoSurroundScreen(navController: NavController) {
     val intensityPreference = rememberPreference(StereoSurroundIntensityKey, defaultValue = 0.5f)
     val enabled by enabledPreference
     val persistedIntensity by intensityPreference
+    val roomPresetPreference = rememberPreference(StereoSurroundRoomPresetKey, defaultValue = ImmersiveRoomPreset.STUDIO.nativeValue)
+    val roomMixPreference = rememberPreference(StereoSurroundRoomMixKey, defaultValue = 0.18f)
+    val reflectionPreference = rememberPreference(StereoSurroundReflectionAmountKey, defaultValue = 0.28f)
+    val reverbTimePreference = rememberPreference(StereoSurroundReverbTimeKey, defaultValue = 1.35f)
+    val persistedRoomPreset by roomPresetPreference
+    val persistedRoomMix by roomMixPreference
+    val persistedReflectionAmount by reflectionPreference
+    val persistedReverbTime by reverbTimePreference
 
     var selectedPage by remember { mutableStateOf(ImmersiveSettingsPage.Default) }
     var draftIntensity by remember { mutableFloatStateOf(persistedIntensity.coerceIn(0f, 1f)) }
+    var draftRoomMix by remember { mutableFloatStateOf(persistedRoomMix.coerceIn(0f, 1f)) }
+    var draftReflectionAmount by remember { mutableFloatStateOf(persistedReflectionAmount.coerceIn(0f, 1f)) }
+    var draftReverbTime by remember { mutableFloatStateOf(persistedReverbTime.coerceIn(0.2f, 8f)) }
     var isDragging by remember { mutableStateOf(false) }
     var showDevelopmentWarning by remember { mutableStateOf(true) }
     var diagnostics by remember { mutableStateOf(ImmersiveAudioDiagnostics()) }
@@ -74,6 +90,16 @@ fun StereoSurroundScreen(navController: NavController) {
             draftIntensity = persistedIntensity.coerceIn(0f, 1f)
             ImmersiveAudioRuntime.setIntensity(draftIntensity)
         }
+    }
+
+    LaunchedEffect(persistedRoomPreset, persistedRoomMix, persistedReflectionAmount, persistedReverbTime) {
+        ImmersiveAudioRuntime.setRoomPreset(ImmersiveRoomPreset.fromNative(persistedRoomPreset))
+        draftRoomMix = persistedRoomMix.coerceIn(0f, 1f)
+        draftReflectionAmount = persistedReflectionAmount.coerceIn(0f, 1f)
+        draftReverbTime = persistedReverbTime.coerceIn(0.2f, 8f)
+        ImmersiveAudioRuntime.setRoomMix(draftRoomMix)
+        ImmersiveAudioRuntime.setReflectionAmount(draftReflectionAmount)
+        ImmersiveAudioRuntime.setReverbTimeSeconds(draftReverbTime)
     }
 
     LaunchedEffect(enabled) {
@@ -156,6 +182,20 @@ fun StereoSurroundScreen(navController: NavController) {
                     onIntensityFinished = {
                         isDragging = false
                         intensityPreference.value = draftIntensity
+                    },
+                    roomPreset = ImmersiveRoomPreset.fromNative(persistedRoomPreset),
+                    roomMix = draftRoomMix,
+                    reflectionAmount = draftReflectionAmount,
+                    reverbTimeSeconds = draftReverbTime,
+                    onRoomPresetChange = { roomPresetPreference.value = it.nativeValue },
+                    onRoomMixChange = { draftRoomMix = it; roomMixPreference.value = it; ImmersiveAudioRuntime.setRoomMix(it) },
+                    onReflectionChange = { draftReflectionAmount = it; reflectionPreference.value = it; ImmersiveAudioRuntime.setReflectionAmount(it) },
+                    onReverbTimeChange = { draftReverbTime = it; reverbTimePreference.value = it; ImmersiveAudioRuntime.setReverbTimeSeconds(it) },
+                    onResetRoom = {
+                        roomPresetPreference.value = ImmersiveRoomPreset.STUDIO.nativeValue
+                        roomMixPreference.value = 0.18f
+                        reflectionPreference.value = 0.28f
+                        reverbTimePreference.value = 1.35f
                     },
                     diagnostics = diagnostics,
                 )
@@ -295,10 +335,19 @@ private fun DefaultImmersivePage(
 private fun AdvancedImmersivePage(
     enabled: Boolean,
     intensity: Float,
+    roomPreset: ImmersiveRoomPreset,
+    roomMix: Float,
+    reflectionAmount: Float,
+    reverbTimeSeconds: Float,
     diagnostics: ImmersiveAudioDiagnostics,
     onEnabledChange: (Boolean) -> Unit,
     onIntensityChange: (Float) -> Unit,
     onIntensityFinished: () -> Unit,
+    onRoomPresetChange: (ImmersiveRoomPreset) -> Unit,
+    onRoomMixChange: (Float) -> Unit,
+    onReflectionChange: (Float) -> Unit,
+    onReverbTimeChange: (Float) -> Unit,
+    onResetRoom: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
         ImmersiveSectionLabel("HRTF")
@@ -321,15 +370,73 @@ private fun AdvancedImmersivePage(
         StatusLine("Interpolation", "Bilinear is fixed by the current native engine.")
         StatusLine("Source direction", "Forward-facing source at (0, 0, 1). Runtime direction control is not connected.")
         HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
-        ImmersiveSectionLabel("ENVIRONMENT")
-        StatusLine("Room simulation", "Not available in the current processing path.")
-        StatusLine("Reflections and reverb", "Not available in the current processing path.")
+        ImmersiveSectionLabel("ROOM MODEL")
+        Text(
+            text = "Preset",
+            color = FrostSoulTheme.colors.onSurface,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ImmersiveRoomPreset.entries.chunked(3).forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    row.forEach { preset ->
+                        Button(
+                            onClick = { onRoomPresetChange(preset) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(preset.label, fontSize = 11.sp, maxLines = 1)
+                        }
+                    }
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+        RoomParameterSlider("Room mix", roomMix, 0f..1f, "${(roomMix * 100).roundToInt()}%", onRoomMixChange)
+        RoomParameterSlider("Reflections", reflectionAmount, 0f..1f, "${(reflectionAmount * 100).roundToInt()}%", onReflectionChange)
+        RoomParameterSlider("Reverb time", reverbTimeSeconds, 0.2f..8f, String.format(Locale.US, "%.1fs", reverbTimeSeconds), onReverbTimeChange)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Button(onClick = onResetRoom) { Text("Reset room") }
+        }
+        StatusLine("Active room", roomPreset.label)
         HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
         ImmersiveSectionLabel("SAFETY")
         StatusLine("OFF behavior", "Native processing is bypassed and the Media3 PCM buffer remains unchanged.")
         StatusLine("Supported input", "Stereo PCM 16-bit and PCM float.")
         HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
         ImmersiveDiagnosticsSection(diagnostics)
+    }
+}
+
+@Composable
+private fun RoomParameterSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    valueLabel: String,
+    onValueChange: (Float) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp)
+            Text(valueLabel, color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp)
+        }
+        Slider(
+            value = value.coerceIn(range.start, range.endInclusive),
+            onValueChange = { onValueChange(it.coerceIn(range.start, range.endInclusive)) },
+            valueRange = range,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

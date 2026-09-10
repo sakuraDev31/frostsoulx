@@ -38,6 +38,21 @@ data class ImmersiveAudioDiagnostics(
     }
 }
 
+enum class ImmersiveRoomPreset(val nativeValue: Int, val label: String) {
+    OFF(0, "Off"),
+    SMALL_ROOM(1, "Small room"),
+    STUDIO(2, "Studio"),
+    CONCERT_HALL(3, "Concert hall"),
+    CATHEDRAL(4, "Cathedral"),
+    SUBWAY(5, "Subway"),
+    ;
+
+    companion object {
+        fun fromNative(value: Int): ImmersiveRoomPreset =
+            entries.firstOrNull { it.nativeValue == value } ?: STUDIO
+    }
+}
+
 /** Media3 adapter for the Steam Audio HRTF binaural engine. */
 class ImmersiveAudioProcessor : AudioProcessor {
     private var inputAudioFormat = AudioProcessor.AudioFormat.NOT_SET
@@ -47,6 +62,10 @@ class ImmersiveAudioProcessor : AudioProcessor {
     private var nativeHandle = 0L
     @Volatile private var enabled = false
     @Volatile private var intensity = 0.0f
+    @Volatile private var roomPreset = ImmersiveRoomPreset.STUDIO
+    @Volatile private var roomMix = 0.18f
+    @Volatile private var reflectionAmount = 0.28f
+    @Volatile private var reverbTimeSeconds = 1.35f
 
     override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         val supportedEncoding =
@@ -62,6 +81,10 @@ class ImmersiveAudioProcessor : AudioProcessor {
             nativeHandle = nativeCreate(inputAudioFormat.sampleRate, inputAudioFormat.encoding)
             this.inputAudioFormat = inputAudioFormat
             setIntensity(intensity)
+            setRoomPreset(roomPreset)
+            setRoomMix(roomMix)
+            setReflectionAmount(reflectionAmount)
+            setReverbTimeSeconds(reverbTimeSeconds)
             setEnabled(enabled)
         }
         outputAudioFormat = inputAudioFormat
@@ -127,6 +150,26 @@ class ImmersiveAudioProcessor : AudioProcessor {
         if (nativeHandle != 0L) nativeSetSpatialBlend(nativeHandle, intensity)
     }
 
+    fun setRoomPreset(value: ImmersiveRoomPreset) {
+        roomPreset = value
+        if (nativeHandle != 0L) nativeSetRoomPreset(nativeHandle, value.nativeValue)
+    }
+
+    fun setRoomMix(value: Float) {
+        roomMix = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        if (nativeHandle != 0L) nativeSetRoomMix(nativeHandle, roomMix)
+    }
+
+    fun setReflectionAmount(value: Float) {
+        reflectionAmount = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        if (nativeHandle != 0L) nativeSetReflectionAmount(nativeHandle, reflectionAmount)
+    }
+
+    fun setReverbTimeSeconds(value: Float) {
+        reverbTimeSeconds = value.takeIf(Float::isFinite)?.coerceIn(0.2f, 8f) ?: 1.35f
+        if (nativeHandle != 0L) nativeSetReverbTimeSeconds(nativeHandle, reverbTimeSeconds)
+    }
+
     fun readDiagnostics(): ImmersiveAudioDiagnostics =
         if (nativeHandle == 0L) ImmersiveAudioDiagnostics() else ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
 
@@ -149,6 +192,10 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeReset(handle: Long)
         @JvmStatic private external fun nativeSetEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetSpatialBlend(handle: Long, blend: Float)
+        @JvmStatic private external fun nativeSetRoomPreset(handle: Long, preset: Int)
+        @JvmStatic private external fun nativeSetRoomMix(handle: Long, wetMix: Float)
+        @JvmStatic private external fun nativeSetReflectionAmount(handle: Long, amount: Float)
+        @JvmStatic private external fun nativeSetReverbTimeSeconds(handle: Long, seconds: Float)
         @JvmStatic private external fun nativeReadDiagnostics(handle: Long): DoubleArray?
         @JvmStatic private external fun nativeProcess(handle: Long, pcmBuffer: ByteBuffer, frames: Int, encoding: Int)
     }
@@ -159,10 +206,18 @@ object ImmersiveAudioRuntime {
     @Volatile private var transitionHandler: ((Boolean) -> Unit)? = null
     @Volatile private var enabled = false
     @Volatile private var intensity = 0.5f
+    @Volatile private var roomPreset = ImmersiveRoomPreset.STUDIO
+    @Volatile private var roomMix = 0.18f
+    @Volatile private var reflectionAmount = 0.28f
+    @Volatile private var reverbTimeSeconds = 1.35f
 
     fun attach(value: ImmersiveAudioProcessor) {
         processor = value
         value.setIntensity(intensity)
+        value.setRoomPreset(roomPreset)
+        value.setRoomMix(roomMix)
+        value.setReflectionAmount(reflectionAmount)
+        value.setReverbTimeSeconds(reverbTimeSeconds)
         value.setEnabled(enabled)
     }
 
@@ -191,8 +246,32 @@ object ImmersiveAudioRuntime {
         processor?.setIntensity(intensity)
     }
 
+    fun setRoomPreset(value: ImmersiveRoomPreset) {
+        roomPreset = value
+        processor?.setRoomPreset(value)
+    }
+
+    fun setRoomMix(value: Float) {
+        roomMix = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        processor?.setRoomMix(roomMix)
+    }
+
+    fun setReflectionAmount(value: Float) {
+        reflectionAmount = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        processor?.setReflectionAmount(reflectionAmount)
+    }
+
+    fun setReverbTimeSeconds(value: Float) {
+        reverbTimeSeconds = value.takeIf(Float::isFinite)?.coerceIn(0.2f, 8f) ?: 1.35f
+        processor?.setReverbTimeSeconds(reverbTimeSeconds)
+    }
+
     fun readDiagnostics(): ImmersiveAudioDiagnostics = processor?.readDiagnostics() ?: ImmersiveAudioDiagnostics()
 
     fun isEnabled(): Boolean = enabled
     fun intensity(): Float = intensity
+    fun roomPreset(): ImmersiveRoomPreset = roomPreset
+    fun roomMix(): Float = roomMix
+    fun reflectionAmount(): Float = reflectionAmount
+    fun reverbTimeSeconds(): Float = reverbTimeSeconds
 }

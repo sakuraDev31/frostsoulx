@@ -152,6 +152,41 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSpatialBlend(
     }
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomPreset(
+    JNIEnv*, jclass, jlong address, jint preset) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        const int safePreset = std::clamp(static_cast<int>(preset), 0, 5);
+        handle->engine.setRoomSimulationPreset(
+            static_cast<frostsoulx::RoomSimulationPreset>(safePreset));
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomMix(
+    JNIEnv*, jclass, jlong address, jfloat wetMix) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        handle->engine.setRoomMix(std::isfinite(wetMix) ? std::clamp(wetMix, 0.0f, 1.0f) : 0.0f);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetReflectionAmount(
+    JNIEnv*, jclass, jlong address, jfloat amount) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        handle->engine.setReflectionAmount(std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.0f);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetReverbTimeSeconds(
+    JNIEnv*, jclass, jlong address, jfloat seconds) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        const float safeSeconds = std::isfinite(seconds) ? std::clamp(seconds, 0.2f, 8.0f) : 1.35f;
+        handle->engine.setReverbTimeSeconds(safeSeconds);
+    }
+}
+
 extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReadDiagnostics(
     JNIEnv* env, jclass, jlong address) {

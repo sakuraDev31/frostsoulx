@@ -1,6 +1,7 @@
 #include "frostsoulx/ImmersiveAudioEngine.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -10,17 +11,55 @@
 
 namespace frostsoulx {
 
+namespace {
+constexpr float kInputSanitizeLimit = 2.0f;
+constexpr float kOutputCeiling = 0.985f;
+constexpr float kZeroEpsilon = 1.0e-12f;
+
+inline float sanitizeInputSample(float sample) noexcept {
+    if (!std::isfinite(sample)) return 0.0f;
+    return std::clamp(sample, -kInputSanitizeLimit, kInputSanitizeLimit);
+}
+
+inline float softClipSample(float sample) noexcept {
+    if (!std::isfinite(sample)) return 0.0f;
+    const float sign = sample < 0.0f ? -1.0f : 1.0f;
+    const float absValue = std::fabs(sample);
+    if (absValue <= 0.90f) {
+        return sample;
+    }
+    const float over = absValue - 0.90f;
+    const float compressed = 0.90f + (over / (1.0f + 9.0f * over * over));
+    return sign * std::min(compressed, kOutputCeiling);
+}
+
+inline int msToSamples(float milliseconds, int sampleRate) noexcept {
+    const float samples = (milliseconds * 0.001f) * static_cast<float>(sampleRate);
+    return std::max(1, static_cast<int>(std::lround(samples)));
+}
+
+} // namespace
+
 struct ImmersiveAudioEngine::Impl {
-    // Keep the Steam Audio block below 10 ms at 48 kHz to reduce audible
-    // latency and the amount of audio affected by a transient glitch.
+    // Keep the effect block below 10 ms at 48 kHz for low-latency playback.
     static constexpr int kSteamAudioFrameSize = 384;
+    static constexpr float kMaxReverbTimeSeconds = 8.0f;
+    static constexpr float kMinReverbTimeSeconds = 0.2f;
+
     int sampleRate = 0;
     int maxFrames = 0;
+    int frameCapacity = 0;
     bool prepared = false;
     bool enabled = false;
     float spatialBlend = 1.0f;
     ImmersiveProcessResult lastResult = ImmersiveProcessResult::NotPrepared;
     int lastState = -1;
+
+    RoomSimulationPreset roomPreset = RoomSimulationPreset::Studio;
+    float roomMix = 0.18f;
+    float reflectionAmount = 0.28f;
+    float reverbTimeSeconds = 1.35f;
+    float damping = 0.42f;
 
     std::vector<float> inputLeft;
     std::vector<float> inputRight;
@@ -29,11 +68,185 @@ struct ImmersiveAudioEngine::Impl {
     float* inputChannels[2] = {nullptr, nullptr};
     float* outputChannels[2] = {nullptr, nullptr};
 
+    // Lightweight room/reflection/reverb simulation buffers.
+    std::vector<float> reflectionDelayLeft;
+    std::vector<float> reflectionDelayRight;
+    std::vector<float> reverbDelayLeft;
+    std::vector<float> reverbDelayRight;
+    int reflectionWriteIndex = 0;
+    int reverbWriteIndex = 0;
+
+    std::array<int, 6> reflectionTapsL{};
+    std::array<int, 6> reflectionTapsR{};
+    std::array<float, 6> reflectionGains{};
+    int reflectionTapCount = 0;
+
+    int reverbTapL = 1;
+    int reverbTapR = 1;
+    float reverbFeedback = 0.72f;
+    float reverbLowpassL = 0.0f;
+    float reverbLowpassR = 0.0f;
+
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
     IPLContext context = nullptr;
     IPLHRTF hrtf = nullptr;
     IPLBinauralEffect effect = nullptr;
 #endif
+
+    void updateRoomModel() noexcept {
+        // Defaults are intentionally conservative for mobile thermal limits.
+        float tapDelaysMs[6] = {14.0f, 23.0f, 37.0f, 51.0f, 0.0f, 0.0f};
+        float tapGains[6] = {0.38f, 0.26f, 0.19f, 0.14f, 0.0f, 0.0f};
+        reflectionTapCount = 4;
+        damping = 0.42f;
+
+        switch (roomPreset) {
+            case RoomSimulationPreset::Off:
+                break;
+            case RoomSimulationPreset::SmallRoom:
+                tapDelaysMs[0] = 9.0f;
+                tapDelaysMs[1] = 15.0f;
+                tapDelaysMs[2] = 23.0f;
+                tapDelaysMs[3] = 31.0f;
+                tapGains[0] = 0.45f;
+                tapGains[1] = 0.33f;
+                tapGains[2] = 0.24f;
+                tapGains[3] = 0.17f;
+                damping = 0.34f;
+                break;
+            case RoomSimulationPreset::Studio:
+                tapDelaysMs[0] = 12.0f;
+                tapDelaysMs[1] = 19.0f;
+                tapDelaysMs[2] = 29.0f;
+                tapDelaysMs[3] = 41.0f;
+                tapGains[0] = 0.42f;
+                tapGains[1] = 0.29f;
+                tapGains[2] = 0.21f;
+                tapGains[3] = 0.15f;
+                damping = 0.40f;
+                break;
+            case RoomSimulationPreset::ConcertHall:
+                tapDelaysMs[0] = 20.0f;
+                tapDelaysMs[1] = 34.0f;
+                tapDelaysMs[2] = 51.0f;
+                tapDelaysMs[3] = 73.0f;
+                tapDelaysMs[4] = 97.0f;
+                tapDelaysMs[5] = 123.0f;
+                tapGains[0] = 0.34f;
+                tapGains[1] = 0.27f;
+                tapGains[2] = 0.21f;
+                tapGains[3] = 0.17f;
+                tapGains[4] = 0.13f;
+                tapGains[5] = 0.10f;
+                reflectionTapCount = 6;
+                damping = 0.50f;
+                break;
+            case RoomSimulationPreset::Cathedral:
+                tapDelaysMs[0] = 28.0f;
+                tapDelaysMs[1] = 47.0f;
+                tapDelaysMs[2] = 71.0f;
+                tapDelaysMs[3] = 101.0f;
+                tapDelaysMs[4] = 137.0f;
+                tapDelaysMs[5] = 179.0f;
+                tapGains[0] = 0.30f;
+                tapGains[1] = 0.25f;
+                tapGains[2] = 0.20f;
+                tapGains[3] = 0.16f;
+                tapGains[4] = 0.13f;
+                tapGains[5] = 0.11f;
+                reflectionTapCount = 6;
+                damping = 0.57f;
+                break;
+            case RoomSimulationPreset::Subway:
+                tapDelaysMs[0] = 18.0f;
+                tapDelaysMs[1] = 33.0f;
+                tapDelaysMs[2] = 56.0f;
+                tapDelaysMs[3] = 84.0f;
+                tapDelaysMs[4] = 119.0f;
+                tapDelaysMs[5] = 158.0f;
+                tapGains[0] = 0.36f;
+                tapGains[1] = 0.29f;
+                tapGains[2] = 0.22f;
+                tapGains[3] = 0.17f;
+                tapGains[4] = 0.12f;
+                tapGains[5] = 0.08f;
+                reflectionTapCount = 6;
+                damping = 0.48f;
+                break;
+        }
+
+        if (sampleRate <= 0 || reflectionDelayLeft.empty()) {
+            return;
+        }
+
+        const int ringLength = static_cast<int>(reflectionDelayLeft.size());
+        for (int i = 0; i < reflectionTapCount; ++i) {
+            // Slightly de-correlate channels with opposite delay offsets.
+            reflectionTapsL[static_cast<std::size_t>(i)] =
+                std::clamp(msToSamples(tapDelaysMs[i], sampleRate), 1, ringLength - 1);
+            reflectionTapsR[static_cast<std::size_t>(i)] =
+                std::clamp(msToSamples(tapDelaysMs[i] * 1.13f, sampleRate), 1, ringLength - 1);
+            reflectionGains[static_cast<std::size_t>(i)] = tapGains[i];
+        }
+
+        const float reverbTapMs = [&]() noexcept {
+            switch (roomPreset) {
+                case RoomSimulationPreset::Off: return 0.0f;
+                case RoomSimulationPreset::SmallRoom: return 37.0f;
+                case RoomSimulationPreset::Studio: return 53.0f;
+                case RoomSimulationPreset::ConcertHall: return 79.0f;
+                case RoomSimulationPreset::Cathedral: return 107.0f;
+                case RoomSimulationPreset::Subway: return 86.0f;
+            }
+            return 53.0f;
+        }();
+
+        if (reverbTapMs <= 0.0f) {
+            reverbTapL = 1;
+            reverbTapR = 1;
+            reverbFeedback = 0.0f;
+            return;
+        }
+
+        const int reverbRing = static_cast<int>(reverbDelayLeft.size());
+        reverbTapL = std::clamp(msToSamples(reverbTapMs, sampleRate), 1, reverbRing - 1);
+        reverbTapR = std::clamp(msToSamples(reverbTapMs * 1.21f, sampleRate), 1, reverbRing - 1);
+
+        const float clampedT60 = std::clamp(reverbTimeSeconds, kMinReverbTimeSeconds, kMaxReverbTimeSeconds);
+        const float delaySeconds = static_cast<float>(reverbTapL) / static_cast<float>(sampleRate);
+        const float gainAtT60 = std::exp((-6.9077553f * delaySeconds) / clampedT60);
+        reverbFeedback = std::clamp(gainAtT60, 0.0f, 0.92f);
+    }
+
+    void initializeRoomBuffers() noexcept {
+        if (sampleRate <= 0) return;
+
+        // Keep memory bounded: reflection ring up to 240 ms, reverb ring up to 1.5 s.
+        const int reflectionRing = std::max(2, static_cast<int>(static_cast<float>(sampleRate) * 0.240f));
+        const int reverbRing = std::max(2, static_cast<int>(static_cast<float>(sampleRate) * 1.5f));
+
+        reflectionDelayLeft.assign(static_cast<std::size_t>(reflectionRing), 0.0f);
+        reflectionDelayRight.assign(static_cast<std::size_t>(reflectionRing), 0.0f);
+        reverbDelayLeft.assign(static_cast<std::size_t>(reverbRing), 0.0f);
+        reverbDelayRight.assign(static_cast<std::size_t>(reverbRing), 0.0f);
+
+        reflectionWriteIndex = 0;
+        reverbWriteIndex = 0;
+        reverbLowpassL = 0.0f;
+        reverbLowpassR = 0.0f;
+        updateRoomModel();
+    }
+
+    void clearStateOnly() noexcept {
+        std::fill(reflectionDelayLeft.begin(), reflectionDelayLeft.end(), 0.0f);
+        std::fill(reflectionDelayRight.begin(), reflectionDelayRight.end(), 0.0f);
+        std::fill(reverbDelayLeft.begin(), reverbDelayLeft.end(), 0.0f);
+        std::fill(reverbDelayRight.begin(), reverbDelayRight.end(), 0.0f);
+        reverbLowpassL = 0.0f;
+        reverbLowpassR = 0.0f;
+        reflectionWriteIndex = 0;
+        reverbWriteIndex = 0;
+    }
 
     void release() noexcept {
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
@@ -50,6 +263,8 @@ struct ImmersiveAudioEngine::Impl {
         prepared = false;
         sampleRate = 0;
         maxFrames = 0;
+        frameCapacity = 0;
+
         inputLeft.clear();
         inputRight.clear();
         outputLeft.clear();
@@ -58,8 +273,79 @@ struct ImmersiveAudioEngine::Impl {
         inputChannels[1] = nullptr;
         outputChannels[0] = nullptr;
         outputChannels[1] = nullptr;
+
+        reflectionDelayLeft.clear();
+        reflectionDelayRight.clear();
+        reverbDelayLeft.clear();
+        reverbDelayRight.clear();
+        reverbLowpassL = 0.0f;
+        reverbLowpassR = 0.0f;
+        reflectionWriteIndex = 0;
+        reverbWriteIndex = 0;
+
         lastResult = ImmersiveProcessResult::NotPrepared;
         lastState = -1;
+    }
+
+    void applyRoomModel(float& left, float& right) noexcept {
+        if (roomPreset == RoomSimulationPreset::Off || roomMix <= 0.0f) {
+            left = softClipSample(left);
+            right = softClipSample(right);
+            return;
+        }
+
+        if (reflectionDelayLeft.empty() || reverbDelayLeft.empty()) {
+            left = softClipSample(left);
+            right = softClipSample(right);
+            return;
+        }
+
+        const int reflectionRing = static_cast<int>(reflectionDelayLeft.size());
+        const int reverbRing = static_cast<int>(reverbDelayLeft.size());
+
+        float reflectionL = 0.0f;
+        float reflectionR = 0.0f;
+        for (int i = 0; i < reflectionTapCount; ++i) {
+            const int readL = (reflectionWriteIndex - reflectionTapsL[static_cast<std::size_t>(i)] + reflectionRing) % reflectionRing;
+            const int readR = (reflectionWriteIndex - reflectionTapsR[static_cast<std::size_t>(i)] + reflectionRing) % reflectionRing;
+            const float gain = reflectionGains[static_cast<std::size_t>(i)];
+            reflectionL += reflectionDelayLeft[static_cast<std::size_t>(readL)] * gain;
+            reflectionR += reflectionDelayRight[static_cast<std::size_t>(readR)] * gain;
+        }
+
+        const int revReadL = (reverbWriteIndex - reverbTapL + reverbRing) % reverbRing;
+        const int revReadR = (reverbWriteIndex - reverbTapR + reverbRing) % reverbRing;
+        const float delayedRevL = reverbDelayLeft[static_cast<std::size_t>(revReadL)];
+        const float delayedRevR = reverbDelayRight[static_cast<std::size_t>(revReadR)];
+
+        reverbLowpassL += damping * (delayedRevL - reverbLowpassL);
+        reverbLowpassR += damping * (delayedRevR - reverbLowpassR);
+
+        const float monoInput = 0.5f * (left + right);
+        const float revInputL = monoInput + (reflectionL * reflectionAmount);
+        const float revInputR = monoInput + (reflectionR * reflectionAmount);
+
+        reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = revInputL + reverbLowpassL * reverbFeedback;
+        reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = revInputR + reverbLowpassR * reverbFeedback;
+
+        reflectionDelayLeft[static_cast<std::size_t>(reflectionWriteIndex)] = left + 0.15f * right;
+        reflectionDelayRight[static_cast<std::size_t>(reflectionWriteIndex)] = right + 0.15f * left;
+
+        reflectionWriteIndex = (reflectionWriteIndex + 1) % reflectionRing;
+        reverbWriteIndex = (reverbWriteIndex + 1) % reverbRing;
+
+        const float wetL = reflectionL + (0.70f * reverbLowpassL);
+        const float wetR = reflectionR + (0.70f * reverbLowpassR);
+
+        const float dryMix = 1.0f - roomMix;
+        left = dryMix * left + roomMix * wetL;
+        right = dryMix * right + roomMix * wetR;
+
+        if (std::fabs(left) < kZeroEpsilon) left = 0.0f;
+        if (std::fabs(right) < kZeroEpsilon) right = 0.0f;
+
+        left = softClipSample(left);
+        right = softClipSample(right);
     }
 };
 
@@ -75,14 +361,16 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
     impl_->release();
     impl_->sampleRate = sampleRate;
     impl_->maxFrames = maxFrames;
-    impl_->inputLeft.resize(static_cast<std::size_t>(maxFrames));
-    impl_->inputRight.resize(static_cast<std::size_t>(maxFrames));
-    impl_->outputLeft.resize(static_cast<std::size_t>(maxFrames));
-    impl_->outputRight.resize(static_cast<std::size_t>(maxFrames));
+    impl_->frameCapacity = std::max(maxFrames, Impl::kSteamAudioFrameSize);
+    impl_->inputLeft.resize(static_cast<std::size_t>(impl_->frameCapacity));
+    impl_->inputRight.resize(static_cast<std::size_t>(impl_->frameCapacity));
+    impl_->outputLeft.resize(static_cast<std::size_t>(impl_->frameCapacity));
+    impl_->outputRight.resize(static_cast<std::size_t>(impl_->frameCapacity));
     impl_->inputChannels[0] = impl_->inputLeft.data();
     impl_->inputChannels[1] = impl_->inputRight.data();
     impl_->outputChannels[0] = impl_->outputLeft.data();
     impl_->outputChannels[1] = impl_->outputRight.data();
+    impl_->initializeRoomBuffers();
 
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
     IPLContextSettings contextSettings{};
@@ -94,8 +382,8 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
 
     IPLAudioSettings audioSettings{};
     audioSettings.samplingRate = sampleRate;
-    // Steam Audio effects are configured for a fixed frame size. Media3 may
-    // deliver smaller or larger buffers, so process() pads/splits them.
+    // Steam Audio effects use a fixed frame size; process() pads/splits
+    // variable Media3 blocks before applying the effect.
     audioSettings.frameSize = Impl::kSteamAudioFrameSize;
 
     IPLHRTFSettings hrtfSettings{};
@@ -128,6 +416,7 @@ void ImmersiveAudioEngine::reset() noexcept {
         iplBinauralEffectReset(impl_->effect);
     }
 #endif
+    impl_->clearStateOnly();
     impl_->lastResult = impl_->prepared ? ImmersiveProcessResult::Disabled : ImmersiveProcessResult::NotPrepared;
     impl_->lastState = -1;
 }
@@ -141,6 +430,26 @@ void ImmersiveAudioEngine::setEnabled(bool enabled) noexcept {
 
 void ImmersiveAudioEngine::setSpatialBlend(float blend) noexcept {
     impl_->spatialBlend = std::isfinite(blend) ? std::clamp(blend, 0.0f, 1.0f) : 0.0f;
+}
+
+void ImmersiveAudioEngine::setRoomSimulationPreset(RoomSimulationPreset preset) noexcept {
+    impl_->roomPreset = preset;
+    impl_->updateRoomModel();
+}
+
+void ImmersiveAudioEngine::setRoomMix(float wetMix) noexcept {
+    impl_->roomMix = std::isfinite(wetMix) ? std::clamp(wetMix, 0.0f, 1.0f) : 0.0f;
+}
+
+void ImmersiveAudioEngine::setReflectionAmount(float amount) noexcept {
+    impl_->reflectionAmount = std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.0f;
+}
+
+void ImmersiveAudioEngine::setReverbTimeSeconds(float seconds) noexcept {
+    impl_->reverbTimeSeconds = std::isfinite(seconds)
+        ? std::clamp(seconds, Impl::kMinReverbTimeSeconds, Impl::kMaxReverbTimeSeconds)
+        : 1.35f;
+    impl_->updateRoomModel();
 }
 
 bool ImmersiveAudioEngine::isPrepared() const noexcept {
@@ -185,8 +494,8 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
         std::fill(impl_->outputLeft.begin(), impl_->outputLeft.begin() + steamFrames, 0.0f);
         std::fill(impl_->outputRight.begin(), impl_->outputRight.begin() + steamFrames, 0.0f);
         for (int frame = 0; frame < activeFrames; ++frame) {
-            impl_->inputLeft[static_cast<std::size_t>(frame)] = interleavedStereo[(frameOffset + frame) * 2];
-            impl_->inputRight[static_cast<std::size_t>(frame)] = interleavedStereo[(frameOffset + frame) * 2 + 1];
+            impl_->inputLeft[static_cast<std::size_t>(frame)] = sanitizeInputSample(interleavedStereo[(frameOffset + frame) * 2]);
+            impl_->inputRight[static_cast<std::size_t>(frame)] = sanitizeInputSample(interleavedStereo[(frameOffset + frame) * 2 + 1]);
         }
 
         IPLAudioBuffer input{};
@@ -214,17 +523,30 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
 
         bool inputHasEnergy = false;
         bool outputHasEnergy = false;
+        // Fixed headroom to preserve Android output margin before room simulation.
+        constexpr float kSteamAudioOutputGain = 0.70710678f; // -3 dB
         for (int frame = 0; frame < activeFrames; ++frame) {
             const float inputLeft = impl_->inputLeft[static_cast<std::size_t>(frame)];
             const float inputRight = impl_->inputRight[static_cast<std::size_t>(frame)];
-            const float outputLeft = impl_->outputLeft[static_cast<std::size_t>(frame)];
-            const float outputRight = impl_->outputRight[static_cast<std::size_t>(frame)];
+            float outputLeft = impl_->outputLeft[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
+            float outputRight = impl_->outputRight[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
             if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
                 impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
                 return false;
             }
+
+            impl_->applyRoomModel(outputLeft, outputRight);
+
+            if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
+                impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
+                return false;
+            }
+
             inputHasEnergy = inputHasEnergy || std::fabs(inputLeft) > 1.0e-8f || std::fabs(inputRight) > 1.0e-8f;
             outputHasEnergy = outputHasEnergy || std::fabs(outputLeft) > 1.0e-8f || std::fabs(outputRight) > 1.0e-8f;
+
+            interleavedStereo[(frameOffset + frame) * 2] = std::clamp(outputLeft, -kOutputCeiling, kOutputCeiling);
+            interleavedStereo[(frameOffset + frame) * 2 + 1] = std::clamp(outputRight, -kOutputCeiling, kOutputCeiling);
         }
         if (inputHasEnergy && !outputHasEnergy) {
             impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
@@ -232,18 +554,6 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
         }
         anyInputEnergy = anyInputEnergy || inputHasEnergy;
         anyOutputEnergy = anyOutputEnergy || outputHasEnergy;
-        // Binaural channel summing can add peak energy. Use fixed headroom
-        // rather than per-block normalization: a changing block gain causes
-        // audible pumping and can sound like crackling on sustained bass.
-        // This stage exists exclusively on the enabled path, so OFF remains
-        // a byte-for-byte bypass through Media3.
-        constexpr float kSteamAudioOutputGain = 0.70710678f; // -3 dB
-        for (int frame = 0; frame < activeFrames; ++frame) {
-            interleavedStereo[(frameOffset + frame) * 2] =
-                impl_->outputLeft[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
-            interleavedStereo[(frameOffset + frame) * 2 + 1] =
-                impl_->outputRight[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
-        }
         frameOffset += activeFrames;
     }
     if (anyInputEnergy && !anyOutputEnergy) {
