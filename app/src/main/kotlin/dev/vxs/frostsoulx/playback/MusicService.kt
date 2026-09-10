@@ -7933,6 +7933,8 @@ class MusicService :
             .build()
 
     private val immersiveRebuildMutex = Mutex()
+    private val _playerReplacementEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val playerReplacementEvents = _playerReplacementEvents.asSharedFlow()
 
     private fun buildLocalPlayer(): ExoPlayer =
         ExoPlayer
@@ -8015,6 +8017,7 @@ class MusicService :
                 }
         playbackCore?.replacePlayer(player)
         mediaSession.setPlayer(player)
+        _playerReplacementEvents.tryEmit(Unit)
         // Apply transport state after the replacement is visible to the core/session. This keeps
         // play/pause and progress controllers attached to the live player after a toggle.
         if (playWhenReady) {
