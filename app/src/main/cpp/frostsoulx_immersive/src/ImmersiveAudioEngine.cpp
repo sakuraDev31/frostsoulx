@@ -11,6 +11,7 @@
 namespace frostsoulx {
 
 struct ImmersiveAudioEngine::Impl {
+    static constexpr int kSteamAudioFrameSize = 1024;
     int sampleRate = 0;
     int maxFrames = 0;
     bool prepared = false;
@@ -91,7 +92,9 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
 
     IPLAudioSettings audioSettings{};
     audioSettings.samplingRate = sampleRate;
-    audioSettings.frameSize = maxFrames;
+    // Steam Audio effects are configured for a fixed frame size. Media3 may
+    // deliver smaller or larger buffers, so process() pads/splits them.
+    audioSettings.frameSize = Impl::kSteamAudioFrameSize;
 
     IPLHRTFSettings hrtfSettings{};
     hrtfSettings.type = IPL_HRTFTYPE_DEFAULT;
@@ -169,57 +172,74 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
     }
 
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
-    for (int frame = 0; frame < frames; ++frame) {
-        impl_->inputLeft[static_cast<std::size_t>(frame)] = interleavedStereo[frame * 2];
-        impl_->inputRight[static_cast<std::size_t>(frame)] = interleavedStereo[frame * 2 + 1];
-    }
+    bool anyInputEnergy = false;
+    bool anyOutputEnergy = false;
+    int frameOffset = 0;
+    while (frameOffset < frames) {
+        const int activeFrames = std::min(Impl::kSteamAudioFrameSize, frames - frameOffset);
+        const int steamFrames = Impl::kSteamAudioFrameSize;
+        std::fill(impl_->inputLeft.begin(), impl_->inputLeft.begin() + steamFrames, 0.0f);
+        std::fill(impl_->inputRight.begin(), impl_->inputRight.begin() + steamFrames, 0.0f);
+        std::fill(impl_->outputLeft.begin(), impl_->outputLeft.begin() + steamFrames, 0.0f);
+        std::fill(impl_->outputRight.begin(), impl_->outputRight.begin() + steamFrames, 0.0f);
+        for (int frame = 0; frame < activeFrames; ++frame) {
+            impl_->inputLeft[static_cast<std::size_t>(frame)] = interleavedStereo[(frameOffset + frame) * 2];
+            impl_->inputRight[static_cast<std::size_t>(frame)] = interleavedStereo[(frameOffset + frame) * 2 + 1];
+        }
 
-    IPLAudioBuffer input{};
-    input.numChannels = 2;
-    input.numSamples = frames;
-    input.data = impl_->inputChannels;
+        IPLAudioBuffer input{};
+        input.numChannels = 2;
+        input.numSamples = steamFrames;
+        input.data = impl_->inputChannels;
+        IPLAudioBuffer output{};
+        output.numChannels = 2;
+        output.numSamples = steamFrames;
+        output.data = impl_->outputChannels;
 
-    IPLAudioBuffer output{};
-    output.numChannels = 2;
-    output.numSamples = frames;
-    output.data = impl_->outputChannels;
+        IPLBinauralEffectParams params{};
+        params.direction = IPLVector3{0.0f, 0.0f, 1.0f};
+        params.interpolation = IPL_HRTFINTERPOLATION_BILINEAR;
+        params.spatialBlend = impl_->spatialBlend;
+        params.hrtf = impl_->hrtf;
+        params.peakDelays = nullptr;
 
-    IPLBinauralEffectParams params{};
-    params.direction = IPLVector3{0.0f, 0.0f, 1.0f};
-    params.interpolation = IPL_HRTFINTERPOLATION_BILINEAR;
-    params.spatialBlend = impl_->spatialBlend;
-    params.hrtf = impl_->hrtf;
-    params.peakDelays = nullptr;
+        const IPLAudioEffectState state = iplBinauralEffectApply(impl_->effect, &params, &input, &output);
+        impl_->lastState = static_cast<int>(state);
+        if (state != IPL_AUDIOEFFECTSTATE_TAILCOMPLETE && state != IPL_AUDIOEFFECTSTATE_TAILREMAINING) {
+            impl_->lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
+            return false;
+        }
 
-    const IPLAudioEffectState state = iplBinauralEffectApply(impl_->effect, &params, &input, &output);
-    impl_->lastState = static_cast<int>(state);
-    if (state != IPL_AUDIOEFFECTSTATE_TAILCOMPLETE && state != IPL_AUDIOEFFECTSTATE_TAILREMAINING) {
-        impl_->lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
-        return false;
-    }
-
-    bool inputHasEnergy = false;
-    bool outputHasEnergy = false;
-    for (int frame = 0; frame < frames; ++frame) {
-        const float inputLeft = impl_->inputLeft[static_cast<std::size_t>(frame)];
-        const float inputRight = impl_->inputRight[static_cast<std::size_t>(frame)];
-        const float outputLeft = impl_->outputLeft[static_cast<std::size_t>(frame)];
-        const float outputRight = impl_->outputRight[static_cast<std::size_t>(frame)];
-        if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
+        bool inputHasEnergy = false;
+        bool outputHasEnergy = false;
+        for (int frame = 0; frame < activeFrames; ++frame) {
+            const float inputLeft = impl_->inputLeft[static_cast<std::size_t>(frame)];
+            const float inputRight = impl_->inputRight[static_cast<std::size_t>(frame)];
+            const float outputLeft = impl_->outputLeft[static_cast<std::size_t>(frame)];
+            const float outputRight = impl_->outputRight[static_cast<std::size_t>(frame)];
+            if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
+                impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
+                return false;
+            }
+            inputHasEnergy = inputHasEnergy || std::fabs(inputLeft) > 1.0e-8f || std::fabs(inputRight) > 1.0e-8f;
+            outputHasEnergy = outputHasEnergy || std::fabs(outputLeft) > 1.0e-8f || std::fabs(outputRight) > 1.0e-8f;
+            if (inputHasEnergy && outputHasEnergy) break;
+        }
+        if (inputHasEnergy && !outputHasEnergy) {
             impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
             return false;
         }
-        inputHasEnergy = inputHasEnergy || std::fabs(inputLeft) > 1.0e-8f || std::fabs(inputRight) > 1.0e-8f;
-        outputHasEnergy = outputHasEnergy || std::fabs(outputLeft) > 1.0e-8f || std::fabs(outputRight) > 1.0e-8f;
+        anyInputEnergy = anyInputEnergy || inputHasEnergy;
+        anyOutputEnergy = anyOutputEnergy || outputHasEnergy;
+        for (int frame = 0; frame < activeFrames; ++frame) {
+            interleavedStereo[(frameOffset + frame) * 2] = impl_->outputLeft[static_cast<std::size_t>(frame)];
+            interleavedStereo[(frameOffset + frame) * 2 + 1] = impl_->outputRight[static_cast<std::size_t>(frame)];
+        }
+        frameOffset += activeFrames;
     }
-    if (inputHasEnergy && !outputHasEnergy) {
+    if (anyInputEnergy && !anyOutputEnergy) {
         impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
         return false;
-    }
-
-    for (int frame = 0; frame < frames; ++frame) {
-        interleavedStereo[frame * 2] = impl_->outputLeft[static_cast<std::size_t>(frame)];
-        interleavedStereo[frame * 2 + 1] = impl_->outputRight[static_cast<std::size_t>(frame)];
     }
     impl_->lastResult = ImmersiveProcessResult::SteamAudioProcessed;
     return true;
