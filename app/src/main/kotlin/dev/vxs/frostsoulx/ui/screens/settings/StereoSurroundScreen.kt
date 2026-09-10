@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,7 +49,10 @@ import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.utils.rememberPreference
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import java.util.Locale
+import dev.vxs.frostsoulx.playback.ImmersiveAudioDiagnostics
 
 private enum class ImmersiveSettingsPage { Default, Advanced }
 
@@ -61,6 +66,8 @@ fun StereoSurroundScreen(navController: NavController) {
     var selectedPage by remember { mutableStateOf(ImmersiveSettingsPage.Default) }
     var draftIntensity by remember { mutableFloatStateOf(persistedIntensity.coerceIn(0f, 1f)) }
     var isDragging by remember { mutableStateOf(false) }
+    var showDevelopmentWarning by remember { mutableStateOf(true) }
+    var diagnostics by remember { mutableStateOf(ImmersiveAudioDiagnostics()) }
 
     LaunchedEffect(persistedIntensity) {
         if (!isDragging) {
@@ -71,6 +78,10 @@ fun StereoSurroundScreen(navController: NavController) {
 
     LaunchedEffect(enabled) {
         ImmersiveAudioRuntime.setEnabled(enabled)
+        while (enabled) {
+            diagnostics = ImmersiveAudioRuntime.readDiagnostics()
+            delay(250)
+        }
     }
 
     Scaffold(
@@ -146,10 +157,37 @@ fun StereoSurroundScreen(navController: NavController) {
                         isDragging = false
                         intensityPreference.value = draftIntensity
                     },
+                    diagnostics = diagnostics,
                 )
             }
             Spacer(Modifier.height(28.dp))
         }
+    }
+
+    if (showDevelopmentWarning) {
+        AlertDialog(
+            onDismissRequest = { showDevelopmentWarning = false },
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.error),
+                    contentDescription = "Warning",
+                    tint = FrostSoulTheme.colors.onSurface,
+                    modifier = Modifier.size(30.dp),
+                )
+            },
+            title = { Text("Immersive audio is in development") },
+            text = {
+                Text(
+                    "This feature may produce distorted or clipped sound on some devices. " +
+                        "Turn it off if playback becomes unpleasant or unstable.",
+                )
+            },
+            confirmButton = {
+                Button(onClick = { showDevelopmentWarning = false }) {
+                    Text("Continue")
+                }
+            },
+        )
     }
 }
 
@@ -257,6 +295,7 @@ private fun DefaultImmersivePage(
 private fun AdvancedImmersivePage(
     enabled: Boolean,
     intensity: Float,
+    diagnostics: ImmersiveAudioDiagnostics,
     onEnabledChange: (Boolean) -> Unit,
     onIntensityChange: (Float) -> Unit,
     onIntensityFinished: () -> Unit,
@@ -289,8 +328,24 @@ private fun AdvancedImmersivePage(
         ImmersiveSectionLabel("SAFETY")
         StatusLine("OFF behavior", "Native processing is bypassed and the Media3 PCM buffer remains unchanged.")
         StatusLine("Supported input", "Stereo PCM 16-bit and PCM float.")
+        HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
+        ImmersiveDiagnosticsSection(diagnostics)
     }
 }
+
+@Composable
+private fun ImmersiveDiagnosticsSection(diagnostics: ImmersiveAudioDiagnostics) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ImmersiveSectionLabel("LIVE DIAGNOSTICS")
+        StatusLine("Processor", if (diagnostics.processCallCount > 0) "Active" else "Waiting for audio")
+        StatusLine("Input RMS / peak", "${formatAudioValue(diagnostics.inputRms)} / ${formatAudioValue(diagnostics.inputPeak)}")
+        StatusLine("Output RMS / peak", "${formatAudioValue(diagnostics.outputRms)} / ${formatAudioValue(diagnostics.outputPeak)}")
+        StatusLine("Changed samples", "${diagnostics.changedPercentage.toInt()}%  ·  max difference ${formatAudioValue(diagnostics.maxAbsDifference)}")
+        StatusLine("Safety", "NaN ${diagnostics.nanCount}  ·  Inf ${diagnostics.infCount}  ·  calls ${diagnostics.processCallCount}")
+    }
+}
+
+private fun formatAudioValue(value: Float): String = String.format(Locale.US, "%.4f", value)
 
 @Composable
 private fun SpatialBlendControl(

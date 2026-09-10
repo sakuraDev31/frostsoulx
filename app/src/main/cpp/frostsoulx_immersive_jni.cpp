@@ -10,8 +10,8 @@
 
 namespace {
 // Align the JNI quantum with the Steam Audio effect frame size.
-// At 48 kHz, 1024 frames is about 21.3 ms; 8192 frames is about 170.7 ms.
-constexpr int kMaxFrames = 1024;
+// At 48 kHz, 384 frames is about 8 ms and keeps enabled-path latency low.
+constexpr int kMaxFrames = 384;
 constexpr int kStereoSamples = kMaxFrames * 2;
 
 struct Diagnostics {

@@ -310,6 +310,7 @@ dependencies {
     implementation("androidx.glance:glance-material3:1.1.1")
 
     implementation(libs.media3)
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)

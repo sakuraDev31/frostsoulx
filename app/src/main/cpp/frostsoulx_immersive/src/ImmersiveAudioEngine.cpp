@@ -11,7 +11,9 @@
 namespace frostsoulx {
 
 struct ImmersiveAudioEngine::Impl {
-    static constexpr int kSteamAudioFrameSize = 1024;
+    // Keep the Steam Audio block below 10 ms at 48 kHz to reduce audible
+    // latency and the amount of audio affected by a transient glitch.
+    static constexpr int kSteamAudioFrameSize = 384;
     int sampleRate = 0;
     int maxFrames = 0;
     bool prepared = false;
