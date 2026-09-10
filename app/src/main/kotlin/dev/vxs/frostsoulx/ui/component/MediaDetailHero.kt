@@ -156,6 +156,11 @@ public fun MediaDetailHero(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .widthIn(max = MediaDetailContentMaxWidth)
+                    // Keep the navigation/app-bar breathing room outside the
+                    // glass surface. Previously this top spacer was inside the
+                    // glass column, creating a large opaque panel over the
+                    // artwork and washing out the album typography.
+                    .padding(top = systemBarsTopPadding + AppBarHeight + 96.dp)
                     .clip(RoundedCornerShape(32.dp))
                     .frostSoulTexturedGlass(
                         grain = glassGrain,
@@ -164,7 +169,7 @@ public fun MediaDetailHero(
                     )
                     .padding(
                         start = MediaDetailHorizontalPadding,
-                        top = systemBarsTopPadding + AppBarHeight + 96.dp,
+                        top = 24.dp,
                         end = MediaDetailHorizontalPadding,
                         bottom = 24.dp,
                     ),
