@@ -65,6 +65,9 @@ internal fun FrostSoulPlayerAdapter(
     onOpenOptions: () -> Unit = {},
     sleepTimerActive: Boolean = false,
     sleepTimerRemainingMs: Long = 0L,
+    canvasStaticUrl: String? = null,
+    canvasPrimaryUrl: String? = null,
+    canvasFallbackUrl: String? = null,
     onOpenSleepTimer: () -> Unit = {},
     onSearchTrack: () -> Unit = {},
     onOpenAlbum: () -> Unit = {},
@@ -175,6 +178,9 @@ internal fun FrostSoulPlayerAdapter(
             blurRadius,
             palette,
             playerBackgroundStyle,
+            canvasStaticUrl,
+            canvasPrimaryUrl,
+            canvasFallbackUrl,
         ) {
             FrostSoulPlayerUiState(
                 track = FrostSoulTrack.from(mediaMetadata, isLiked),
@@ -204,6 +210,9 @@ internal fun FrostSoulPlayerAdapter(
                 blurRadius = blurRadius,
                 palette = palette,
                 playerBackgroundStyle = playerBackgroundStyle,
+                canvasStaticUrl = canvasStaticUrl,
+                canvasPrimaryUrl = canvasPrimaryUrl,
+                canvasFallbackUrl = canvasFallbackUrl,
             )
         }
     val actions =

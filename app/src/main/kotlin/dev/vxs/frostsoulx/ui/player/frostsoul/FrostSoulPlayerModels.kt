@@ -112,6 +112,9 @@ internal data class FrostSoulPlayerUiState(
     val blurRadius: Float = 48f,
     val palette: FrostSoulPalette = FrostSoulPalette.Default,
     val playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.GLOW_ANIMATED,
+    val canvasStaticUrl: String? = null,
+    val canvasPrimaryUrl: String? = null,
+    val canvasFallbackUrl: String? = null,
 ) {
     val safeDurationMs: Long
         get() = durationMs.takeIf { it > 0L } ?: track.durationMs

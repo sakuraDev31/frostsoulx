@@ -147,6 +147,7 @@ import dev.vxs.frostsoulx.innertube.YouTube
 import dev.vxs.frostsoulx.ui.frostsoul.FSButton
 import dev.vxs.frostsoulx.ui.frostsoul.MinimalistMetadataChip
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
+import dev.vxs.frostsoulx.ui.player.CanvasArtworkPlayer
 import dev.vxs.frostsoulx.ui.theme.PlayerColorExtractor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -1275,10 +1276,12 @@ private fun FrostSoulArtworkBlurAlbumPage(
             0f
         }
     val immersiveBlurRadius = artworkHeaderBlur.coerceAtLeast(28f).coerceAtMost(72f)
+    val sharpArtworkUrl = uiState.canvasStaticUrl ?: uiState.track.artworkUrl
+    val hasCanvas = !uiState.canvasPrimaryUrl.isNullOrBlank() || !uiState.canvasFallbackUrl.isNullOrBlank()
     Box(modifier = Modifier.fillMaxSize()) {
-        if (!uiState.track.artworkUrl.isNullOrBlank()) {
+        if (!sharpArtworkUrl.isNullOrBlank()) {
             AsyncImage(
-                model = uiState.track.artworkUrl,
+                model = sharpArtworkUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -1318,13 +1321,13 @@ private fun FrostSoulArtworkBlurAlbumPage(
                     .height(PlayerLayoutTokens.ArtworkBlurHeaderHeight)
                     .clipToBounds(),
             ) {
-                if (!uiState.track.artworkUrl.isNullOrBlank()) {
+                if (!sharpArtworkUrl.isNullOrBlank()) {
                     // The blurred artwork is already rendered full-screen underneath this header.
                     // Mask the sharp cover at its lower edge instead of painting a black fade over
                     // it; this lets the two layers actually dissolve into one another like the
                     // original ArchiveTune Immersive Extended player.
                     AsyncImage(
-                        model = uiState.track.artworkUrl,
+                        model = sharpArtworkUrl,
                         contentDescription = "Album artwork",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -1356,6 +1359,15 @@ private fun FrostSoulArtworkBlurAlbumPage(
                                 )
                             },
                     )
+                    if (hasCanvas) {
+                        CanvasArtworkPlayer(
+                            primaryUrl = uiState.canvasPrimaryUrl,
+                            fallbackUrl = uiState.canvasFallbackUrl,
+                            isPlaying = uiState.isPlaying,
+                            resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 } else {
                     Box(
                         modifier = Modifier.fillMaxWidth().background(
