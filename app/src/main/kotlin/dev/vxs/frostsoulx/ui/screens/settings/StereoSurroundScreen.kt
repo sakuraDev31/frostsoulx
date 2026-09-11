@@ -57,6 +57,9 @@ import dev.vxs.frostsoulx.constants.StereoSurroundRoomPresetKey
 import dev.vxs.frostsoulx.constants.StereoSurroundRoomMixKey
 import dev.vxs.frostsoulx.constants.StereoSurroundReflectionAmountKey
 import dev.vxs.frostsoulx.constants.StereoSurroundReverbTimeKey
+import dev.vxs.frostsoulx.constants.StereoSurroundRoomSizeKey
+import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
+import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.playback.ImmersiveRoomPreset
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
@@ -78,16 +81,25 @@ fun StereoSurroundScreen(navController: NavController) {
     val roomMixPreference = rememberPreference(StereoSurroundRoomMixKey, defaultValue = 0.18f)
     val reflectionPreference = rememberPreference(StereoSurroundReflectionAmountKey, defaultValue = 0.28f)
     val reverbTimePreference = rememberPreference(StereoSurroundReverbTimeKey, defaultValue = 1.35f)
+    val roomSizePreference = rememberPreference(StereoSurroundRoomSizeKey, defaultValue = 0.5f)
+    val dampeningPreference = rememberPreference(StereoSurroundDampeningKey, defaultValue = 0.5f)
+    val stereoWidthPreference = rememberPreference(StereoSurroundStereoWidthKey, defaultValue = 0.5f)
     val persistedRoomPreset by roomPresetPreference
     val persistedRoomMix by roomMixPreference
     val persistedReflectionAmount by reflectionPreference
     val persistedReverbTime by reverbTimePreference
+    val persistedRoomSize by roomSizePreference
+    val persistedDampening by dampeningPreference
+    val persistedStereoWidth by stereoWidthPreference
 
     var selectedPage by remember { mutableStateOf(ImmersiveSettingsPage.Default) }
     var draftIntensity by remember { mutableFloatStateOf(persistedIntensity.coerceIn(0f, 1f)) }
     var draftRoomMix by remember { mutableFloatStateOf(persistedRoomMix.coerceIn(0f, 1f)) }
     var draftReflectionAmount by remember { mutableFloatStateOf(persistedReflectionAmount.coerceIn(0f, 1f)) }
     var draftReverbTime by remember { mutableFloatStateOf(persistedReverbTime.coerceIn(0.2f, 8f)) }
+    var draftRoomSize by remember { mutableFloatStateOf(persistedRoomSize.coerceIn(0f, 1f)) }
+    var draftDampening by remember { mutableFloatStateOf(persistedDampening.coerceIn(0f, 1f)) }
+    var draftStereoWidth by remember { mutableFloatStateOf(persistedStereoWidth.coerceIn(0f, 1f)) }
     var isDragging by remember { mutableStateOf(false) }
     var showDevelopmentWarning by remember { mutableStateOf(true) }
     var diagnostics by remember { mutableStateOf(ImmersiveAudioDiagnostics()) }
@@ -99,7 +111,7 @@ fun StereoSurroundScreen(navController: NavController) {
         }
     }
 
-    LaunchedEffect(persistedRoomPreset, persistedRoomMix, persistedReflectionAmount, persistedReverbTime) {
+    LaunchedEffect(persistedRoomPreset, persistedRoomMix, persistedReflectionAmount, persistedReverbTime, persistedRoomSize, persistedDampening, persistedStereoWidth) {
         ImmersiveAudioRuntime.setRoomPreset(ImmersiveRoomPreset.fromNative(persistedRoomPreset))
         draftRoomMix = persistedRoomMix.coerceIn(0f, 1f)
         draftReflectionAmount = persistedReflectionAmount.coerceIn(0f, 1f)
@@ -107,6 +119,12 @@ fun StereoSurroundScreen(navController: NavController) {
         ImmersiveAudioRuntime.setRoomMix(draftRoomMix)
         ImmersiveAudioRuntime.setReflectionAmount(draftReflectionAmount)
         ImmersiveAudioRuntime.setReverbTimeSeconds(draftReverbTime)
+        draftRoomSize = persistedRoomSize.coerceIn(0f, 1f)
+        draftDampening = persistedDampening.coerceIn(0f, 1f)
+        draftStereoWidth = persistedStereoWidth.coerceIn(0f, 1f)
+        ImmersiveAudioRuntime.setRoomSize(draftRoomSize)
+        ImmersiveAudioRuntime.setDampening(draftDampening)
+        ImmersiveAudioRuntime.setStereoWidth(draftStereoWidth)
     }
 
     LaunchedEffect(enabled) {
@@ -194,15 +212,24 @@ fun StereoSurroundScreen(navController: NavController) {
                     roomMix = draftRoomMix,
                     reflectionAmount = draftReflectionAmount,
                     reverbTimeSeconds = draftReverbTime,
+                    roomSize = draftRoomSize,
+                    dampening = draftDampening,
+                    stereoWidth = draftStereoWidth,
                     onRoomPresetChange = { roomPresetPreference.value = it.nativeValue },
                     onRoomMixChange = { draftRoomMix = it; roomMixPreference.value = it; ImmersiveAudioRuntime.setRoomMix(it) },
                     onReflectionChange = { draftReflectionAmount = it; reflectionPreference.value = it; ImmersiveAudioRuntime.setReflectionAmount(it) },
                     onReverbTimeChange = { draftReverbTime = it; reverbTimePreference.value = it; ImmersiveAudioRuntime.setReverbTimeSeconds(it) },
+                    onRoomSizeChange = { draftRoomSize = it; roomSizePreference.value = it; ImmersiveAudioRuntime.setRoomSize(it) },
+                    onDampeningChange = { draftDampening = it; dampeningPreference.value = it; ImmersiveAudioRuntime.setDampening(it) },
+                    onStereoWidthChange = { draftStereoWidth = it; stereoWidthPreference.value = it; ImmersiveAudioRuntime.setStereoWidth(it) },
                     onResetRoom = {
                         roomPresetPreference.value = ImmersiveRoomPreset.STUDIO.nativeValue
                         roomMixPreference.value = 0.18f
                         reflectionPreference.value = 0.28f
                         reverbTimePreference.value = 1.35f
+                        roomSizePreference.value = 0.5f
+                        dampeningPreference.value = 0.5f
+                        stereoWidthPreference.value = 0.5f
                     },
                     diagnostics = diagnostics,
                 )
@@ -346,6 +373,9 @@ private fun AdvancedImmersivePage(
     roomMix: Float,
     reflectionAmount: Float,
     reverbTimeSeconds: Float,
+    roomSize: Float,
+    dampening: Float,
+    stereoWidth: Float,
     diagnostics: ImmersiveAudioDiagnostics,
     onEnabledChange: (Boolean) -> Unit,
     onIntensityChange: (Float) -> Unit,
@@ -354,6 +384,9 @@ private fun AdvancedImmersivePage(
     onRoomMixChange: (Float) -> Unit,
     onReflectionChange: (Float) -> Unit,
     onReverbTimeChange: (Float) -> Unit,
+    onRoomSizeChange: (Float) -> Unit,
+    onDampeningChange: (Float) -> Unit,
+    onStereoWidthChange: (Float) -> Unit,
     onResetRoom: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -384,6 +417,12 @@ private fun AdvancedImmersivePage(
         RoomParameterSlider("Room mix", roomMix, 0f..1f, "${(roomMix * 100).roundToInt()}%", onRoomMixChange)
         RoomParameterSlider("Reflections", reflectionAmount, 0f..1f, "${(reflectionAmount * 100).roundToInt()}%", onReflectionChange)
         RoomParameterSlider("Reverb time", reverbTimeSeconds, 0.2f..8f, String.format(Locale.US, "%.1fs", reverbTimeSeconds), onReverbTimeChange)
+        HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
+        ImmersiveSectionLabel("SPACE DESIGN")
+        RoomParameterSlider("Room size", roomSize, 0f..1f, "${(roomSize * 100).roundToInt()}%", onRoomSizeChange)
+        RoomParameterSlider("Dampening", dampening, 0f..1f, "${(dampening * 100).roundToInt()}%", onDampeningChange)
+        RoomParameterSlider("Stereo width", stereoWidth, 0f..1f, "${(stereoWidth * 100).roundToInt()}%", onStereoWidthChange)
+        StatusLine("Space design", "Room size scales delay/reverb; dampening shapes decay; width controls decorrelation.")
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,

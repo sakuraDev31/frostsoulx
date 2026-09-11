@@ -13,7 +13,9 @@ namespace frostsoulx {
 
 namespace {
 constexpr float kInputSanitizeLimit = 2.0f;
-constexpr float kOutputCeiling = 0.985f;
+constexpr float kOutputCeiling = 0.96f;
+constexpr float kLimiterThreshold = 0.90f;
+constexpr float kLimiterMinGain = 0.1f;
 constexpr float kZeroEpsilon = 1.0e-12f;
 
 inline float sanitizeInputSample(float sample) noexcept {
@@ -38,6 +40,10 @@ inline int msToSamples(float milliseconds, int sampleRate) noexcept {
     return std::max(1, static_cast<int>(std::lround(samples)));
 }
 
+inline float clampUnit(float value) noexcept {
+    return std::isfinite(value) ? std::clamp(value, 0.0f, 1.0f) : 0.0f;
+}
+
 } // namespace
 
 struct ImmersiveAudioEngine::Impl {
@@ -60,6 +66,16 @@ struct ImmersiveAudioEngine::Impl {
     float reflectionAmount = 0.28f;
     float reverbTimeSeconds = 1.35f;
     float damping = 0.42f;
+
+    // Normalized UI controls exposed to sliders/knobs.
+    float roomSizeNorm = 0.5f;
+    float dampeningNorm = 0.5f;
+    float widthNorm = 0.5f;
+
+    // Derived room shaping values.
+    float delayScale = 1.0f;
+    float decorrelationSkew = 1.13f;
+    float reflectionCrossFeed = 0.15f;
 
     std::vector<float> inputLeft;
     std::vector<float> inputRight;
@@ -87,6 +103,10 @@ struct ImmersiveAudioEngine::Impl {
     float reverbLowpassL = 0.0f;
     float reverbLowpassR = 0.0f;
 
+    // Lightweight stereo peak limiter state to prevent residual clipping.
+    float limiterGain = 1.0f;
+    float limiterReleaseCoeff = 0.9996f;
+
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
     IPLContext context = nullptr;
     IPLHRTF hrtf = nullptr;
@@ -99,6 +119,11 @@ struct ImmersiveAudioEngine::Impl {
         float tapGains[6] = {0.38f, 0.26f, 0.19f, 0.14f, 0.0f, 0.0f};
         reflectionTapCount = 4;
         damping = 0.42f;
+
+        delayScale = 0.60f + 1.00f * roomSizeNorm;
+        // Wider rooms should spread channels more; narrow rooms should mono-ish collapse.
+        decorrelationSkew = 1.00f + 0.28f * widthNorm;
+        reflectionCrossFeed = 0.26f - 0.24f * widthNorm;
 
         switch (roomPreset) {
             case RoomSimulationPreset::Off:
@@ -183,10 +208,10 @@ struct ImmersiveAudioEngine::Impl {
         for (int i = 0; i < reflectionTapCount; ++i) {
             // Slightly de-correlate channels with opposite delay offsets.
             reflectionTapsL[static_cast<std::size_t>(i)] =
-                std::clamp(msToSamples(tapDelaysMs[i], sampleRate), 1, ringLength - 1);
+                std::clamp(msToSamples(tapDelaysMs[i] * delayScale, sampleRate), 1, ringLength - 1);
             reflectionTapsR[static_cast<std::size_t>(i)] =
-                std::clamp(msToSamples(tapDelaysMs[i] * 1.13f, sampleRate), 1, ringLength - 1);
-            reflectionGains[static_cast<std::size_t>(i)] = tapGains[i];
+                std::clamp(msToSamples(tapDelaysMs[i] * delayScale * decorrelationSkew, sampleRate), 1, ringLength - 1);
+            reflectionGains[static_cast<std::size_t>(i)] = tapGains[i] * (0.80f + 0.35f * roomSizeNorm);
         }
 
         const float reverbTapMs = [&]() noexcept {
@@ -209,13 +234,15 @@ struct ImmersiveAudioEngine::Impl {
         }
 
         const int reverbRing = static_cast<int>(reverbDelayLeft.size());
-        reverbTapL = std::clamp(msToSamples(reverbTapMs, sampleRate), 1, reverbRing - 1);
-        reverbTapR = std::clamp(msToSamples(reverbTapMs * 1.21f, sampleRate), 1, reverbRing - 1);
+        reverbTapL = std::clamp(msToSamples(reverbTapMs * delayScale, sampleRate), 1, reverbRing - 1);
+        reverbTapR = std::clamp(msToSamples(reverbTapMs * delayScale * (1.08f + 0.20f * widthNorm), sampleRate), 1, reverbRing - 1);
 
         const float clampedT60 = std::clamp(reverbTimeSeconds, kMinReverbTimeSeconds, kMaxReverbTimeSeconds);
+        const float dampeningFactor = 1.0f - dampeningNorm;
+        damping = std::clamp(0.18f + 0.62f * dampeningNorm, 0.18f, 0.80f);
         const float delaySeconds = static_cast<float>(reverbTapL) / static_cast<float>(sampleRate);
         const float gainAtT60 = std::exp((-6.9077553f * delaySeconds) / clampedT60);
-        reverbFeedback = std::clamp(gainAtT60, 0.0f, 0.92f);
+        reverbFeedback = std::clamp(gainAtT60 * (0.80f + 0.20f * dampeningFactor), 0.0f, 0.90f);
     }
 
     void initializeRoomBuffers() noexcept {
@@ -234,6 +261,9 @@ struct ImmersiveAudioEngine::Impl {
         reverbWriteIndex = 0;
         reverbLowpassL = 0.0f;
         reverbLowpassR = 0.0f;
+        limiterGain = 1.0f;
+        // ~80 ms release for transparent recovery.
+        limiterReleaseCoeff = std::exp(-1.0f / (0.080f * static_cast<float>(sampleRate)));
         updateRoomModel();
     }
 
@@ -246,6 +276,7 @@ struct ImmersiveAudioEngine::Impl {
         reverbLowpassR = 0.0f;
         reflectionWriteIndex = 0;
         reverbWriteIndex = 0;
+        limiterGain = 1.0f;
     }
 
     void release() noexcept {
@@ -282,9 +313,28 @@ struct ImmersiveAudioEngine::Impl {
         reverbLowpassR = 0.0f;
         reflectionWriteIndex = 0;
         reverbWriteIndex = 0;
+        limiterGain = 1.0f;
 
         lastResult = ImmersiveProcessResult::NotPrepared;
         lastState = -1;
+    }
+
+    void applyOutputLimiter(float& left, float& right) noexcept {
+        const float peak = std::max(std::fabs(left), std::fabs(right));
+        const float targetGain = peak > kLimiterThreshold
+            ? std::max(kLimiterThreshold / peak, kLimiterMinGain)
+            : 1.0f;
+
+        if (targetGain < limiterGain) {
+            limiterGain = targetGain;
+        } else {
+            limiterGain = std::min(1.0f, limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
+        }
+
+        left *= limiterGain;
+        right *= limiterGain;
+        left = std::clamp(left, -kOutputCeiling, kOutputCeiling);
+        right = std::clamp(right, -kOutputCeiling, kOutputCeiling);
     }
 
     void applyRoomModel(float& left, float& right) noexcept {
@@ -328,8 +378,8 @@ struct ImmersiveAudioEngine::Impl {
         reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = revInputL + reverbLowpassL * reverbFeedback;
         reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = revInputR + reverbLowpassR * reverbFeedback;
 
-        reflectionDelayLeft[static_cast<std::size_t>(reflectionWriteIndex)] = left + 0.15f * right;
-        reflectionDelayRight[static_cast<std::size_t>(reflectionWriteIndex)] = right + 0.15f * left;
+        reflectionDelayLeft[static_cast<std::size_t>(reflectionWriteIndex)] = left + reflectionCrossFeed * right;
+        reflectionDelayRight[static_cast<std::size_t>(reflectionWriteIndex)] = right + reflectionCrossFeed * left;
 
         reflectionWriteIndex = (reflectionWriteIndex + 1) % reflectionRing;
         reverbWriteIndex = (reverbWriteIndex + 1) % reverbRing;
@@ -346,6 +396,10 @@ struct ImmersiveAudioEngine::Impl {
 
         if (std::fabs(left) < kZeroEpsilon) left = 0.0f;
         if (std::fabs(right) < kZeroEpsilon) right = 0.0f;
+    }
+
+    SpaceDesignControls currentSpaceDesignControls() const noexcept {
+        return SpaceDesignControls{roomSizeNorm, dampeningNorm, widthNorm};
     }
 };
 
@@ -438,11 +492,11 @@ void ImmersiveAudioEngine::setRoomSimulationPreset(RoomSimulationPreset preset) 
 }
 
 void ImmersiveAudioEngine::setRoomMix(float wetMix) noexcept {
-    impl_->roomMix = std::isfinite(wetMix) ? std::clamp(wetMix, 0.0f, 1.0f) : 0.0f;
+    impl_->roomMix = clampUnit(wetMix);
 }
 
 void ImmersiveAudioEngine::setReflectionAmount(float amount) noexcept {
-    impl_->reflectionAmount = std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.0f;
+    impl_->reflectionAmount = clampUnit(amount);
 }
 
 void ImmersiveAudioEngine::setReverbTimeSeconds(float seconds) noexcept {
@@ -450,6 +504,25 @@ void ImmersiveAudioEngine::setReverbTimeSeconds(float seconds) noexcept {
         ? std::clamp(seconds, Impl::kMinReverbTimeSeconds, Impl::kMaxReverbTimeSeconds)
         : 1.35f;
     impl_->updateRoomModel();
+}
+
+void ImmersiveAudioEngine::setRoomSize(float size) noexcept {
+    impl_->roomSizeNorm = clampUnit(size);
+    impl_->updateRoomModel();
+}
+
+void ImmersiveAudioEngine::setDampening(float dampening) noexcept {
+    impl_->dampeningNorm = clampUnit(dampening);
+    impl_->updateRoomModel();
+}
+
+void ImmersiveAudioEngine::setStereoWidth(float width) noexcept {
+    impl_->widthNorm = clampUnit(width);
+    impl_->updateRoomModel();
+}
+
+SpaceDesignControls ImmersiveAudioEngine::spaceDesignControls() const noexcept {
+    return impl_->currentSpaceDesignControls();
 }
 
 bool ImmersiveAudioEngine::isPrepared() const noexcept {
@@ -536,6 +609,7 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
             }
 
             impl_->applyRoomModel(outputLeft, outputRight);
+            impl_->applyOutputLimiter(outputLeft, outputRight);
 
             if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
                 impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
@@ -545,8 +619,8 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
             inputHasEnergy = inputHasEnergy || std::fabs(inputLeft) > 1.0e-8f || std::fabs(inputRight) > 1.0e-8f;
             outputHasEnergy = outputHasEnergy || std::fabs(outputLeft) > 1.0e-8f || std::fabs(outputRight) > 1.0e-8f;
 
-            interleavedStereo[(frameOffset + frame) * 2] = std::clamp(outputLeft, -kOutputCeiling, kOutputCeiling);
-            interleavedStereo[(frameOffset + frame) * 2 + 1] = std::clamp(outputRight, -kOutputCeiling, kOutputCeiling);
+            interleavedStereo[(frameOffset + frame) * 2] = outputLeft;
+            interleavedStereo[(frameOffset + frame) * 2 + 1] = outputRight;
         }
         if (inputHasEnergy && !outputHasEnergy) {
             impl_->lastResult = ImmersiveProcessResult::InvalidOutput;

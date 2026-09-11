@@ -66,6 +66,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
     @Volatile private var roomMix = 0.18f
     @Volatile private var reflectionAmount = 0.28f
     @Volatile private var reverbTimeSeconds = 1.35f
+    @Volatile private var roomSize = 0.5f
+    @Volatile private var dampening = 0.5f
+    @Volatile private var stereoWidth = 0.5f
 
     override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         val supportedEncoding =
@@ -85,6 +88,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
             setRoomMix(roomMix)
             setReflectionAmount(reflectionAmount)
             setReverbTimeSeconds(reverbTimeSeconds)
+            setRoomSize(roomSize)
+            setDampening(dampening)
+            setStereoWidth(stereoWidth)
             setEnabled(enabled)
         }
         outputAudioFormat = inputAudioFormat
@@ -170,6 +176,21 @@ class ImmersiveAudioProcessor : AudioProcessor {
         if (nativeHandle != 0L) nativeSetReverbTimeSeconds(nativeHandle, reverbTimeSeconds)
     }
 
+    fun setRoomSize(value: Float) {
+        roomSize = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
+        if (nativeHandle != 0L) nativeSetRoomSize(nativeHandle, roomSize)
+    }
+
+    fun setDampening(value: Float) {
+        dampening = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
+        if (nativeHandle != 0L) nativeSetDampening(nativeHandle, dampening)
+    }
+
+    fun setStereoWidth(value: Float) {
+        stereoWidth = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
+        if (nativeHandle != 0L) nativeSetStereoWidth(nativeHandle, stereoWidth)
+    }
+
     fun readDiagnostics(): ImmersiveAudioDiagnostics =
         if (nativeHandle == 0L) ImmersiveAudioDiagnostics() else ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
 
@@ -196,6 +217,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeSetRoomMix(handle: Long, wetMix: Float)
         @JvmStatic private external fun nativeSetReflectionAmount(handle: Long, amount: Float)
         @JvmStatic private external fun nativeSetReverbTimeSeconds(handle: Long, seconds: Float)
+        @JvmStatic private external fun nativeSetRoomSize(handle: Long, size: Float)
+        @JvmStatic private external fun nativeSetDampening(handle: Long, dampening: Float)
+        @JvmStatic private external fun nativeSetStereoWidth(handle: Long, width: Float)
         @JvmStatic private external fun nativeReadDiagnostics(handle: Long): DoubleArray?
         @JvmStatic private external fun nativeProcess(handle: Long, pcmBuffer: ByteBuffer, frames: Int, encoding: Int)
     }
@@ -210,6 +234,9 @@ object ImmersiveAudioRuntime {
     @Volatile private var roomMix = 0.18f
     @Volatile private var reflectionAmount = 0.28f
     @Volatile private var reverbTimeSeconds = 1.35f
+    @Volatile private var roomSize = 0.5f
+    @Volatile private var dampening = 0.5f
+    @Volatile private var stereoWidth = 0.5f
 
     fun attach(value: ImmersiveAudioProcessor) {
         processor = value
@@ -218,6 +245,9 @@ object ImmersiveAudioRuntime {
         value.setRoomMix(roomMix)
         value.setReflectionAmount(reflectionAmount)
         value.setReverbTimeSeconds(reverbTimeSeconds)
+        value.setRoomSize(roomSize)
+        value.setDampening(dampening)
+        value.setStereoWidth(stereoWidth)
         value.setEnabled(enabled)
     }
 
@@ -266,6 +296,21 @@ object ImmersiveAudioRuntime {
         processor?.setReverbTimeSeconds(reverbTimeSeconds)
     }
 
+    fun setRoomSize(value: Float) {
+        roomSize = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
+        processor?.setRoomSize(roomSize)
+    }
+
+    fun setDampening(value: Float) {
+        dampening = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
+        processor?.setDampening(dampening)
+    }
+
+    fun setStereoWidth(value: Float) {
+        stereoWidth = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
+        processor?.setStereoWidth(stereoWidth)
+    }
+
     fun readDiagnostics(): ImmersiveAudioDiagnostics = processor?.readDiagnostics() ?: ImmersiveAudioDiagnostics()
 
     fun isEnabled(): Boolean = enabled
@@ -274,4 +319,7 @@ object ImmersiveAudioRuntime {
     fun roomMix(): Float = roomMix
     fun reflectionAmount(): Float = reflectionAmount
     fun reverbTimeSeconds(): Float = reverbTimeSeconds
+    fun roomSize(): Float = roomSize
+    fun dampening(): Float = dampening
+    fun stereoWidth(): Float = stereoWidth
 }
