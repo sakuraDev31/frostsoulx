@@ -479,6 +479,7 @@ private fun TechnicalSlider(
     enabled: Boolean = true,
     onValueChangeFinished: (() -> Unit)? = null,
 ) {
+    val colors = FrostSoulTheme.colors
     Slider(
         value = value,
         onValueChange = onValueChange,
@@ -486,10 +487,10 @@ private fun TechnicalSlider(
         valueRange = valueRange,
         enabled = enabled,
         colors = SliderDefaults.colors(
-            thumbColor = if (enabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+            thumbColor = if (enabled) colors.accent else colors.onSurfaceMuted,
             activeTrackColor = Color.Transparent,
             inactiveTrackColor = Color.Transparent,
-            disabledThumbColor = FrostSoulTheme.colors.onSurfaceMuted,
+            disabledThumbColor = colors.onSurfaceMuted,
             disabledActiveTrackColor = Color.Transparent,
             disabledInactiveTrackColor = Color.Transparent,
         ),
@@ -501,13 +502,13 @@ private fun TechnicalSlider(
                 val trackHeight = 1.5.dp.toPx()
                 val progress = ((value - valueRange.start) / (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
                 drawRoundRect(
-                    color = FrostSoulTheme.colors.outline.copy(alpha = if (enabled) 0.85f else 0.4f),
+                    color = colors.outline.copy(alpha = if (enabled) 0.85f else 0.4f),
                     topLeft = androidx.compose.ui.geometry.Offset(0f, centerY - trackHeight / 2f),
                     size = androidx.compose.ui.geometry.Size(size.width, trackHeight),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f),
                 )
                 drawRoundRect(
-                    color = FrostSoulTheme.colors.accent.copy(alpha = if (enabled) 0.92f else 0.35f),
+                    color = colors.accent.copy(alpha = if (enabled) 0.92f else 0.35f),
                     topLeft = androidx.compose.ui.geometry.Offset(0f, centerY - trackHeight / 2f),
                     size = androidx.compose.ui.geometry.Size(size.width * progress, trackHeight),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f),
