@@ -2,6 +2,7 @@ package dev.vxs.frostsoulx.ui.screens.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -24,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -37,9 +40,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -349,7 +356,7 @@ private fun AdvancedImmersivePage(
     onReverbTimeChange: (Float) -> Unit,
     onResetRoom: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ImmersiveSectionLabel("HRTF")
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -366,35 +373,14 @@ private fun AdvancedImmersivePage(
             intensity = intensity,
             onValueChange = onIntensityChange,
             onValueChangeFinished = onIntensityFinished,
+            technical = true,
         )
         StatusLine("Interpolation", "Bilinear is fixed by the current native engine.")
         StatusLine("Source direction", "Forward-facing source at (0, 0, 1). Runtime direction control is not connected.")
         HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
         ImmersiveSectionLabel("ROOM MODEL")
-        Text(
-            text = "Preset",
-            color = FrostSoulTheme.colors.onSurface,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ImmersiveRoomPreset.entries.chunked(3).forEach { row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    row.forEach { preset ->
-                        Button(
-                            onClick = { onRoomPresetChange(preset) },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(preset.label, fontSize = 11.sp, maxLines = 1)
-                        }
-                    }
-                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-        }
+        Text("Preset", color = FrostSoulTheme.colors.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        ImmersiveRoomPresetSelector(roomPreset, onRoomPresetChange)
         RoomParameterSlider("Room mix", roomMix, 0f..1f, "${(roomMix * 100).roundToInt()}%", onRoomMixChange)
         RoomParameterSlider("Reflections", reflectionAmount, 0f..1f, "${(reflectionAmount * 100).roundToInt()}%", onReflectionChange)
         RoomParameterSlider("Reverb time", reverbTimeSeconds, 0.2f..8f, String.format(Locale.US, "%.1fs", reverbTimeSeconds), onReverbTimeChange)
@@ -422,22 +408,112 @@ private fun RoomParameterSlider(
     valueLabel: String,
     onValueChange: (Float) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(label, color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp)
-            Text(valueLabel, color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp)
+            Text(label, color = FrostSoulTheme.colors.onSurface, fontSize = 13.sp)
+            Text(
+                valueLabel,
+                color = FrostSoulTheme.colors.onSurfaceMuted,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
         }
-        Slider(
+        TechnicalSlider(
             value = value.coerceIn(range.start, range.endInclusive),
             onValueChange = { onValueChange(it.coerceIn(range.start, range.endInclusive)) },
             valueRange = range,
-            modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+@Composable
+private fun ImmersiveRoomPresetSelector(
+    selected: ImmersiveRoomPreset,
+    onSelected: (ImmersiveRoomPreset) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ImmersiveRoomPreset.entries.forEach { preset ->
+            val isSelected = preset == selected
+            Column(
+                modifier = Modifier
+                    .border(
+                        width = 1.dp,
+                        color = if (isSelected) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.outline.copy(alpha = 0.7f),
+                        shape = RoundedCornerShape(6.dp),
+                    )
+                    .clickable { onSelected(preset) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    preset.label,
+                    color = if (isSelected) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 11.sp,
+                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .width(18.dp)
+                        .height(2.dp)
+                        .background(if (isSelected) FrostSoulTheme.colors.accent else Color.Transparent, CircleShape),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TechnicalSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    enabled: Boolean = true,
+    onValueChangeFinished: (() -> Unit)? = null,
+) {
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        onValueChangeFinished = { onValueChangeFinished?.invoke() },
+        valueRange = valueRange,
+        enabled = enabled,
+        colors = SliderDefaults.colors(
+            thumbColor = if (enabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+            activeTrackColor = Color.Transparent,
+            inactiveTrackColor = Color.Transparent,
+            disabledThumbColor = FrostSoulTheme.colors.onSurfaceMuted,
+            disabledActiveTrackColor = Color.Transparent,
+            disabledInactiveTrackColor = Color.Transparent,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(26.dp)
+            .drawBehind {
+                val centerY = size.height / 2f
+                val trackHeight = 1.5.dp.toPx()
+                val progress = ((value - valueRange.start) / (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
+                drawRoundRect(
+                    color = FrostSoulTheme.colors.outline.copy(alpha = if (enabled) 0.85f else 0.4f),
+                    topLeft = androidx.compose.ui.geometry.Offset(0f, centerY - trackHeight / 2f),
+                    size = androidx.compose.ui.geometry.Size(size.width, trackHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f),
+                )
+                drawRoundRect(
+                    color = FrostSoulTheme.colors.accent.copy(alpha = if (enabled) 0.92f else 0.35f),
+                    topLeft = androidx.compose.ui.geometry.Offset(0f, centerY - trackHeight / 2f),
+                    size = androidx.compose.ui.geometry.Size(size.width * progress, trackHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f),
+                )
+            },
+    )
 }
 
 @Composable
@@ -460,26 +536,38 @@ private fun SpatialBlendControl(
     intensity: Float,
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
+    technical: Boolean = false,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(if (technical) 3.dp else 8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Spatial blend", color = FrostSoulTheme.colors.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text("Spatial blend", color = FrostSoulTheme.colors.onSurface, fontSize = if (technical) 13.sp else 16.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.weight(1f))
             Text(
                 text = "${(intensity * 100f).roundToInt()}%",
                 color = if (enabled) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = if (technical) 12.sp else 17.sp,
+                fontWeight = if (technical) FontWeight.Normal else FontWeight.SemiBold,
+                fontFamily = if (technical) FontFamily.Monospace else FontFamily.Default,
             )
         }
-        Slider(
-            value = intensity,
-            onValueChange = onValueChange,
-            onValueChangeFinished = onValueChangeFinished,
-            valueRange = 0f..1f,
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (technical) {
+            TechnicalSlider(
+                value = intensity,
+                onValueChange = onValueChange,
+                onValueChangeFinished = onValueChangeFinished,
+                valueRange = 0f..1f,
+                enabled = enabled,
+            )
+        } else {
+            Slider(
+                value = intensity,
+                onValueChange = onValueChange,
+                onValueChangeFinished = onValueChangeFinished,
+                valueRange = 0f..1f,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Transparent", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
             Text("Wide", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
