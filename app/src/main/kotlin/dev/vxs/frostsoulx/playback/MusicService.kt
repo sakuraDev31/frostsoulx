@@ -7875,7 +7875,9 @@ class MusicService :
     }
 
     private fun updateAudioOffload(enabled: Boolean) {
-        val effectiveEnabled = enabled && !crossfadeEnabled
+        // Offload bypasses AudioProcessorChain. It must be disabled while immersive audio is
+        // active, otherwise locally decoded/offline tracks can skip the JNI engine entirely.
+        val effectiveEnabled = enabled && !crossfadeEnabled && !ImmersiveAudioRuntime.isEnabled()
         runCatching {
             val builder = localPlayer.trackSelectionParameters.buildUpon()
             val audioOffloadPrefsClass = Class.forName("androidx.media3.common.AudioOffloadPreferences")
@@ -8017,6 +8019,9 @@ class MusicService :
                 }
         playbackCore?.replacePlayer(player)
         mediaSession.setPlayer(player)
+        // Re-apply the preference after rebuilding the renderer chain. The immersive state is
+        // included by updateAudioOffload(), forcing local/offline PCM through the processor.
+        updateAudioOffload(dataStore.get(AudioOffload, false))
         _playerReplacementEvents.tryEmit(Unit)
         // Apply transport state after the replacement is visible to the core/session. This keeps
         // play/pause and progress controllers attached to the live player after a toggle.
