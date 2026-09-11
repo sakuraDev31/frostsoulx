@@ -1268,6 +1268,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
     onSearchTrack: () -> Unit,
     onShowArtists: () -> Unit,
     onSeekDraggingChanged: (Boolean) -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
     val artworkHeaderBlur =
         if (uiState.blurRadius > 0f) {
@@ -1278,7 +1279,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
     val immersiveBlurRadius = artworkHeaderBlur.coerceAtLeast(28f).coerceAtMost(72f)
     val sharpArtworkUrl = uiState.canvasStaticUrl ?: uiState.track.artworkUrl
     val hasCanvas = !uiState.canvasPrimaryUrl.isNullOrBlank() || !uiState.canvasFallbackUrl.isNullOrBlank()
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
         if (!sharpArtworkUrl.isNullOrBlank()) {
             AsyncImage(
                 model = sharpArtworkUrl,
@@ -1309,7 +1310,10 @@ private fun FrostSoulArtworkBlurAlbumPage(
             ),
         )
         Column(
-            modifier = Modifier.fillMaxSize().padding(bottom = 8.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 18.dp),
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
             // Full-bleed artwork header: the image spans the whole width with no card
@@ -1440,17 +1444,18 @@ private fun FrostSoulArtworkBlurAlbumPage(
             )
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        FSPlayerControls(
+        FrostSoulImmersiveControls(
             state = uiState,
             actions = actions,
+            accent = uiState.palette.accent,
             onOpenQueue = onOpenQueue,
+            onOpenOptions = onOpenOptions,
+            onSeekDraggingChanged = onSeekDraggingChanged,
             modifier = Modifier
                 .padding(horizontal = PlayerLayoutTokens.MasterHorizontalPadding)
-                .padding(top = 18.dp),
-            immersive = true,
-            onSeekDraggingChanged = onSeekDraggingChanged,
+                .padding(top = 4.dp),
         )
         }
     }
@@ -1464,84 +1469,99 @@ private fun FrostSoulImmersiveControls(
     onOpenQueue: () -> Unit,
     onOpenOptions: () -> Unit,
     onSeekDraggingChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    var seekPreview by remember(state.track.id) { mutableStateOf<Float?>(null) }
-    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val dragging by interactionSource.collectIsDraggedAsState()
-    LaunchedEffect(dragging) { onSeekDraggingChanged(dragging) }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { onSeekDraggingChanged(false) }
-    }
-    Column {
-        androidx.compose.material3.Slider(
-            value = seekPreview ?: state.progress,
-            onValueChange = { seekPreview = it },
-            onValueChangeFinished = {
-                seekPreview?.let { actions.onSeek((state.safeDurationMs * it).toLong()) }
-                seekPreview = null
-            },
-            enabled = state.safeDurationMs > 0L,
-            interactionSource = interactionSource,
-            colors = androidx.compose.material3.SliderDefaults.colors(
-                thumbColor = accent, activeTrackColor = accent,
-                inactiveTrackColor = Color.White.copy(alpha = 0.14f),
-            ),
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Playback position" },
+    Column(modifier = modifier.fillMaxWidth()) {
+        FSSeekbar(
+            progress = state.progress,
+            durationMs = state.safeDurationMs,
+            onSeek = actions.onSeek,
+            accent = accent,
+            onDraggingChanged = onSeekDraggingChanged,
+            modifier = Modifier.fillMaxWidth(),
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text((seekPreview?.let { (state.safeDurationMs * it).toLong() } ?: state.positionMs).asFrostSoulTime(),
-                color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
-            Text(state.safeDurationMs.asFrostSoulTime(), color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(state.positionMs.asFrostSoulTime(), color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
+            Text(state.safeDurationMs.asFrostSoulTime(), color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            val repeatActive = state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF
-            androidx.compose.material3.IconButton(onClick = actions.onToggleRepeat, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(if (state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) R.drawable.repeat_one else R.drawable.repeat),
-                    when (state.repeatMode) {
-                        androidx.media3.common.Player.REPEAT_MODE_ONE -> "Repeat one; change repeat mode"
-                        androidx.media3.common.Player.REPEAT_MODE_ALL -> "Repeat all; change repeat mode"
-                        else -> "Repeat off; change repeat mode"
-                    }, tint = if (repeatActive) accent else Color.White.copy(alpha = 0.45f), modifier = Modifier.size(22.dp))
+            FSDownloadButton(progress = state.downloadProgress, onClick = actions.onDownload)
+            FSSleepTimerButton(
+                active = state.sleepTimerActive,
+                remainingMs = state.sleepTimerRemainingMs,
+                onClick = actions.onOpenSleepTimer,
+                immersive = true,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(accent.copy(alpha = 0.18f))
+                    .clickable(role = Role.Button, onClick = actions.onOpenAudioOutput)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                androidx.compose.material3.Icon(
+                    imageVector = state.outputDevice.type.imageVector,
+                    contentDescription = "Audio output",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = state.outputDevice.name,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "Immersive · Spatial",
+                        color = Color.White.copy(alpha = 0.58f),
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                    )
+                }
+            }
+            FSTwoDotButton(onClick = onOpenOptions, immersive = true)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.IconButton(onClick = onOpenQueue, modifier = Modifier.size(44.dp)) {
+                Icon(painterResource(R.drawable.queue_music), "Open queue", tint = Color.White.copy(alpha = 0.72f), modifier = Modifier.size(22.dp))
             }
             androidx.compose.material3.IconButton(onClick = actions.onSkipPrevious, enabled = state.canSkipPrevious, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.skip_previous), "Previous track",
-                    tint = Color.White.copy(alpha = if (state.canSkipPrevious) 1f else 0.3f), modifier = Modifier.size(32.dp))
+                Icon(painterResource(R.drawable.skip_previous), "Previous track", tint = Color.White.copy(alpha = if (state.canSkipPrevious) 1f else 0.3f), modifier = Modifier.size(32.dp))
             }
             androidx.compose.material3.IconButton(
                 onClick = actions.onTogglePlayPause,
-                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(24.dp)).background(accent),
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(accent.copy(alpha = 0.94f)),
             ) {
-                Icon(painterResource(if (state.isPlaying) R.drawable.pause else R.drawable.play),
-                    if (state.isPlaying) "Pause" else "Play", tint = Color(0xFF131318), modifier = Modifier.size(32.dp))
+                Icon(painterResource(if (state.isPlaying) R.drawable.pause else R.drawable.play), if (state.isPlaying) "Pause" else "Play", tint = Color(0xFF151515), modifier = Modifier.size(34.dp))
             }
             androidx.compose.material3.IconButton(onClick = actions.onSkipNext, enabled = state.canSkipNext, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.skip_next), "Next track",
-                    tint = Color.White.copy(alpha = if (state.canSkipNext) 1f else 0.3f), modifier = Modifier.size(32.dp))
+                Icon(painterResource(R.drawable.skip_next), "Next track", tint = Color.White.copy(alpha = if (state.canSkipNext) 1f else 0.3f), modifier = Modifier.size(32.dp))
             }
-            androidx.compose.material3.IconButton(onClick = onOpenQueue, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.queue_music), "Open queue", tint = Color.White, modifier = Modifier.size(22.dp))
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
-                    .background(Color.White.copy(alpha = 0.06f)).heightIn(min = 48.dp)
-                    .clickable(role = Role.Button, onClick = actions.onOpenAudioOutput).padding(horizontal = 12.dp),
-            ) {
-                androidx.compose.material3.Icon(state.outputDevice.type.imageVector, null, tint = accent, modifier = Modifier.size(20.dp))
-                Text(state.outputDevice.name, color = accent, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f))
-            }
-            androidx.compose.material3.IconButton(onClick = actions.onOpenSleepTimer, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.bedtime), if (state.sleepTimerActive) "Sleep timer active" else "Set sleep timer",
-                    tint = if (state.sleepTimerActive) accent else Color.White.copy(alpha = 0.65f), modifier = Modifier.size(22.dp))
-            }
-            androidx.compose.material3.IconButton(onClick = onOpenOptions, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.more_horiz), "More track actions", tint = Color.White.copy(alpha = 0.65f), modifier = Modifier.size(24.dp))
+            val repeatActive = state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF
+            androidx.compose.material3.IconButton(onClick = actions.onToggleRepeat, modifier = Modifier.size(44.dp)) {
+                Icon(
+                    painterResource(if (state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) R.drawable.repeat_one else R.drawable.repeat),
+                    "Toggle repeat mode",
+                    tint = if (repeatActive) accent else Color.White.copy(alpha = 0.72f),
+                    modifier = Modifier.size(22.dp),
+                )
             }
         }
     }
