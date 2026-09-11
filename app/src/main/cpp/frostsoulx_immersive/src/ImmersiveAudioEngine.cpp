@@ -341,11 +341,11 @@ struct ImmersiveAudioEngine::Impl {
         left = dryMix * left + roomMix * wetL;
         right = dryMix * right + roomMix * wetR;
 
-        if (std::fabs(left) < kZeroEpsilon) left = 0.0f;
-        if (std::fabs(right) < kZeroEpsilon) right = 0.0f;
-
         left = softClipSample(left);
         right = softClipSample(right);
+
+        if (std::fabs(left) < kZeroEpsilon) left = 0.0f;
+        if (std::fabs(right) < kZeroEpsilon) right = 0.0f;
     }
 };
 
