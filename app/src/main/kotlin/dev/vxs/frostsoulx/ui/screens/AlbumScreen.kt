@@ -307,6 +307,7 @@ fun AlbumScreen(
                                 update(albumWithSongs.album.toggleLike())
                             }
                         },
+                        alignActionsToStart = true,
                         additionalPrimaryActions = { contentColor ->
                             if (albumWithSongs.songs.isNotEmpty()) {
                                 MediaDetailAction(

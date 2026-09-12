@@ -306,6 +306,7 @@ class OfflineRecommendationEngine @Inject constructor(
             -> 1f
             RecommendationSignalType.Skip.name -> 0.15f
             RecommendationSignalType.Unlike.name -> 0.05f
+            RecommendationSignalType.Dislike.name -> -3.0f
             else -> 0.4f
         }
 
@@ -331,6 +332,7 @@ class OfflineRecommendationEngine @Inject constructor(
             setOf(
                 RecommendationSignalType.Skip.name,
                 RecommendationSignalType.Unlike.name,
+                RecommendationSignalType.Dislike.name,
             )
     }
 }

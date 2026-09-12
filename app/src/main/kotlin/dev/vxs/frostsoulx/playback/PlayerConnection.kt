@@ -18,6 +18,7 @@ import androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
 import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.common.Timeline
+import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,8 +71,10 @@ class PlayerConnection(
     scope: CoroutineScope,
 ) : Player.Listener {
     val service = binder.service
-    val player = service.player
-    val localPlayer = service.localPlayer
+    var player: Player = service.player
+        private set
+    var localPlayer: ExoPlayer = service.localPlayer
+        private set
 
     val playbackState = MutableStateFlow(player.playbackState)
     private val playWhenReady = MutableStateFlow(player.playWhenReady)
@@ -125,6 +128,7 @@ class PlayerConnection(
     internal val canvasArtworkUpdates = _canvasArtworkUpdates.asSharedFlow()
 
     private var metadataExtractionJob: Job? = null
+    private var playerReplacementJob: Job? = null
 
     init {
         player.addListener(this)
@@ -141,6 +145,13 @@ class PlayerConnection(
         if (player.mediaItemCount > 0 && service.currentMediaMetadata.value == null) {
             service.currentMediaMetadata.value = player.currentMetadata
         }
+
+        playerReplacementJob =
+            scope.launch {
+                service.playerReplacementEvents.collectLatest {
+                    rebindToServicePlayer()
+                }
+            }
 
         metadataExtractionJob =
             scope.launch(Dispatchers.IO) {
@@ -307,6 +318,10 @@ class PlayerConnection(
         service.toggleLike()
     }
 
+    fun toggleDislike() {
+        service.toggleDislike()
+    }
+
     internal suspend fun refetchCanvasArtwork(
         metadata: MediaMetadata,
         requireVertical: Boolean,
@@ -373,6 +388,27 @@ class PlayerConnection(
         player.seekToPrevious()
         player.prepare()
         player.playWhenReady = true
+    }
+
+    private fun rebindToServicePlayer() {
+        val replacement = service.player
+        if (player !== replacement) {
+            player.removeListener(this)
+            player = replacement
+            localPlayer = service.localPlayer
+            player.addListener(this)
+        }
+        playbackState.value = player.playbackState
+        playWhenReady.value = player.playWhenReady
+        playbackParameters.value = player.playbackParameters
+        queueTitle.value = service.queueTitle
+        queueWindows.value = player.getQueueWindows()
+        currentWindowIndex.value = player.getCurrentQueueIndex()
+        currentMediaItemIndex.value = player.currentMediaItemIndex
+        shuffleModeEnabled.value = player.shuffleModeEnabled
+        repeatMode.value = player.repeatMode
+        updateCanSkipPreviousAndNext()
+        updatePlaybackError(player.playerError)
     }
 
     override fun onPlaybackStateChanged(state: Int) {
@@ -462,6 +498,8 @@ class PlayerConnection(
 
     fun dispose() {
         player.removeListener(this)
+        playerReplacementJob?.cancel()
+        playerReplacementJob = null
         metadataExtractionJob?.cancel()
         metadataExtractionJob = null
     }

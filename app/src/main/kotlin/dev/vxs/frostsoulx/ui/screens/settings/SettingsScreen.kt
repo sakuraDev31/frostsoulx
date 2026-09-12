@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -108,14 +109,13 @@ fun SettingsScreen(
     val settingsGroups = buildSettingsGroups(navController, isAndroid12OrLater, hasUpdate, context)
 
     Scaffold(
-        modifier =
-            Modifier
-                .fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Black,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             PremiumTopBar(
                 title = stringResource(R.string.settings),
+                eyebrow = "FROSTSOULX",
                 modifier = Modifier.statusBarsPadding(),
                 navigationIcon = {
                     IconButton(
@@ -143,7 +143,7 @@ fun SettingsScreen(
                     ),
             contentPadding =
                 PaddingValues(
-                    top = innerPadding.calculateTopPadding(),
+                    top = innerPadding.calculateTopPadding() + 8.dp,
                     bottom = SettingsDimensions.ScreenBottomPadding,
                 ),
         ) {
@@ -192,6 +192,11 @@ fun SettingsScreen(
                     ) {
                         Spacer(modifier = Modifier.height(SettingsDimensions.SectionSpacing))
                     }
+                }
+
+                item(key = "settings_group_label_$groupIndex", contentType = "settings_section_label") {
+                    SettingsSectionLabel(text = group.title)
+                    Spacer(Modifier.height(6.dp))
                 }
 
                 itemsIndexed(

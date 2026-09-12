@@ -44,6 +44,7 @@ enum class RecommendationSignalType {
     Seek,
     Favorite,
     Unlike,
+    Dislike,
     Search,
     QueueInsert,
     QueueRemove,

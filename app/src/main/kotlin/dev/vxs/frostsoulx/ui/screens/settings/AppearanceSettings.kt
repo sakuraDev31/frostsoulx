@@ -74,6 +74,7 @@ import dev.vxs.frostsoulx.constants.DisableAnimationsKey
 import dev.vxs.frostsoulx.constants.DisableBlurKey
 import dev.vxs.frostsoulx.constants.FontPreferenceKey
 import dev.vxs.frostsoulx.constants.ForceHighRefreshRateKey
+import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
 import dev.vxs.frostsoulx.constants.GridItemSize
 import dev.vxs.frostsoulx.constants.GridItemsSizeKey
 import dev.vxs.frostsoulx.constants.HidePlayerThumbnailKey
@@ -172,6 +173,7 @@ fun AppearanceSettings(navController: NavController) {
             defaultValue = false,
         )
     val (blurRadius, onBlurRadiusChange) = rememberPreference(BlurRadiusKey, defaultValue = 48f)
+    val (glassGrainIntensity, onGlassGrainIntensityChange) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
     val (backdropEnabled, onBackdropEnabledChange) = rememberPreference(BackdropEnabledKey, defaultValue = true)
     val (backdropBlurAmount, onBackdropBlurAmountChange) = rememberPreference(BackdropBlurAmountKey, defaultValue = 60)
     val (fontPreference, onFontPreferenceChange) =
@@ -334,7 +336,7 @@ fun AppearanceSettings(navController: NavController) {
                     PreferenceEntry(
                         title = { Text(stringResource(R.string.app_icon)) },
                         description = stringResource(R.string.app_icon_description),
-                        icon = { Icon(painterResource(R.drawable.app_icon_small), null) },
+                        icon = { Icon(painterResource(R.mipmap.ic_launcher_foreground), null) },
                         onClick = { navController.navigate("settings/appearance/icon") },
                     )
                 }
@@ -392,8 +394,8 @@ fun AppearanceSettings(navController: NavController) {
 
                 item {
                     PreferenceEntry(
-                        title = { Text(stringResource(R.string.blur_intensity)) },
-                        description = stringResource(R.string.blur_intensity_value, blurRadius.roundToInt()),
+                        title = { Text("Glass blur radius") },
+                        description = "Nav bar and mini-player backdrop blur: ${blurRadius.roundToInt()}dp",
                         icon = { Icon(painterResource(R.drawable.blur_on), null) },
                         isEnabled = !disableBlur,
                         content = {
@@ -404,6 +406,24 @@ fun AppearanceSettings(navController: NavController) {
                                 valueRange = 0f..64f,
                                 steps = 63,
                                 enabled = !disableBlur,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        },
+                    )
+                }
+
+                item {
+                    PreferenceEntry(
+                        title = { Text("Glass grain intensity") },
+                        description = "Nav bar and mini-player fine grain: ${(glassGrainIntensity * 100f).roundToInt()}%",
+                        icon = { Icon(painterResource(R.drawable.tune), null) },
+                        content = {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Slider(
+                                value = glassGrainIntensity,
+                                onValueChange = { onGlassGrainIntensityChange(it.coerceIn(0f, 1f)) },
+                                valueRange = 0f..1f,
+                                steps = 19,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         },

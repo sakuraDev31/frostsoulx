@@ -12,23 +12,29 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 
 @Immutable
 data class FrostSoulColors(
@@ -91,9 +97,9 @@ data class FrostSoulSpacing(
     val small: Dp = 8.dp,
     val medium: Dp = 12.dp,
     val large: Dp = 16.dp,
-    val section: Dp = 20.dp,
+    val section: Dp = 28.dp,
     val page: Dp = 16.dp,
-    val hero: Dp = 24.dp,
+    val hero: Dp = 28.dp,
 )
 
 @Immutable
@@ -131,35 +137,35 @@ data class FrostSoulDesignTokens(
 
 private val DefaultFrostSoulTokens = FrostSoulDesignTokens(
     colors = FrostSoulColors(
-        background = Color.Black,
-        surface = Color(0xFF0B0B0B),
-        surfaceRaised = Color(0xFF151515),
-        surfaceGlass = Color(0xFF0E0E0E),
-        surfaceGlassStrong = Color(0xFF181818),
-        accent = Color.White,
-        accentBright = Color.White,
-        accentMuted = Color(0xFFB0B0B0),
-        onBackground = Color.White,
-        onSurface = Color.White,
-        onSurfaceMuted = Color(0xFFA6A6A6),
-        outline = Color(0xFF3A3A3A),
+        background = Color(0xFF070B10),
+        surface = Color(0xFF0D131B),
+        surfaceRaised = Color(0xFF18212A),
+        surfaceGlass = Color(0xCC151D27),
+        surfaceGlassStrong = Color(0xEB1B2430),
+        accent = Color(0xFFEADCC5),
+        accentBright = Color(0xFFFFE4AD),
+        accentMuted = Color(0xFFBEB5A7),
+        onBackground = Color(0xFFF4F2EF),
+        onSurface = Color(0xFFF4F2EF),
+        onSurfaceMuted = Color(0xFFA7ADB8),
+        outline = Color(0xFF3A4552),
         error = Color(0xFFFF6B6B),
         scrim = Color.Black.copy(alpha = 0.72f),
     ),
     typography = FrostSoulTypography(
-        display = TextStyle(fontWeight = FontWeight.SemiBold),
-        title = TextStyle(fontWeight = FontWeight.SemiBold),
-        sectionTitle = TextStyle(fontWeight = FontWeight.SemiBold),
-        body = TextStyle(fontWeight = FontWeight.Normal),
-        bodyMuted = TextStyle(fontWeight = FontWeight.Normal),
-        label = TextStyle(fontWeight = FontWeight.Medium),
-        overline = TextStyle(fontWeight = FontWeight.SemiBold, letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified),
+        display = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Normal, fontSize = 42.sp, lineHeight = 48.sp),
+        title = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Normal, fontSize = 34.sp, lineHeight = 40.sp),
+        sectionTitle = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Normal, fontSize = 23.sp, lineHeight = 28.sp),
+        body = TextStyle(fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 22.sp),
+        bodyMuted = TextStyle(fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 20.sp),
+        label = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 18.sp),
+        overline = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 1.4.sp),
     ),
     shapes = FrostSoulShapes(
         tiny = RoundedCornerShape(10.dp),
-        small = RoundedCornerShape(14.dp),
+        small = RoundedCornerShape(16.dp),
         medium = RoundedCornerShape(16.dp),
-        large = RoundedCornerShape(20.dp),
+        large = RoundedCornerShape(24.dp),
         extraLarge = RoundedCornerShape(24.dp),
         pill = RoundedCornerShape(50),
     ),
@@ -196,6 +202,64 @@ object FrostSoulTheme {
 }
 
 @Composable
+fun FrostSoulCalmTheme(content: @Composable () -> Unit) {
+    val parent = LocalFrostSoulTokens.current
+    val calmTokens = remember(parent) {
+        parent.copy(
+            colors = parent.colors.copy(
+                background = Color.Black,
+                surface = Color(0xFF0B0B0B),
+                surfaceRaised = Color(0xFF151515),
+                surfaceGlass = Color(0xFF111111),
+                surfaceGlassStrong = Color(0xFF181818),
+                accent = Color.White,
+                accentBright = Color.White,
+                accentMuted = Color(0xFFB6B6B6),
+                onBackground = Color(0xFFF5F5F5),
+                onSurface = Color(0xFFF5F5F5),
+                onSurfaceMuted = Color(0xFF9A9A9A),
+                outline = Color(0xFF292929),
+                scrim = Color.Black.copy(alpha = 0.78f),
+            ),
+            effects = parent.effects.copy(
+                activeGlowAlpha = 0f,
+                ambientGlowAlpha = 0f,
+            ),
+            typography = parent.typography.copy(
+                display = parent.typography.display.copy(fontFamily = FontFamily.Default),
+                title = parent.typography.title.copy(fontFamily = FontFamily.Default),
+                sectionTitle = parent.typography.sectionTitle.copy(fontFamily = FontFamily.Default),
+            ),
+        )
+    }
+    val inheritedScheme = MaterialTheme.colorScheme
+    val calmScheme = remember(inheritedScheme, calmTokens) {
+        inheritedScheme.copy(
+            background = Color.Black,
+            onBackground = calmTokens.colors.onBackground,
+            surface = calmTokens.colors.surface,
+            onSurface = calmTokens.colors.onSurface,
+            surfaceVariant = calmTokens.colors.surfaceRaised,
+            onSurfaceVariant = calmTokens.colors.onSurfaceMuted,
+            surfaceContainerLowest = Color.Black,
+            surfaceContainerLow = calmTokens.colors.surface,
+            surfaceContainer = calmTokens.colors.surfaceRaised,
+            surfaceContainerHigh = calmTokens.colors.surfaceRaised,
+            surfaceContainerHighest = Color(0xFF1D1D1D),
+            primary = Color.White,
+            onPrimary = Color.Black,
+            primaryContainer = calmTokens.colors.surfaceRaised,
+            onPrimaryContainer = calmTokens.colors.onSurface,
+            outline = calmTokens.colors.outline,
+            outlineVariant = calmTokens.colors.outline,
+        )
+    }
+    androidx.compose.runtime.CompositionLocalProvider(LocalFrostSoulTokens provides calmTokens) {
+        MaterialTheme(colorScheme = calmScheme, content = content)
+    }
+}
+
+@Composable
 fun FrostSoulDesignSystem(
     darkTheme: Boolean = true,
     content: @Composable () -> Unit,
@@ -226,10 +290,99 @@ fun FrostSoulDesignSystem(
     androidx.compose.runtime.CompositionLocalProvider(LocalFrostSoulTokens provides tokens, content = content)
 }
 
+/** Static glass: cached brushes only, with no backdrop capture or offscreen blur layer. */
 @Composable
-fun Modifier.frostSoulGlass(shape: Shape = FrostSoulTheme.shapes.large): Modifier {
+fun Modifier.frostSoulGlass(
+    shape: Shape = FrostSoulTheme.shapes.large,
+    tint: Color = FrostSoulTheme.colors.accent,
+): Modifier {
     val colors = FrostSoulTheme.colors
-    return this.background(colors.surfaceGlass, shape)
+    val fill = remember(colors, tint) {
+        Brush.linearGradient(
+            listOf(
+                lerp(colors.surfaceGlassStrong, tint, 0.08f),
+                colors.surfaceGlass,
+                lerp(colors.surfaceGlass, tint, 0.025f),
+            ),
+        )
+    }
+    val edge = remember(colors) {
+        Brush.linearGradient(
+            listOf(
+                colors.onSurface.copy(alpha = 0.20f),
+                colors.onSurface.copy(alpha = 0.04f),
+                colors.onSurface.copy(alpha = 0.09f),
+            ),
+        )
+    }
+    return background(fill, shape).border(0.5.dp, edge, shape)
+}
+
+/**
+ * A real, deterministic glass surface: translucent body, broad reflected light bands,
+ * soft atmospheric color pooling, and controlled micro-grain. All geometry is cached and
+ * static; this intentionally avoids a per-frame noise animation or an expensive bitmap.
+ */
+@Composable
+fun Modifier.frostSoulTexturedGlass(
+    grain: Float,
+    shape: Shape = FrostSoulTheme.shapes.large,
+    tint: Color = FrostSoulTheme.colors.accent,
+): Modifier {
+    val colors = FrostSoulTheme.colors
+    val safeGrain = grain.coerceIn(0f, 1f)
+    return frostSoulGlass(shape = shape, tint = tint).drawWithCache {
+        val speckCount = (12f + safeGrain * 96f).roundToInt()
+        val speckAlpha = (0.018f + safeGrain * 0.075f).coerceIn(0.018f, 0.095f)
+        val baseWash = if (tint.luminance() < 0.5f) {
+            Color.White.copy(alpha = 0.105f)
+        } else {
+            Color.Black.copy(alpha = 0.065f)
+        }
+        val glassWash = Brush.linearGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.075f),
+                tint.copy(alpha = 0.035f),
+                Color.Black.copy(alpha = 0.105f),
+            ),
+            start = Offset(0f, 0f),
+            end = Offset(size.width, size.height),
+        )
+        val topReflection = Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.11f),
+                Color.White.copy(alpha = 0.025f),
+                Color.Transparent,
+            ),
+            startY = 0f,
+            endY = size.height * 0.46f,
+        )
+        val atmosphere = Brush.radialGradient(
+            colors = listOf(
+                colors.accentBright.copy(alpha = 0.065f),
+                tint.copy(alpha = 0.022f),
+                Color.Transparent,
+            ),
+            center = Offset(size.width * 0.72f, size.height * 0.82f),
+            radius = size.maxDimension * 0.92f,
+        )
+        onDrawWithContent {
+            drawRect(color = baseWash)
+            drawRect(brush = glassWash)
+            drawRect(brush = atmosphere)
+            drawRect(brush = topReflection)
+            drawContent()
+            repeat(speckCount) { index ->
+                val x = ((index * 83 + 17) % 101) / 100f * size.width
+                val y = ((index * 47 + 29) % 97) / 96f * size.height
+                drawCircle(
+                    color = colors.onSurface.copy(alpha = if (index % 3 == 0) speckAlpha else speckAlpha * 0.45f),
+                    radius = 0.55f + ((index % 4) * 0.28f),
+                    center = Offset(x, y),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -237,17 +390,55 @@ fun Modifier.frostSoulGlow(
     color: Color = FrostSoulTheme.colors.accent,
     alpha: Float = FrostSoulTheme.effects.activeGlowAlpha,
 ): Modifier =
-    drawBehind {
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(color.copy(alpha = alpha), Color.Transparent),
-                center = center,
-                radius = size.maxDimension * 0.72f,
-            ),
-            radius = size.maxDimension * 0.72f,
+    drawWithCache {
+        val radius = size.maxDimension.coerceAtLeast(1f) * 0.72f
+        val glow = Brush.radialGradient(
+            colors = listOf(color.copy(alpha = alpha), Color.Transparent),
+            center = Offset(size.width / 2f, size.height / 2f),
+            radius = radius,
         )
+        onDrawBehind {
+            if (alpha > 0f && color.alpha > 0f) drawCircle(brush = glow, radius = radius)
+        }
     }
 
 @Composable
-fun Modifier.frostSoulScreenBackground(): Modifier =
-    background(FrostSoulTheme.colors.background)
+fun Modifier.frostSoulCalmScreenBackground(): Modifier {
+    val base = FrostSoulTheme.colors.background
+    val colors = FrostSoulTheme.colors
+    return background(base).drawWithCache {
+        val atmosphere = Brush.radialGradient(
+            colors = listOf(
+                colors.surfaceGlassStrong.copy(alpha = 0.38f),
+                colors.accent.copy(alpha = 0.06f),
+                Color.Transparent,
+            ),
+            center = Offset(size.width * 0.74f, size.height * 0.14f),
+            radius = size.maxDimension * 0.92f,
+        )
+        val lowerWash = Brush.verticalGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.22f)),
+            startY = size.height * 0.40f,
+            endY = size.height,
+        )
+        onDrawWithContent {
+            drawRect(brush = atmosphere)
+            drawRect(brush = lowerWash)
+            drawContent()
+        }
+    }
+}
+
+@Composable
+fun Modifier.frostSoulScreenBackground(ambient: Color = Color(0xFF334760)): Modifier {
+    val base = FrostSoulTheme.colors.background
+    // Static tonal atmosphere; no full-screen blur texture or animation loop.
+    val wash = remember(base, ambient) {
+        Brush.verticalGradient(
+            0f to lerp(base, ambient, 0.20f),
+            0.48f to lerp(base, ambient, 0.06f),
+            1f to base,
+        )
+    }
+    return background(wash)
+}

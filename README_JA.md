@@ -1,8 +1,8 @@
 <div align="center">
 
-  <img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/icon.png" width="160" height="160" alt="ArchiveTune Logo" style="border-radius: 22%">
+  <img src="https://raw.githubusercontent.com/sakuraDev31/frostsoulx/genspark_ai_developer/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png" width="160" height="160" alt="FrostSoulX Logo" style="border-radius: 22%">
 
-  <h1>ArchiveTune</h1>
+  <h1>FrostSoulX</h1>
 
   <p align="center">
     <a href="README.md">
@@ -20,19 +20,19 @@
   </p>
 
   <p align="center">
-    <a href="https://archivetune.koiiverse.cloud"><b>公式サイト</b></a> •
+    <a href="https://sakuradev31.github.io/frostsoulx/"><b>公式サイト</b></a> •
     <a href="#features"><b>機能</b></a> •
-    <a href="https://archivetune.koiiverse.cloud/privacy"><b>プライバシー</b></a> •
+    <a href="https://sakuradev31.github.io/frostsoulx/"><b>FrostSoulXサイト</b></a> •
     <a href="#download-now"><b>ダウンロード</b></a> •
     <a href="#screenshots"><b>スクリーンショット</b></a> •
-    <a href="https://github.com/rukamori/ArchiveTune/issues/new/choose"><b>サポート</b></a>
+    <a href="https://github.com/sakuraDev31/frostsoulx/issues"><b>サポート</b></a>
   </p>
 
   <div align="center">
-    <img src="https://img.shields.io/github/v/release/archivetuneapp/ArchiveTune?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="最新バージョン" />
-    <img src="https://img.shields.io/github/downloads/archivetuneapp/ArchiveTune/total?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="ダウンロード数" />
-    <img src="https://img.shields.io/github/stars/archivetuneapp/ArchiveTune?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="スター数" />
-    <img src="https://img.shields.io/github/license/archivetuneapp/ArchiveTune?style=for-the-badge&color=6366f1&labelColor=1e1e2e" alt="ライセンス" />
+    <img src="https://img.shields.io/github/v/release/sakuraDev31/frostsoulx?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="最新バージョン" />
+    <img src="https://img.shields.io/github/downloads/sakuraDev31/frostsoulx/total?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="ダウンロード数" />
+    <img src="https://img.shields.io/github/stars/sakuraDev31/frostsoulx?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="スター数" />
+    <img src="https://img.shields.io/github/license/sakuraDev31/frostsoulx?style=for-the-badge&color=6366f1&labelColor=1e1e2e" alt="ライセンス" />
     <img src="https://img.shields.io/badge/Architecture-MVVM-6366f1?style=for-the-badge&labelColor=1e1e2e&logo=kotlin" alt="MVVMアーキテクチャ" />
     <img src="https://img.shields.io/badge/Language-Kotlin-7f52ff?style=for-the-badge&logo=kotlin&color=6366f1&labelColor=1e1e2e" alt="Kotlin言語" />
     <img src="https://img.shields.io/badge/Toolkit-Jetpack_Compose-4285f4?style=for-the-badge&logo=jetpack-compose&color=6366f1&labelColor=1e1e2e" alt="Jetpack Compose" />
@@ -51,7 +51,7 @@
 
 <hr />
 
-**ArchiveTune** は単なるYouTube Musicのラッパーアプリではありません。ゼロから構築された完全カスタムの音楽プレイヤーです。音楽はプライベートであるべき、美しくあるべき、そして思い通りに動くべきだと私たちは考えています。音質にこだわり、快適な操作体験を求めるなら、これが最適です。
+**FrostSoulX** は、ローカル音楽、YouTube Musicの発見、同期歌詞、文脈に応じたおすすめ、アートワーク中心のプレイヤー体験を一つにまとめたAndroid向け音楽プレイヤーです。落ち着いた黒のインターフェースと、音楽を主役にするためのシンプルなナビゲーションを採用しています。
 
 ---
 
@@ -64,14 +64,11 @@
 
 <div align="center">
 
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_1.jpg" alt="ブラウズ" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_2.jpg" alt="ライブ歌詞" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_3.jpg" alt="テーマカスタマイズ" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_4.jpg" alt="統計情報" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_5.jpg" alt="アーティスト" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_6.jpg" alt="アルバム" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_7.jpg" alt="プレイヤー" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_8.jpg" alt="設定" width="30%" />
+![FrostSoulX 没入型プレイヤー](docs/screenshots/immersive-player.jpg)
+![FrostSoulX ライブラリ](docs/screenshots/library-overview.jpg)
+![FrostSoulX Most Played](docs/screenshots/library-most-played.jpg)
+![FrostSoulX おすすめ](docs/screenshots/recommendations.jpg)
+![FrostSoulX 歌詞](docs/screenshots/lyrics.jpg)
 
 </div>
 

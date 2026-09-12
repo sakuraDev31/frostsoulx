@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.vxs.frostsoulx.ui.frostsoul.FSChip
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.ui.screens.OptionStats
 
@@ -75,31 +76,20 @@ fun <E> ChipsRow(
             val isSelected = currentValue == value
             val iconRes = icons[value]
 
-            FilterChip(
+            FSChip(
+                label = label,
                 selected = isSelected,
                 onClick = { onValueUpdate(value) },
-                label = { Text(label) },
-                leadingIcon = {
-                    if (isSelected) {
+                containerColor = containerColor,
+                leadingIcon = iconRes?.let { res ->
+                    {
                         Icon(
-                            painter = painterResource(R.drawable.done),
+                            painter = painterResource(res),
                             contentDescription = null,
-                            modifier = Modifier.size(FilterChipDefaults.IconSize),
-                        )
-                    } else if (iconRes != null) {
-                        Icon(
-                            painter = painterResource(iconRes),
-                            contentDescription = null,
-                            modifier = Modifier.size(FilterChipDefaults.IconSize),
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 },
-                shape = RoundedCornerShape(16.dp),
-                border = null,
-                colors =
-                    FilterChipDefaults.filterChipColors(
-                        containerColor = containerColor,
-                    ),
             )
 
             Spacer(Modifier.width(8.dp))
@@ -208,16 +198,11 @@ fun <Int> ChoiceChipsRow(
                 chips.forEach { (value, label) ->
                     Spacer(Modifier.width(8.dp))
 
-                    FilterChip(
-                        label = { Text(label) },
+                    FSChip(
+                        label = label,
                         selected = currentValue == value,
-                        colors =
-                            FilterChipDefaults.filterChipColors(
-                                containerColor = containerColor,
-                            ),
+                        containerColor = containerColor,
                         onClick = { onValueUpdate(value) },
-                        shape = RoundedCornerShape(16.dp),
-                        border = null,
                     )
                 }
             }

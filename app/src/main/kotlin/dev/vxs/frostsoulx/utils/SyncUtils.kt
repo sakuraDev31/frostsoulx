@@ -231,6 +231,31 @@ class SyncUtils
             }
         }
 
+        fun dislikeSong(s: SongEntity, disliked: Boolean) {
+            if (s.isLocal) return
+            syncScope.launch {
+                if (!isLoggedIn()) {
+                    Timber.w("Skipping dislikeSong - user not logged in")
+                    return@launch
+                }
+                if (!isYtmSyncEnabled()) {
+                    Timber.w("Skipping dislikeSong - sync disabled")
+                    return@launch
+                }
+                val gen = syncGeneration.get()
+                if (!isSyncStillEnabled(gen)) return@launch
+                val result =
+                    if (disliked) {
+                        YouTube.dislikeVideo(s.id)
+                    } else {
+                        YouTube.removeVideoRating(s.id)
+                    }
+                result.onFailure { error ->
+                    Timber.w(error, "dislikeSong: Failed to sync rating for ${s.id}")
+                }
+            }
+        }
+
         fun likeSongs(songs: Collection<SongEntity>) {
             val uniqueSongs = songs.filterNot(SongEntity::isLocal).distinctBy { it.id }
             if (uniqueSongs.isEmpty()) return
