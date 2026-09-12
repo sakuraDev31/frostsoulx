@@ -2404,7 +2404,7 @@ private object GlowConstraints {
      * Peak coverage of the wash. Held just below 1.0 so the white transport icons keep their
      * contrast; the darkened backdrop underneath is what lets the glow read as light, not paint.
      */
-    const val PeakAlpha = 0.95f
+    const val PeakAlpha = 0.58f
 
     /**
      * Horizontal drift of the hue field, as a fraction of width. Measured by tracking the
@@ -2443,10 +2443,10 @@ private object GlowConstraints {
      * where the reference measures +63. The reference's painted hues resolve to L≈0.45–0.55 with
      * a moderate chroma once composited, so palette hues are lifted into that window here.
      */
-    const val MinLightness = 0.56f
-    const val MaxLightness = 0.68f
-    const val MinSaturation = 0.30f
-    const val MaxSaturation = 0.55f
+    const val MinLightness = 0.28f
+    const val MaxLightness = 0.40f
+    const val MinSaturation = 0.16f
+    const val MaxSaturation = 0.30f
 
     /** Below this saturation a swatch is treated as grey and keeps its (low) chroma. */
     const val GreySaturationThreshold = 0.10f
@@ -2540,9 +2540,9 @@ private const val GlowTransitionDurationMs = 1_200
  *
  * The saturation ceiling prevents already-vivid artwork from turning neon.
  */
-private const val GlowMinSaturation = 0.34f
-private const val GlowMaxSaturation = 0.82f
-private const val GlowMinValue = 0.70f
+private const val GlowMinSaturation = 0.18f
+private const val GlowMaxSaturation = 0.32f
+private const val GlowMinValue = 0.34f
 
 /**
  * Saturation below which a palette color is treated as intentionally achromatic.

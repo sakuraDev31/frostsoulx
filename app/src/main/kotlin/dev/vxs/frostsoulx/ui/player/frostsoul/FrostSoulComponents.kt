@@ -273,7 +273,7 @@ internal fun FSAlbumArt(
                 // Deck plate: pushed much darker than before so the silver record and the
                 // tonearm read with real contrast against the body (was a washed mid-grey).
                 Brush.linearGradient(
-                    colors = listOf(Color(0xFF1B1B1F), Color(0xFF0B0B0E), Color(0xFF040406)),
+                    colors = listOf(Color(0xFF121215), Color(0xFF07070A), Color(0xFF000000)),
                 ),
             )
             .border(1.dp, Color.White.copy(alpha = 0.055f), cardShape),
@@ -304,7 +304,7 @@ internal fun FSAlbumArt(
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(Color(0xFF14151A), Color(0xFF050507), Color.Black.copy(alpha = 0.92f)),
+                        colors = listOf(Color(0xFF0D0E12), Color(0xFF020203), Color.Black.copy(alpha = 0.95f)),
                     ),
                 ),
         )
@@ -326,10 +326,10 @@ internal fun FSAlbumArt(
                 drawCircle(
                     brush = Brush.radialGradient(
                         colorStops = arrayOf(
-                            0.00f to Color(0xFF15161A),
-                            0.36f to Color(0xFF0F1014),
-                            0.74f to Color(0xFF0A0B0E),
-                            1.00f to Color(0xFF050507),
+                            0.00f to Color(0xFF0E0F13),
+                            0.36f to Color(0xFF090A0D),
+                            0.74f to Color(0xFF050609),
+                            1.00f to Color(0xFF000000),
                         ),
                         center = center,
                         radius = platterRadius,
