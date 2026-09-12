@@ -11,6 +11,11 @@ package dev.vxs.frostsoulx.ui.screens.settings
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -57,15 +62,31 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
-import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.premium.PremiumCard
 import dev.vxs.frostsoulx.ui.premium.PremiumIconAvatar
+
+/** A calm route-scoped theme shared by Settings and every sub-settings page. */
+@Composable
+fun FrostSoulSettingsPage(content: @Composable () -> Unit) {
+    FrostSoulCalmTheme {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(FrostSoulTheme.colors.background),
+        ) {
+            content()
+        }
+    }
+}
 
 @Composable
 fun SettingsProfileHeader(
@@ -524,7 +545,7 @@ fun SettingsSectionLabel(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         letterSpacing = MaterialTheme.typography.labelSmall.letterSpacing * 1.2f,
         modifier =
-            modifier.padding(
+            modifier.semantics { heading() }.padding(
                 horizontal = SettingsDimensions.SectionHeaderHorizontalPadding,
                 vertical = SettingsDimensions.SectionHeaderBottomPadding,
             ),
@@ -538,46 +559,28 @@ fun SettingsSegmentedItem(
     count: Int,
     modifier: Modifier = Modifier,
 ) {
-    val effectiveAccent =
-        if (item.accentColor.isSpecified) {
-            item.accentColor
-        } else {
-            MaterialTheme.colorScheme.primary
-        }
-    val iconContentCandidate = contentColorFor(effectiveAccent)
-    val iconContentColor =
-        if (iconContentCandidate.isSpecified) {
-            iconContentCandidate
-        } else {
-            MaterialTheme.colorScheme.surface
-        }
+    val colors = FrostSoulTheme.colors
+    val iconContentColor = if (item.accentColor.isSpecified) item.accentColor else colors.accent
     val shape = remember(index, count) { segmentedSettingsItemShape(index, count) }
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) SettingsAnimations.PressScale else 1f,
-        animationSpec = SettingsAnimations.pressSpring(),
-        label = "settingsSegmentScale",
-    )
 
     Card(
         modifier =
             modifier
                 .fillMaxWidth()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }.clip(shape)
+                .clip(shape)
+                .frostSoulGlass(shape)
                 .focusable()
                 .clickable(
                     interactionSource = interactionSource,
-                    indication = null,
+                    indication = androidx.compose.material3.ripple(),
+                    role = Role.Button,
                     onClick = item.onClick,
                 ),
         shape = shape,
         colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = Color.Transparent,
             ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
@@ -585,16 +588,16 @@ fun SettingsSegmentedItem(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 88.dp)
-                    .padding(horizontal = 22.dp, vertical = 14.dp),
+                    .heightIn(min = 72.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier =
                     Modifier
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(effectiveAccent),
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(colors.onSurface.copy(alpha = 0.08f)),
                 contentAlignment = Alignment.Center,
             ) {
                 if (item.showUpdateIndicator) {
@@ -610,7 +613,7 @@ fun SettingsSegmentedItem(
                             painter = item.icon,
                             contentDescription = null,
                             tint = iconContentColor,
-                            modifier = Modifier.size(26.dp),
+                            modifier = Modifier.size(21.dp),
                         )
                     }
                 } else {
@@ -623,7 +626,7 @@ fun SettingsSegmentedItem(
                 }
             }
 
-            Spacer(modifier = Modifier.width(18.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             Column(
                 modifier = Modifier.weight(1f),
@@ -631,23 +634,30 @@ fun SettingsSegmentedItem(
             ) {
                 Text(
                     text = item.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = colors.onSurface,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 item.subtitle?.let { subtitle ->
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceMuted.copy(alpha = 0.88f),
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
+
+            Icon(
+                painter = painterResource(R.drawable.navigate_next),
+                contentDescription = null,
+                tint = colors.onSurfaceMuted,
+                modifier = Modifier.size(18.dp),
+            )
 
             item.badge?.let { badge ->
                 Spacer(modifier = Modifier.width(12.dp))
@@ -658,7 +668,7 @@ fun SettingsSegmentedItem(
                     Text(
                         text = badge,
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colors.onSurfaceMuted,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                     )
                 }
@@ -671,8 +681,8 @@ private fun segmentedSettingsItemShape(
     index: Int,
     count: Int,
 ): Shape {
-    val large = 28.dp
-    val small = 6.dp
+    val large = SettingsDimensions.GroupCardCornerRadius
+    val small = 3.dp
     return when {
         count <= 1 -> {
             RoundedCornerShape(large)

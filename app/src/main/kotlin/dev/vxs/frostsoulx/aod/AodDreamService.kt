@@ -41,6 +41,7 @@ import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.db.MusicDatabase
 import dev.vxs.frostsoulx.db.entities.LyricsEntity
 import dev.vxs.frostsoulx.extensions.togglePlayPause
+import dev.vxs.frostsoulx.extensions.toggleRepeatMode
 import dev.vxs.frostsoulx.models.MediaMetadata
 import dev.vxs.frostsoulx.playback.MusicService
 import dev.vxs.frostsoulx.playback.PlayerConnection
@@ -100,8 +101,12 @@ class AodDreamService : DreamService(), LifecycleOwner, SavedStateRegistryOwner 
                     val conn = playerConnection
                     val fallbackMetadata = remember { MutableStateFlow<MediaMetadata?>(null) }
                     val fallbackPlaying = remember { MutableStateFlow(false) }
+                    val fallbackShuffle = remember { MutableStateFlow(false) }
+                    val fallbackRepeat = remember { MutableStateFlow(0) }
                     val mediaMetadata by (conn?.mediaMetadata ?: fallbackMetadata).collectAsStateWithLifecycle()
                     val isPlaying by (conn?.isPlaying ?: fallbackPlaying).collectAsStateWithLifecycle()
+                    val shuffleEnabled by (conn?.shuffleModeEnabled ?: fallbackShuffle).collectAsStateWithLifecycle()
+                    val repeatMode by (conn?.repeatMode ?: fallbackRepeat).collectAsStateWithLifecycle()
 
                     var currentPos by remember { mutableLongStateOf(0L) }
                     var songDuration by remember { mutableLongStateOf(0L) }
@@ -154,6 +159,16 @@ class AodDreamService : DreamService(), LifecycleOwner, SavedStateRegistryOwner 
                         },
                         onExit = { finish() },
                         lyricsText = currentLyricsEntity?.lyrics,
+                        isLiked = metadata.liked,
+                        shuffleEnabled = shuffleEnabled,
+                        repeatMode = repeatMode,
+                        onToggleLike = { conn?.toggleLike() },
+                        onToggleShuffle = {
+                            conn?.player?.let { player ->
+                                player.shuffleModeEnabled = !player.shuffleModeEnabled
+                            }
+                        },
+                        onToggleRepeat = { conn?.player?.toggleRepeatMode() },
                     )
                 }
             }

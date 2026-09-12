@@ -1,0 +1,118 @@
+name: Build Emulator Test APK (x86_64)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - genspark_ai_developer
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: >-
+    -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseG1GC -XX:MaxMetaspaceSize=512m"
+    -Dorg.gradle.daemon=false
+    -Dorg.gradle.parallel=true
+    -Dorg.gradle.configureondemand=true
+    -Dorg.gradle.caching=true
+
+jobs:
+  build_emulator_apk:
+    name: Build GMS Mobile x86_64 emulator APK
+    if: github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-cleanup: on-success
+
+      - name: Grant execute permission for Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Build x86_64 release APK
+        run: ./gradlew assembleGmsMobileX86_64Release --no-daemon --build-cache
+        env:
+          PULL_REQUEST: 'false'
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+          API_BEARER_TOKEN: ${{ secrets.API_BEARER_TOKEN }}
+          TOGETHER_BEARER_TOKEN: ${{ secrets.TOGETHER_BEARER_TOKEN }}
+          CANVAS_BEARER_TOKEN: ${{ secrets.CANVAS_BEARER_TOKEN }}
+          EXTRACTOR_BEARER: ${{ secrets.EXTRACTOR_BEARER }}
+
+      - name: Locate release APK
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidates=(
+            "app/build/outputs/apk/gmsMobileX86_64/release"
+            "app/build/outputs/apk/gms/mobile/x86_64/release"
+            "app/build/outputs/apk/mobile/x86_64/release"
+            "app/build/outputs/apk/mobileX86_64/release"
+          )
+          for directory in "${candidates[@]}"; do
+            if [ -d "$directory" ]; then
+              echo "release_dir=$directory" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo 'x86_64 release directory not found.'
+          find app/build/outputs/apk -maxdepth 8 -type f -name '*.apk' -print || true
+          exit 1
+
+      - name: Sign APK
+        uses: ilharp/sign-android-release@v2.0.0
+        with:
+          releaseDir: ${{ steps.release.outputs.release_dir }}/
+          signingKey: ${{ secrets.KEYSTORE }}
+          keyAlias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+          buildToolsVersion: 35.0.0
+
+      - name: Normalize signed APK name
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="${{ steps.release.outputs.release_dir }}"
+          mkdir -p "$release_dir/out"
+          signed_apk=$(find "$release_dir" -maxdepth 1 -type f \( -name '*-signed.apk' -o -name '*-unsigned-signed.apk' \) | head -n 1)
+          if [ -z "${signed_apk:-}" ]; then
+            echo 'Signed x86_64 APK not found.'
+            find "$release_dir" -maxdepth 2 -type f -name '*.apk' -print || true
+            exit 1
+          fi
+          mv "$signed_apk" "$release_dir/out/app-gms-mobile-x86_64-emulator.apk"
+
+      - name: Report APK and native ABI contents
+        shell: bash
+        run: |
+          APK="${{ steps.release.outputs.release_dir }}/out/app-gms-mobile-x86_64-emulator.apk"
+          stat -c 'APK bytes: %s' "$APK"
+          sha256sum "$APK"
+          unzip -l "$APK" | grep -E 'lib/x86_64|libphonon|frostsoulx_immersive' || true
+
+      - name: Upload emulator APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-gms-mobile-x86_64-emulator
+          path: ${{ steps.release.outputs.release_dir }}/out/app-gms-mobile-x86_64-emulator.apk
+          if-no-files-found: error
+          retention-days: 14
+
+# Note: `libphonon.so` is intentionally ARM64-only in the current SDK packaging. The x86_64 artifact is for UI, Media3 lifecycle, JNI loading, fallback-path, and logcat testing; Steam Audio HRTF runtime validation remains ARM64-only until an x86_64 Steam Audio library is provided.

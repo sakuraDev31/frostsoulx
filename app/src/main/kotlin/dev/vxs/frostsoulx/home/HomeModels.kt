@@ -37,6 +37,9 @@ sealed interface HomeScreenState {
 @Immutable
 data class HomeUiState(
     val quickPicks: ImmutableList<Song>,
+    val featuredForYou: ImmutableList<Song>,
+    val forThisMoment: ImmutableList<Song>,
+    val recentlyPlayed: ImmutableList<Song>,
     val speedDialItems: ImmutableList<LocalItem>,
     val forgottenFavorites: ImmutableList<Song>,
     val keepListening: ImmutableList<LocalItem>,

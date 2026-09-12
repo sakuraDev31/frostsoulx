@@ -64,6 +64,10 @@ internal fun FrostSoulPlayerAdapter(
     onCollapse: () -> Unit,
     onOpenOptions: () -> Unit = {},
     sleepTimerActive: Boolean = false,
+    sleepTimerRemainingMs: Long = 0L,
+    canvasStaticUrl: String? = null,
+    canvasPrimaryUrl: String? = null,
+    canvasFallbackUrl: String? = null,
     onOpenSleepTimer: () -> Unit = {},
     onSearchTrack: () -> Unit = {},
     onOpenAlbum: () -> Unit = {},
@@ -169,10 +173,14 @@ internal fun FrostSoulPlayerAdapter(
             downloadProgress,
             isRefetchingLyrics,
             sleepTimerActive,
+            sleepTimerRemainingMs,
             repeatMode,
             blurRadius,
             palette,
             playerBackgroundStyle,
+            canvasStaticUrl,
+            canvasPrimaryUrl,
+            canvasFallbackUrl,
         ) {
             FrostSoulPlayerUiState(
                 track = FrostSoulTrack.from(mediaMetadata, isLiked),
@@ -197,10 +205,14 @@ internal fun FrostSoulPlayerAdapter(
                 outputDevice = outputDevice,
                 downloadProgress = downloadProgress,
                 sleepTimerActive = sleepTimerActive,
+                sleepTimerRemainingMs = sleepTimerRemainingMs,
                 repeatMode = repeatMode,
                 blurRadius = blurRadius,
                 palette = palette,
                 playerBackgroundStyle = playerBackgroundStyle,
+                canvasStaticUrl = canvasStaticUrl,
+                canvasPrimaryUrl = canvasPrimaryUrl,
+                canvasFallbackUrl = canvasFallbackUrl,
             )
         }
     val actions =
@@ -213,6 +225,7 @@ internal fun FrostSoulPlayerAdapter(
                 onToggleRepeat = { playerConnection.player.toggleRepeatMode() },
                 onSeek = { targetPosition -> playerConnection.player.seekTo(targetPosition) },
                 onToggleLike = playerConnection::toggleLike,
+                onToggleDislike = playerConnection::toggleDislike,
                 onOpenAudioOutput = {
                     SystemMediaControlResolver.openMediaOutputSwitcher(applicationContext)
                 },

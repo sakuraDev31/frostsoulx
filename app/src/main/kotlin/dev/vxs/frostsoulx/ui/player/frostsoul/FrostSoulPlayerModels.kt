@@ -107,10 +107,14 @@ internal data class FrostSoulPlayerUiState(
     ),
     val downloadProgress: Float? = null,
     val sleepTimerActive: Boolean = false,
+    val sleepTimerRemainingMs: Long = 0L,
     val repeatMode: Int = 0,
     val blurRadius: Float = 48f,
     val palette: FrostSoulPalette = FrostSoulPalette.Default,
     val playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.GLOW_ANIMATED,
+    val canvasStaticUrl: String? = null,
+    val canvasPrimaryUrl: String? = null,
+    val canvasFallbackUrl: String? = null,
 ) {
     val safeDurationMs: Long
         get() = durationMs.takeIf { it > 0L } ?: track.durationMs
@@ -133,6 +137,7 @@ internal data class FrostSoulPlayerActions(
     val onToggleRepeat: () -> Unit = {},
     val onSeek: (Long) -> Unit,
     val onToggleLike: () -> Unit,
+    val onToggleDislike: () -> Unit = {},
     val onOpenAudioOutput: () -> Unit = {},
     val onDownload: () -> Unit = {},
     val onOpenSleepTimer: () -> Unit = {},

@@ -251,7 +251,7 @@ private fun WelcomePage(uiState: OnboardingUiState) {
             modifier = Modifier.size(112.dp).clip(RoundedCornerShape(34.dp)).background(FrostSoulTheme.colors.surfaceRaised),
         ) {
             FSIcon(
-                painter = painterResource(R.drawable.app_icon_small),
+                painter = painterResource(R.mipmap.ic_launcher_foreground),
                 contentDescription = "FrostSoul",
                 modifier = Modifier.size(78.dp),
             )

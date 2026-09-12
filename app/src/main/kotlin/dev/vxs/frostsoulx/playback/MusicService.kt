@@ -176,6 +176,8 @@ import dev.vxs.frostsoulx.constants.PauseListenHistoryKey
 import dev.vxs.frostsoulx.constants.PauseOnDeviceMuteKey
 import dev.vxs.frostsoulx.constants.PermanentShuffleKey
 import dev.vxs.frostsoulx.constants.PersistentQueueKey
+import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
+import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
 import dev.vxs.frostsoulx.constants.PlayerStreamClient
 import dev.vxs.frostsoulx.constants.PlayerStreamClientKey
 import dev.vxs.frostsoulx.constants.PlayerVolumeKey
@@ -669,7 +671,6 @@ class MusicService :
     lateinit var downloadCache: Cache
 
     lateinit var localPlayer: ExoPlayer
-        private set
     lateinit var player: Player
         private set
     private lateinit var castPlaybackRepository: CastPlaybackRepository
@@ -1062,6 +1063,10 @@ class MusicService :
 
     override fun onCreate() {
         super.onCreate()
+        // Select the renderer chain from persisted state before ExoPlayer is built. When off,
+        // no surround processor or JNI library participates in the playback path at all.
+        ImmersiveAudioRuntime.setIntensity(dataStore.get(StereoSurroundIntensityKey, 0.5f))
+        ImmersiveAudioRuntime.setEnabled(dataStore.get(StereoSurroundEnabledKey, false))
         equalizerPlaybackController.attach(this)
         ensureScopesActive()
 
@@ -1087,27 +1092,7 @@ class MusicService :
             reportException(e)
         }
 
-        localPlayer =
-            ExoPlayer
-                .Builder(this)
-                .setMediaSourceFactory(createMediaSourceFactory())
-                .setRenderersFactory(createRenderersFactory())
-                .setLoadControl(createPrimaryLoadControl())
-                .setTrackSelector(DefaultTrackSelector(this, SafeTrackSelectionFactory()))
-                .setHandleAudioBecomingNoisy(true)
-                .setWakeMode(C.WAKE_MODE_NETWORK)
-                .setAudioAttributes(
-                    playbackAudioAttributes(),
-                    false,
-                ).setSeekBackIncrementMs(5000)
-                .setSeekForwardIncrementMs(5000)
-                .setDeviceVolumeControlEnabled(true)
-                .build()
-                .apply {
-                    addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
-                    addListener(audioEffectPlayerListener)
-                    setOffloadEnabled(false)
-                }
+        localPlayer = buildLocalPlayer()
         castPlaybackRepository = CastPlaybackRepositoryLocator.get(this)
         player =
             castPlaybackRepository
@@ -1126,6 +1111,7 @@ class MusicService :
             snapshotRepository = playbackSnapshotRepository,
             queueTitleProvider = { queueTitle },
         )
+        ImmersiveAudioRuntime.setTransitionHandler(::requestImmersiveRebuild)
         playerInitialized.value = true
         database
             .blockedArtistIds()
@@ -1148,7 +1134,7 @@ class MusicService :
         widgetUpdater =
             MusicServiceWidgetUpdater(
                 service = this,
-                player = player,
+                playerProvider = { player },
                 scope = scope,
                 loadWidgetInsights = loadWidgetInsightsUseCase,
             )
@@ -1416,7 +1402,15 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { settings ->
                 desiredEqSettings.value = settings
-                applyEqSettingsToEffects(settings)
+                if (settings.enabled) {
+                    applyEqSettingsToEffects(settings)
+                    reconcileAudioEffectSession()
+                } else {
+                    // EQ OFF must be a true bypass. Release the whole Android effect
+                    // chain instead of leaving vendor implementations attached with
+                    // enabled=false.
+                    closeAudioEffectSession()
+                }
             }
 
         combine(
@@ -5719,6 +5713,36 @@ class MusicService :
         }
     }
 
+    fun toggleDislike() {
+        val mediaMetadata = currentMediaMetadata.value ?: return
+        ioScope.launch {
+            try {
+                val song =
+                    database.withTransaction {
+                        getSongById(mediaMetadata.id)
+                            ?: run {
+                                insert(mediaMetadata) {
+                                    it.copy(isLocal = mediaMetadata.id.isLocalMediaId())
+                                }
+                                getSongById(mediaMetadata.id)
+                            }
+                    } ?: return@launch
+                val currentlyDisliked = dislikedMediaIds.remove(mediaMetadata.id)
+                val nowDisliked = !currentlyDisliked
+                if (nowDisliked) dislikedMediaIds.add(mediaMetadata.id)
+                recommendationBehaviorTracker.record(
+                    mediaMetadata.id,
+                    if (nowDisliked) RecommendationSignalType.Dislike else RecommendationSignalType.Unlike,
+                )
+                syncUtils.dislikeSong(song.song, nowDisliked)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                reportException(error)
+            }
+        }
+    }
+
     fun toggleLike() {
         val mediaMetadata = currentMediaMetadata.value ?: return
         ioScope.launch {
@@ -5997,8 +6021,19 @@ class MusicService :
         val levels = resampleLevelsByIndex(settings.bandLevelsMb, bandCount)
         runCatching { eq.enabled = settings.enabled }
 
+        // Pre-gain headroom must be applied upstream, on the EQ bands themselves, because
+        // BassBoost/Virtualizer/EQ can push samples past full scale internally before the
+        // signal ever reaches LoudnessEnhancer. A downstream negative LoudnessEnhancer target
+        // gain cannot undo clipping that already happened earlier in the chain - see
+        // docs_audio_clipping_findings.md.
+        val eqBoostMb = levels.maxOrNull()?.coerceAtLeast(0) ?: 0
+        val bassBoostHeadroomMb = if (settings.enabled && settings.bassBoostEnabled) (settings.bassBoostStrength * 400 / 1000).coerceIn(0, 400) else 0
+        val virtualizerHeadroomMb = if (settings.enabled && settings.virtualizerEnabled) (settings.virtualizerStrength * 300 / 1000).coerceIn(0, 300) else 0
+        val safeHeadroomEnabled = settings.autoHeadroomEnabled || settings.enabled
+        val preampMb = if (safeHeadroomEnabled) -(eqBoostMb + bassBoostHeadroomMb + virtualizerHeadroomMb) else 0
+
         for (band in 0 until bandCount) {
-            val levelMb = levels.getOrNull(band)?.coerceIn(minMb, maxMb) ?: 0
+            val levelMb = ((levels.getOrNull(band) ?: 0) + preampMb).coerceIn(minMb, maxMb)
             runCatching { eq.setBandLevel(band.toShort(), levelMb.toShort()) }
         }
 
@@ -6013,19 +6048,18 @@ class MusicService :
         }
 
         loudnessEnhancer?.let { le ->
-            val automaticHeadroomMb = -(levels.maxOrNull()?.coerceAtLeast(0) ?: 0)
-            val gainMb =
-                when {
-                    settings.autoHeadroomEnabled -> automaticHeadroomMb
-                    settings.outputGainEnabled -> settings.outputGainMb.coerceIn(-1500, 1500)
-                    else -> 0
-                }
+            // Reserved solely for the user's explicit "boost output" request. It is never used
+            // to compensate for EQ/bass/virtualizer headroom anymore: a negative target gain
+            // here cannot undo clipping that already happened upstream (see
+            // docs_audio_clipping_findings.md).
+            val gainMb = if (!safeHeadroomEnabled && settings.outputGainEnabled) settings.outputGainMb.coerceIn(-1500, 1500) else 0
             runCatching { le.setTargetGain(gainMb) }
-            runCatching { le.enabled = settings.enabled && (settings.autoHeadroomEnabled || settings.outputGainEnabled) }
+            runCatching { le.enabled = settings.enabled && !safeHeadroomEnabled && settings.outputGainEnabled }
         }
     }
 
     private fun shouldKeepAudioEffectSessionOpen(): Boolean {
+        if (!desiredEqSettings.value.enabled) return false
         val playbackState = localPlayer.playbackState
         return playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_READY
     }
@@ -6043,6 +6077,7 @@ class MusicService :
     }
 
     private fun openAudioEffectSession() {
+        if (!desiredEqSettings.value.enabled) return
         if (isAudioEffectSessionOpened) return
         val sessionId = localPlayer.audioSessionId
         if (sessionId <= 0) return
@@ -6526,6 +6561,8 @@ class MusicService :
             scheduleCrossfade()
         }
     }
+
+    private val dislikedMediaIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private fun isCurrentPlaybackItemLocal(currentMediaMetadata: MediaMetadata): Boolean =
         currentSong.value?.song?.isLocal == true ||
@@ -7843,7 +7880,9 @@ class MusicService :
     }
 
     private fun updateAudioOffload(enabled: Boolean) {
-        val effectiveEnabled = enabled && !crossfadeEnabled
+        // Offload bypasses AudioProcessorChain. It must be disabled while immersive audio is
+        // active, otherwise locally decoded/offline tracks can skip the JNI engine entirely.
+        val effectiveEnabled = enabled && !crossfadeEnabled && !ImmersiveAudioRuntime.isEnabled()
         runCatching {
             val builder = localPlayer.trackSelectionParameters.buildUpon()
             val audioOffloadPrefsClass = Class.forName("androidx.media3.common.AudioOffloadPreferences")
@@ -7900,28 +7939,139 @@ class MusicService :
             ).setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
+    private val immersiveRebuildMutex = Mutex()
+    private val _playerReplacementEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val playerReplacementEvents = _playerReplacementEvents.asSharedFlow()
+
+    private fun buildLocalPlayer(): ExoPlayer =
+        ExoPlayer
+            .Builder(this)
+            .setMediaSourceFactory(createMediaSourceFactory())
+            .setRenderersFactory(createRenderersFactory())
+            .setLoadControl(createPrimaryLoadControl())
+            .setTrackSelector(DefaultTrackSelector(this, SafeTrackSelectionFactory()))
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setAudioAttributes(playbackAudioAttributes(), false)
+            .setSeekBackIncrementMs(5000)
+            .setSeekForwardIncrementMs(5000)
+            .setDeviceVolumeControlEnabled(true)
+            .build()
+            .apply {
+                addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
+                addListener(audioEffectPlayerListener)
+                setOffloadEnabled(false)
+            }
+
+    private fun requestImmersiveRebuild(enabled: Boolean) {
+        if (!::player.isInitialized || !::localPlayer.isInitialized) return
+        scope.launch(Dispatchers.Main.immediate) {
+            immersiveRebuildMutex.withLock {
+                rebuildImmersivePlayer(enabled)
+            }
+        }
+    }
+
+    private fun rebuildImmersivePlayer(enabled: Boolean) {
+        if (!::player.isInitialized || !::localPlayer.isInitialized) return
+        if (ImmersiveAudioRuntime.isEnabled() != enabled) return
+
+        val oldPlayer = player
+        val oldLocalPlayer = localPlayer
+        // Prefer local state because the AudioSink belongs to localPlayer. If a Cast session has
+        // transferred the queue, fall back to the active wrapper so the queue is not lost.
+        val statePlayer = oldLocalPlayer.takeIf { it.mediaItemCount > 0 } ?: oldPlayer
+        val mediaItems = List(statePlayer.mediaItemCount) { index -> statePlayer.getMediaItemAt(index) }
+        val currentIndex = statePlayer.currentMediaItemIndex
+        val positionMs = statePlayer.currentPosition.coerceAtLeast(0L)
+        val playWhenReady = statePlayer.playWhenReady
+        val repeatMode = statePlayer.repeatMode
+        val shuffleEnabled = statePlayer.shuffleModeEnabled
+        val playbackParameters = statePlayer.playbackParameters
+        val volume = oldLocalPlayer.volume
+
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        releaseSecondaryCrossfadePlayer()
+        ImmersiveAudioRuntime.detachProcessor()
+
+        val replacementLocal = buildLocalPlayer()
+        replacementLocal.repeatMode = repeatMode
+        replacementLocal.shuffleModeEnabled = shuffleEnabled
+        replacementLocal.playbackParameters = playbackParameters
+        replacementLocal.volume = volume
+        if (mediaItems.isNotEmpty()) {
+            replacementLocal.setMediaItems(
+                mediaItems,
+                currentIndex.coerceIn(0, mediaItems.lastIndex),
+                positionMs,
+            )
+        }
+        replacementLocal.prepare()
+        oldPlayer.removeListener(this)
+        oldPlayer.removeListener(sleepTimer)
+        oldLocalPlayer.removeListener(audioEffectPlayerListener)
+
+        localPlayer = replacementLocal
+        player =
+            castPlaybackRepository
+                .createPlayer(
+                    context = this,
+                    localPlayer = replacementLocal,
+                    mediaItemResolver = CastMediaItemResolver(::resolveMediaItemForCast),
+                ).apply {
+                    addListener(this@MusicService)
+                    addListener(sleepTimer)
+                }
+        playbackCore?.replacePlayer(player)
+        mediaSession.setPlayer(player)
+        // Re-apply the preference after rebuilding the renderer chain. The immersive state is
+        // included by updateAudioOffload(), forcing local/offline PCM through the processor.
+        updateAudioOffload(dataStore.get(AudioOffload, false))
+        _playerReplacementEvents.tryEmit(Unit)
+        // Apply transport state after the replacement is visible to the core/session. This keeps
+        // play/pause and progress controllers attached to the live player after a toggle.
+        if (playWhenReady) {
+            player.play()
+        } else {
+            player.pause()
+        }
+        oldPlayer.release()
+        if (oldPlayer !== oldLocalPlayer) oldLocalPlayer.release()
+    }
+
     private fun createRenderersFactory() =
         object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
-            ) = DefaultAudioSink
-                .Builder(context)
-                .setEnableFloatOutput(false)
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .setAudioProcessorChain(
-                    DefaultAudioSink.DefaultAudioProcessorChain(
-                        SilenceSkippingAudioProcessor(
-                            1_500_000L,
-                            0.35f,
-                            500_000L,
-                            10,
-                            150.toShort(),
-                        ),
-                        SonicAudioProcessor(),
-                    ),
-                ).build()
+            ): DefaultAudioSink {
+                val silenceSkipping =
+                    SilenceSkippingAudioProcessor(
+                        1_500_000L,
+                        0.35f,
+                        500_000L,
+                        10,
+                        150.toShort(),
+                    )
+                val sonic = SonicAudioProcessor()
+                val surround =
+                    if (ImmersiveAudioRuntime.isEnabled()) {
+                        ImmersiveAudioProcessor().also(ImmersiveAudioRuntime::attach)
+                    } else {
+                        null
+                    }
+                val chain =
+                    surround?.let {
+                        DefaultAudioSink.DefaultAudioProcessorChain(silenceSkipping, sonic, it)
+                    } ?: DefaultAudioSink.DefaultAudioProcessorChain(silenceSkipping, sonic)
+                return DefaultAudioSink
+                    .Builder(context)
+                    .setEnableFloatOutput(false)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessorChain(chain)
+                    .build()
+            }
         }
 
     override fun onPlaybackStatsReady(
@@ -8371,10 +8521,12 @@ class MusicService :
     }
 
     override fun onDestroy() {
+        // The playback core owns the stable Media3-only audio path.
         playbackCore?.close()
         playbackCore = null
         stopLyricsSync()
         equalizerPlaybackController.detach(this)
+        ImmersiveAudioRuntime.detach()
         discordServiceStopping = true
         requestDiscordSync(
             reason = "service_destroy",
@@ -8673,7 +8825,10 @@ class MusicService :
         const val DEVICE_MUTE_PLAYBACK_NOTICE_INTERVAL_MS = 1_200L
         const val MIN_AUDIO_FOCUS_VOLUME_FACTOR = 0.2f
         const val MIN_AUDIO_NORMALIZATION_FACTOR = 0.25f
-        const val MAX_AUDIO_NORMALIZATION_FACTOR = 1.414f
+        // Normalization may attenuate loud masters, but must never boost PCM above
+        // unity when DSP and EQ are bypassed; positive normalization gain was a
+        // remaining clipping source independent of sound shaping.
+        const val MAX_AUDIO_NORMALIZATION_FACTOR = 1f
         const val EFFECTIVE_VOLUME_RAMP_FRAME_MS = 16L
         const val EFFECTIVE_VOLUME_RAMP_UP_MS = 350L
         const val EFFECTIVE_VOLUME_RAMP_DOWN_MS = 180L
