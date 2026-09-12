@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -205,6 +206,7 @@ internal fun FSAlbumArt(
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    palette: FrostSoulPalette = FrostSoulPalette.Default,
 ) {
     // A cancellable Animatable is essential here. An infinite transition keeps advancing while
     // paused, so snapshotting its value on pause makes resume jump to a later angle. Cancelling
@@ -267,23 +269,25 @@ internal fun FSAlbumArt(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .aspectRatio(1f)
-            .shadow(elevation = 18.dp, shape = cardShape, clip = false)
+            .shadow(elevation = 26.dp, shape = cardShape, clip = false)
             .clip(cardShape)
             .background(
-                // Deck plate: pushed much darker than before so the silver record and the
-                // tonearm read with real contrast against the body (was a washed mid-grey).
+                // Deck plate: lifted off pure black so the whole card reads as a distinct panel
+                // sitting on the page instead of melting into it. The page background behind it
+                // is itself near-black, so contrast has to come from the card's own floor tone
+                // and a crisper border rather than from the page ever going lighter.
                 Brush.linearGradient(
-                    colors = listOf(Color(0xFF121215), Color(0xFF07070A), Color(0xFF000000)),
+                    colors = listOf(Color(0xFF2C2E36), Color(0xFF17181D), Color(0xFF060607)),
                 ),
             )
-            .border(1.dp, Color.White.copy(alpha = 0.055f), cardShape),
+            .border(1.dp, Color.White.copy(alpha = 0.16f), cardShape),
     ) {
         // Top-left key light on the plate, then a vignette that sinks the corners. Together
         // they give the flat card a machined, slightly domed metal feel.
         Box(
             modifier = Modifier.fillMaxSize().background(
                 Brush.linearGradient(
-                    colors = listOf(Color.White.copy(alpha = 0.055f), Color.Transparent),
+                    colors = listOf(Color.White.copy(alpha = 0.09f), Color.Transparent),
                 ),
             ),
         )
@@ -298,13 +302,19 @@ internal fun FSAlbumArt(
         }
 
         // A soft platter well separates the record from the deck without adding another hard ring.
+        // A faint hint of the album's secondary color is mixed in so the well reads as part of
+        // the same tinted-plastic material as the disc, not a neutral grey gutter around it.
         Box(
             modifier = Modifier
                 .fillMaxSize(platterFraction + 0.035f)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(Color(0xFF0D0E12), Color(0xFF020203), Color.Black.copy(alpha = 0.95f)),
+                        colors = listOf(
+                            lerp(Color(0xFF0D0E12), palette.artworkSecondary, 0.08f),
+                            Color(0xFF020203),
+                            Color.Black.copy(alpha = 0.95f),
+                        ),
                     ),
                 ),
         )
@@ -326,8 +336,12 @@ internal fun FSAlbumArt(
                 drawCircle(
                     brush = Brush.radialGradient(
                         colorStops = arrayOf(
-                            0.00f to Color(0xFF0E0F13),
-                            0.36f to Color(0xFF090A0D),
+                            // A faint wash of the album's own colors is mixed into the vinyl
+                            // body — like light refracting through tinted, translucent plastic —
+                            // instead of a perfectly neutral black. Kept subtle so the disc still
+                            // reads as high-contrast dark, never as a literally colored disc.
+                            0.00f to lerp(Color(0xFF0E0F13), palette.artworkPrimary, 0.10f),
+                            0.36f to lerp(Color(0xFF090A0D), palette.artworkSecondary, 0.08f),
                             0.74f to Color(0xFF050609),
                             1.00f to Color(0xFF000000),
                         ),
@@ -352,6 +366,43 @@ internal fun FSAlbumArt(
                     radius = platterRadius * 0.86f,
                     center = center,
                     style = Stroke(width = platterRadius * 0.16f),
+                )
+
+                // Two oversized, softly-stopped color pools simulate blurred light refracting
+                // through tinted plastic vinyl. They live inside the rotating layer, so the
+                // color turns with the record — like dye baked into colored vinyl — rather than
+                // reading as a reflection painted on top of it.
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            palette.artworkPrimary.copy(alpha = 0.22f),
+                            palette.artworkPrimary.copy(alpha = 0.08f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(
+                            center.x - platterRadius * 0.38f,
+                            center.y - platterRadius * 0.42f,
+                        ),
+                        radius = platterRadius * 0.9f,
+                    ),
+                    radius = platterRadius,
+                    center = center,
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            palette.artworkSecondary.copy(alpha = 0.20f),
+                            palette.artworkSecondary.copy(alpha = 0.07f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(
+                            center.x + platterRadius * 0.44f,
+                            center.y + platterRadius * 0.36f,
+                        ),
+                        radius = platterRadius * 0.85f,
+                    ),
+                    radius = platterRadius,
+                    center = center,
                 )
 
                 // Fewer, softer grooves with wider strokes to read slightly blurred and premium.

@@ -1192,6 +1192,7 @@ private fun FrostSoulAlbumPage(
                 artworkUrl = uiState.track.artworkUrl,
                 title = uiState.track.title,
                 isPlaying = uiState.isPlaying,
+                palette = uiState.palette,
                 modifier = Modifier
                     .fillMaxWidth()
                     .sizeIn(maxWidth = PlayerLayoutTokens.TurntableCardSize)
