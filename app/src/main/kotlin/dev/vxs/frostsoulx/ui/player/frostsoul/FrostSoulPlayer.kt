@@ -1302,10 +1302,10 @@ private fun FrostSoulArtworkBlurAlbumPage(
         Box(
             modifier = Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.28f),
-                    0.42f to Color.Transparent,
-                    0.76f to Color.Black.copy(alpha = 0.62f),
-                    1f to Color.Black.copy(alpha = 0.90f),
+                    0f to Color.Black.copy(alpha = 0.20f),
+                    0.48f to Color.Transparent,
+                    0.74f to Color.Black.copy(alpha = 0.56f),
+                    1f to Color.Black.copy(alpha = 0.88f),
                 ),
             ),
         )
@@ -1390,8 +1390,8 @@ private fun FrostSoulArtworkBlurAlbumPage(
                     .padding(
                         start = PlayerLayoutTokens.MasterHorizontalPadding,
                         end = PlayerLayoutTokens.MasterHorizontalPadding,
-                        top = 14.dp,
-                        bottom = 12.dp,
+                        top = 20.dp,
+                        bottom = 14.dp,
                     ),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -1403,20 +1403,17 @@ private fun FrostSoulArtworkBlurAlbumPage(
                     ) {
                         Text(
                             text = uiState.track.title,
-                            color = FrostSoulOnSurface,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
+                            style = PlayerLayoutTokens.ImmersiveTitleStyle.copy(color = FrostSoulOnSurface),
                             maxLines = 1,
                             softWrap = false,
                         )
                     }
                     Text(
                         text = uiState.track.artist,
-                        color = FrostSoulOnSurfaceMuted,
-                        fontSize = 15.sp,
+                        style = PlayerLayoutTokens.ImmersiveArtistStyle.copy(color = FrostSoulOnSurfaceMuted.copy(alpha = 0.90f)),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 4.dp).clickable(onClick = onShowArtists),
+                        modifier = Modifier.padding(top = 6.dp).clickable(onClick = onShowArtists),
                     )
                 }
                 Row(
@@ -1444,7 +1441,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
             )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         FrostSoulImmersiveControls(
             state = uiState,
@@ -1455,7 +1452,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
             onSeekDraggingChanged = onSeekDraggingChanged,
             modifier = Modifier
                 .padding(horizontal = PlayerLayoutTokens.MasterHorizontalPadding)
-                .padding(top = 4.dp),
+                .padding(top = 6.dp),
         )
         }
     }
@@ -1481,11 +1478,11 @@ private fun FrostSoulImmersiveControls(
             modifier = Modifier.fillMaxWidth(),
         )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(state.positionMs.asFrostSoulTime(), color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
-            Text(state.safeDurationMs.asFrostSoulTime(), color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
+            Text(state.positionMs.asFrostSoulTime(), style = PlayerLayoutTokens.TimelineTimeStyle)
+            Text(state.safeDurationMs.asFrostSoulTime(), style = PlayerLayoutTokens.TimelineTimeStyle)
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
@@ -1519,15 +1516,15 @@ private fun FrostSoulImmersiveControls(
                     Text(
                         text = state.outputDevice.name,
                         color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = "Immersive · Spatial",
-                        color = Color.White.copy(alpha = 0.58f),
-                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.56f),
+                        fontSize = 10.5.sp,
                         maxLines = 1,
                     )
                 }
@@ -1535,7 +1532,7 @@ private fun FrostSoulImmersiveControls(
             FSTwoDotButton(onClick = onOpenOptions, immersive = true)
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2530,7 +2527,7 @@ private val GradientBackgroundStyles: Set<PlayerBackgroundStyle> =
         PlayerBackgroundStyle.BLUR_GRADIENT,
     )
 
-private const val GlowBandFraction = 0.38f
+private const val GlowBandFraction = 0.34f
 private const val GlowTransitionDurationMs = 1_200
 
 /**
@@ -2651,6 +2648,19 @@ private fun FrostSoulDynamicBackground(
             )
         }
 
+        if (isVinyl) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.76f),
+                        0.44f to Color.Black.copy(alpha = 0.58f),
+                        0.78f to Color.Black.copy(alpha = 0.34f),
+                        1f to Color.Black.copy(alpha = 0.22f),
+                    ),
+                ),
+            )
+        }
+
         if (isGradient) {
             val gradient = remember(palette) {
                 Brush.verticalGradient(
@@ -2667,7 +2677,7 @@ private fun FrostSoulDynamicBackground(
 
         if (isGlow) {
             val bandHeight = (LocalConfiguration.current.screenHeightDp * GlowBandFraction)
-                .dp.coerceIn(260.dp, 420.dp)
+                .dp.coerceIn(244.dp, 372.dp)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -2676,9 +2686,9 @@ private fun FrostSoulDynamicBackground(
                     .graphicsLayer {
                         compositingStrategy = CompositingStrategy.Offscreen
                         if (isAnimatedGlow) {
-                            scaleX = 1.16f
-                            translationX = sin(glowPhase) * 18.dp.toPx()
-                            alpha = 0.92f + cos(glowPhase) * GlowConstraints.BreathFraction
+                            scaleX = 1.12f
+                            translationX = sin(glowPhase) * 14.dp.toPx()
+                            alpha = 0.90f + cos(glowPhase) * (GlowConstraints.BreathFraction * 0.78f)
                         }
                     }
                     .drawWithCache {
@@ -2688,9 +2698,9 @@ private fun FrostSoulDynamicBackground(
                         val mixed = lerp(primary, secondary, 0.5f)
                         val leftField = Brush.radialGradient(
                             colors = listOf(
-                                primary.copy(alpha = 0.48f),
-                                primary.copy(alpha = 0.22f),
-                                primary.copy(alpha = 0.06f),
+                                primary.copy(alpha = 0.42f),
+                                primary.copy(alpha = 0.20f),
+                                primary.copy(alpha = 0.05f),
                                 Color.Transparent,
                             ),
                             center = Offset(size.width * 0.08f, size.height * 1.04f),
@@ -2698,8 +2708,8 @@ private fun FrostSoulDynamicBackground(
                         )
                         val rightField = Brush.radialGradient(
                             colors = listOf(
-                                secondary.copy(alpha = 0.44f),
-                                secondary.copy(alpha = 0.20f),
+                                secondary.copy(alpha = 0.40f),
+                                secondary.copy(alpha = 0.18f),
                                 secondary.copy(alpha = 0.05f),
                                 Color.Transparent,
                             ),
@@ -2708,8 +2718,8 @@ private fun FrostSoulDynamicBackground(
                         )
                         val centerField = Brush.radialGradient(
                             colors = listOf(
-                                mixed.copy(alpha = 0.30f),
-                                mixed.copy(alpha = 0.14f),
+                                mixed.copy(alpha = 0.26f),
+                                mixed.copy(alpha = 0.12f),
                                 mixed.copy(alpha = 0.03f),
                                 Color.Transparent,
                             ),
@@ -2718,8 +2728,8 @@ private fun FrostSoulDynamicBackground(
                         )
                         val upperField = Brush.radialGradient(
                             colors = listOf(
-                                secondary.copy(alpha = 0.18f),
-                                primary.copy(alpha = 0.08f),
+                                secondary.copy(alpha = 0.14f),
+                                primary.copy(alpha = 0.07f),
                                 Color.Transparent,
                             ),
                             center = Offset(size.width * 0.38f, size.height * 0.46f),

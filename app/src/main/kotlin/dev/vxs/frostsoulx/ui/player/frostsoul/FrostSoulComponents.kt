@@ -321,114 +321,90 @@ internal fun FSAlbumArt(
                 val labelRadius = platterRadius *
                     (PlayerLayoutTokens.TurntableLabelSize.value / PlayerLayoutTokens.TurntablePlatterSize.value)
 
-                // Metallic platter body: a cool graphite/silver material rather than a flat
-                // black disc. The fixed colour stops are intentional; they form the reference's
-                // precomputed metal response without allocating or animating a new brush per
-                // frame.
+                // Dark vinyl body with softer tonal separation; this keeps the deck premium and
+                // avoids the previous metallic silver/plastic look.
                 drawCircle(
-                    brush = Brush.linearGradient(
+                    brush = Brush.radialGradient(
                         colorStops = arrayOf(
-                            0.00f to Color(0xFF56606B),
-                            0.16f to Color(0xFFB9C1CA),
-                            0.31f to Color(0xFF707B87),
-                            0.48f to Color(0xFFD5DAE0),
-                            0.66f to Color(0xFF626D79),
-                            0.82f to Color(0xFF9EA8B3),
-                            1.00f to Color(0xFF454E59),
+                            0.00f to Color(0xFF15161A),
+                            0.36f to Color(0xFF0F1014),
+                            0.74f to Color(0xFF0A0B0E),
+                            1.00f to Color(0xFF050507),
                         ),
-                        start = Offset(0f, platterRadius * 0.12f),
-                        end = Offset(size.width, platterRadius * 0.92f),
+                        center = center,
+                        radius = platterRadius,
                     ),
                     radius = platterRadius,
                     center = center,
                 )
 
-                // Precalculated anisotropic reflection inside the rotating disc. It is subtle
-                // enough to keep the grooves readable, but gives the platter the brushed-metal
-                // sweep visible in the reference instead of a painted white arc.
+                // A soft moving sheen across the groove annulus; lower contrast by design.
                 drawCircle(
                     brush = Brush.sweepGradient(
                         0.00f to Color.Transparent,
-                        0.10f to Color.White.copy(alpha = 0.16f),
-                        0.18f to Color.Transparent,
-                        0.43f to Color.Transparent,
-                        0.52f to Color.White.copy(alpha = 0.11f),
+                        0.16f to Color.White.copy(alpha = 0.06f),
+                        0.30f to Color.Transparent,
                         0.62f to Color.Transparent,
-                        0.84f to Color.Transparent,
-                        0.91f to Color.Black.copy(alpha = 0.13f),
+                        0.78f to Color.White.copy(alpha = 0.035f),
                         1.00f to Color.Transparent,
                         center = center,
                     ),
-                    radius = platterRadius * 0.84f,
+                    radius = platterRadius * 0.86f,
                     center = center,
                     style = Stroke(width = platterRadius * 0.16f),
                 )
 
-                // Fine concentric grooves. Low contrast and crowding toward the rim, so the
-                // surface reads as a pressing rather than as drawn-on rings.
-                val grooveInner = labelRadius + 2.dp.toPx()
-                val grooveOuter = platterRadius * 0.972f
-                val grooveCount = 58
+                // Fewer, softer grooves with wider strokes to read slightly blurred and premium.
+                val grooveInner = labelRadius + 3.dp.toPx()
+                val grooveOuter = platterRadius * 0.968f
+                val grooveCount = 34
                 for (index in 0 until grooveCount) {
                     val t = index / (grooveCount - 1f)
-                    // eased(t) = t(2 - t): spacing shrinks as it approaches the rim.
                     val eased = t * (2f - t)
                     val ringRadius = grooveInner + (grooveOuter - grooveInner) * eased
                     drawCircle(
-                        color = Color.White.copy(alpha = 0.026f + 0.024f * (1f - t)),
+                        color = Color.White.copy(alpha = 0.012f + 0.010f * (1f - t)),
                         radius = ringRadius,
                         center = center,
-                        style = Stroke(width = 0.6.dp.toPx()),
+                        style = Stroke(width = 0.9.dp.toPx()),
                     )
                     drawCircle(
-                        color = Color.Black.copy(alpha = 0.20f),
-                        radius = ringRadius + 0.6.dp.toPx(),
+                        color = Color.Black.copy(alpha = 0.18f),
+                        radius = ringRadius + 0.95.dp.toPx(),
                         center = center,
-                        style = Stroke(width = 0.6.dp.toPx()),
+                        style = Stroke(width = 0.9.dp.toPx()),
                     )
                 }
 
-                // Wider matte bands that stand in for the gaps between pressed tracks.
-                for (band in listOf(0.42f, 0.63f, 0.82f)) {
-                    drawCircle(
-                        color = Color.Black.copy(alpha = 0.30f),
-                        radius = grooveInner + (grooveOuter - grooveInner) * band,
-                        center = center,
-                        style = Stroke(width = 1.6.dp.toPx()),
-                    )
-                }
-
-                // Rim: bright outer lip over a dark bevel so the disc has thickness.
+                // Rim depth with restrained contrast.
                 drawCircle(
-                    color = Color.Black.copy(alpha = 0.55f),
+                    color = Color.Black.copy(alpha = 0.62f),
                     radius = platterRadius - 1.dp.toPx(),
                     center = center,
                     style = Stroke(width = 2.dp.toPx()),
                 )
                 drawCircle(
-                    color = Color.White.copy(alpha = 0.13f),
+                    color = Color.White.copy(alpha = 0.08f),
                     radius = platterRadius,
                     center = center,
                     style = Stroke(width = 1.dp.toPx()),
                 )
-                // Shadow the grooves cast onto the paper label edge.
                 drawCircle(
-                    color = Color.Black.copy(alpha = 0.42f),
-                    radius = labelRadius + 1.5.dp.toPx(),
+                    color = Color.Black.copy(alpha = 0.32f),
+                    radius = labelRadius + 1.dp.toPx(),
                     center = center,
-                    style = Stroke(width = 3.dp.toPx()),
+                    style = Stroke(width = 2.dp.toPx()),
                 )
             }
 
-            // Paper label pressed onto the record, with the artwork clipped to a circle inside
-            // it — the thumbnail now lives *within* the circular area instead of floating as a
-            // square polaroid over the disc.
+            // Compact center label. Keeps focus on the artwork while avoiding an oversized
+            // center-disc visual.
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxSize(labelFraction / platterFraction)
                     .clip(CircleShape)
-                    .background(Color(0xFFF6F3EC)),
+                    .background(Color(0xFF111317)),
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
@@ -452,22 +428,10 @@ internal fun FSAlbumArt(
                         )
                     }
                 }
-                // Inner edge line where the paper label meets the artwork.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .border(1.dp, Color.Black.copy(alpha = 0.22f), CircleShape),
-                )
-                Box(
-                    modifier = Modifier
-                        .size(PlayerLayoutTokens.TurntableSpindleSize)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(Color(0xFFF4F5F7), Color(0xFF888D95), Color(0xFF26282D)),
-                            ),
-                        )
-                        .border(0.5.dp, Color.White.copy(alpha = 0.38f), CircleShape),
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape),
                 )
             }
 
@@ -486,15 +450,15 @@ internal fun FSAlbumArt(
                     (PlayerLayoutTokens.TurntableLabelSize.value / PlayerLayoutTokens.TurntablePlatterSize.value)
                 val bandWidth = platterRadius - labelRadius
                 val bandRadius = labelRadius + bandWidth / 2f
-                // Two cool sweeps and one warm one, stroked over the groove band only.
+                // Fixed room reflection over the groove band: neutral and very soft.
                 drawCircle(
                     brush = Brush.sweepGradient(
                         0.00f to Color.Transparent,
-                        0.10f to Color.White.copy(alpha = 0.10f),
-                        0.20f to Color.Transparent,
-                        0.52f to Color.Transparent,
-                        0.60f to Color.White.copy(alpha = 0.075f),
-                        0.70f to Color.Transparent,
+                        0.14f to Color.White.copy(alpha = 0.055f),
+                        0.28f to Color.Transparent,
+                        0.58f to Color.Transparent,
+                        0.74f to Color.White.copy(alpha = 0.035f),
+                        0.88f to Color.Transparent,
                         1.00f to Color.Transparent,
                         center = center,
                     ),
@@ -505,10 +469,10 @@ internal fun FSAlbumArt(
                 drawCircle(
                     brush = Brush.sweepGradient(
                         0.00f to Color.Transparent,
-                        0.30f to Color(0xFFE8CCA4).copy(alpha = 0.06f),
-                        0.40f to Color.Transparent,
-                        0.80f to Color.Transparent,
-                        0.90f to Color(0xFFBCD2E6).copy(alpha = 0.05f),
+                        0.34f to Color.Black.copy(alpha = 0.09f),
+                        0.46f to Color.Transparent,
+                        0.84f to Color.Transparent,
+                        0.94f to Color.Black.copy(alpha = 0.08f),
                         1.00f to Color.Transparent,
                         center = center,
                     ),
