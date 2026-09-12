@@ -106,6 +106,7 @@ struct ImmersiveAudioEngine::Impl {
     // Lightweight stereo peak limiter state to prevent residual clipping.
     float limiterGain = 1.0f;
     float limiterReleaseCoeff = 0.9996f;
+    float limiterAttackCoeff = 0.98f;
 
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
     IPLContext context = nullptr;
@@ -200,6 +201,24 @@ struct ImmersiveAudioEngine::Impl {
                 break;
         }
 
+        // Normalize combined reflection-tap gain so correlated content (sustained bass, held
+        // chords) can't push reflectionL/R past unity before the room-mix crossfade. Several
+        // presets' raw tap gains already sum above 1.0 before the room-size multiplier below —
+        // that structural over-unity stacking, not the final limiter, is the actual source of
+        // the "consistent, low-level" clipping: it happens on ordinary loud passages, not just
+        // peaks.
+        constexpr float kTargetReflectionTapSum = 0.65f;
+        float tapGainSum = 0.0f;
+        for (int i = 0; i < reflectionTapCount; ++i) {
+            tapGainSum += tapGains[i];
+        }
+        if (tapGainSum > kTargetReflectionTapSum) {
+            const float tapNorm = kTargetReflectionTapSum / tapGainSum;
+            for (int i = 0; i < reflectionTapCount; ++i) {
+                tapGains[i] *= tapNorm;
+            }
+        }
+
         if (sampleRate <= 0 || reflectionDelayLeft.empty()) {
             return;
         }
@@ -262,8 +281,11 @@ struct ImmersiveAudioEngine::Impl {
         reverbLowpassL = 0.0f;
         reverbLowpassR = 0.0f;
         limiterGain = 1.0f;
-        // ~80 ms release for transparent recovery.
+        // ~80 ms release for transparent recovery, ~2 ms attack so gain reduction ramps
+        // instead of snapping instantly — the instant-cut attack was adding its own grainy
+        // edge on top of the softclip/limiter overlap.
         limiterReleaseCoeff = std::exp(-1.0f / (0.080f * static_cast<float>(sampleRate)));
+        limiterAttackCoeff = std::exp(-1.0f / (0.002f * static_cast<float>(sampleRate)));
         updateRoomModel();
     }
 
@@ -326,7 +348,7 @@ struct ImmersiveAudioEngine::Impl {
             : 1.0f;
 
         if (targetGain < limiterGain) {
-            limiterGain = targetGain;
+            limiterGain = limiterGain + (targetGain - limiterGain) * (1.0f - limiterAttackCoeff);
         } else {
             limiterGain = std::min(1.0f, limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
         }
