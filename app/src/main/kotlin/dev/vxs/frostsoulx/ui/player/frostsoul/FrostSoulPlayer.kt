@@ -733,7 +733,7 @@ internal fun FSPlayerControls(
             )
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2527,7 +2527,6 @@ private val GradientBackgroundStyles: Set<PlayerBackgroundStyle> =
         PlayerBackgroundStyle.BLUR_GRADIENT,
     )
 
-private const val GlowBandFraction = 0.34f
 private const val GlowTransitionDurationMs = 1_200
 
 /**
@@ -2676,8 +2675,16 @@ private fun FrostSoulDynamicBackground(
         }
 
         if (isGlow) {
-            val bandHeight = (LocalConfiguration.current.screenHeightDp * GlowBandFraction)
-                .dp.coerceIn(244.dp, 372.dp)
+            // Height, drift and breathing all read from GlowConstraints — the values measured
+            // off the reference recording — instead of a separate, drifted set of magic numbers.
+            // FrostSoulDynamicBackground is mounted once behind the whole pager (see its single
+            // call site above the HorizontalPager), so wiring the real draw to these constants is
+            // what keeps the wash the same height and the same drift/breath phase behind
+            // Recommendations, Main Player and Lyrics — there is no per-page copy left to drift
+            // out of sync with this one.
+            val bandHeight = (LocalConfiguration.current.screenHeightDp * GlowConstraints.BandHeightFraction)
+                .dp.coerceIn(GlowConstraints.BandMinHeight, GlowConstraints.BandMaxHeight)
+            val driftDistance = (LocalConfiguration.current.screenWidthDp * GlowConstraints.DriftFraction).dp
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -2687,8 +2694,9 @@ private fun FrostSoulDynamicBackground(
                         compositingStrategy = CompositingStrategy.Offscreen
                         if (isAnimatedGlow) {
                             scaleX = 1.12f
-                            translationX = sin(glowPhase) * 14.dp.toPx()
-                            alpha = 0.90f + cos(glowPhase) * (GlowConstraints.BreathFraction * 0.78f)
+                            translationX = sin(glowPhase) * driftDistance.toPx()
+                            alpha = (1f - GlowConstraints.BreathFraction) +
+                                cos(glowPhase) * GlowConstraints.BreathFraction
                         }
                     }
                     .drawWithCache {
