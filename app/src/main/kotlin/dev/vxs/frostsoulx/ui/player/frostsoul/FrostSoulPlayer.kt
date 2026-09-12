@@ -2379,74 +2379,65 @@ internal fun rememberFrostSoulPalette(artworkUrl: String?): FrostSoulPalette {
 private const val PaletteCacheCapacity = 24
 
 /**
- * Bottom ambient-glow constraints, derived by sampling the reference recording at 1 fps and
- * measuring the per-row / per-column medians of the bottom region (medians, so the seek bar and
- * transport icons drawn on top do not skew the numbers).
+ * Bottom ambient-glow constraints.
  *
- * The reference glow is a *geometry-free* wash: it has no circle, ellipse, capsule or blob edge
- * anywhere. It is a single continuous two-hue field that spans the full width, fades out upward
- * with an eased ramp, and runs all the way into the bottom screen edge with no gap. Everything
- * below encodes that measurement, and the values double as the guard rails ("glow constraints")
- * that keep the effect from ever growing into the turntable deck or washing out the controls.
+ * Originally tuned to match a reference recording 1:1; now intentionally pushed taller and more
+ * saturated than that reference per design direction, while keeping the same geometry-free
+ * approach: no circle, ellipse, capsule or blob edge anywhere, just a continuous multi-hue field
+ * that spans the full width, fades out upward with an eased ramp, and runs into the bottom screen
+ * edge with no gap. The values below double as guard rails so the taller band still clears the
+ * turntable deck and never buries the transport controls.
  */
 private object GlowConstraints {
-    /**
-     * Measured vertical extent: the wash first lifts off the flat background at ~0.74 of screen
-     * height and reaches full strength at the very bottom row, i.e. ~26–27% of the screen.
-     */
-    const val BandHeightFraction = 0.27f
+    /** Vertical extent of the wash. Raised from the original ~0.27 for a bolder, taller band. */
+    const val BandHeightFraction = 0.40f
 
     /** Absolute clamps so short/tall screens keep the deck area clear and the wash stays visible. */
-    val BandMinHeight = 160.dp
-    val BandMaxHeight = 264.dp
+    val BandMinHeight = 220.dp
+    val BandMaxHeight = 360.dp
 
     /**
      * Peak coverage of the wash. Held just below 1.0 so the white transport icons keep their
      * contrast; the darkened backdrop underneath is what lets the glow read as light, not paint.
      */
-    const val PeakAlpha = 0.58f
+    const val PeakAlpha = 0.72f
 
     /**
-     * Horizontal drift of the hue field, as a fraction of width. Measured by tracking the
-     * warm-minus-cool centroid of the bottom rows: it swings ~±0.06w, but because the field now
-     * has real lobes (see [GlowHueStopAlphas]) the *local* brightness swing that produces is
-     * large — the reference's left edge goes from lum≈52 to lum≈110 within one cycle.
+     * Horizontal drift of the hue field, as a fraction of width. Kept modest and now shares the
+     * screen with [MixCycleDurationMs] hue-mixing, so motion reads as living light breathing and
+     * blending rather than a flat left-right pan.
      */
-    const val DriftFraction = 0.14f
+    const val DriftFraction = 0.10f
 
     /**
      * The hue field is painted wider than the band by this fraction on each side. It is strictly
      * greater than [DriftFraction], which is what guarantees drift can never pull an unpainted
      * edge into view — the wash stays edgeless at every phase.
      */
-    const val BleedFraction = 0.18f
+    const val BleedFraction = 0.20f
+
+    /** Brightness breathing amplitude — raised so the pulse between hues is clearly visible. */
+    const val BreathFraction = 0.16f
+
+    /** One full drift cycle. Slowed slightly so the taller, more saturated band reads as calm. */
+    const val CycleDurationMs = 6_400
 
     /**
-     * Brightness breathing. The reference's mean bottom luminance swings ~±10% around its
-     * average (78 → 96 on a 0–255 scale), clearly visible on top of the drift.
+     * One full hue-mix cycle, deliberately a different period than [CycleDurationMs] so drift and
+     * color-mixing fall out of phase with each other — this is what keeps the motion from ever
+     * repeating as a simple back-and-forth slide.
      */
-    const val BreathFraction = 0.10f
+    const val MixCycleDurationMs = 4_600
 
     /**
-     * One full drift cycle. Re-measured across a clean 19s window of the reference recording
-     * (corner-patch luminance peak-to-peak and trough-to-trough): consistent ~5.3–5.5s, not the
-     * earlier 6.0s estimate. Brightness peaks lead the drift by ~84°, reproduced by taking
-     * sin/cos of the same phase.
+     * Lightness / saturation window (HSL). Kept for palette hues that go through [toGlowHue];
+     * raised alongside the HSV window below so any caller of that path also lands on saturated,
+     * contrasty tone rather than the old muted wash.
      */
-    const val CycleDurationMs = 5_400
-
-    /**
-     * Lightness / saturation window (HSL) that every palette hue is pushed into before it is
-     * painted. This is the single most important constraint for visibility: the extracted
-     * `artworkSecondary` is frequently a near-black like `#30262B`, and painting a dark colour
-     * SrcOver a dark scrim *lowers* luminance — the old build measured −41 at the bottom edge
-     * where the reference measures +63. The reference's painted hues resolve to L≈0.45–0.55 with
-     * a moderate chroma once composited, so palette hues are lifted into that window here.
-     */
-    const val MinLightness = 0.28f
-    const val MaxLightness = 0.40f
-    const val MinSaturation = 0.16f
-    const val MaxSaturation = 0.30f
+    const val MinLightness = 0.34f
+    const val MaxLightness = 0.52f
+    const val MinSaturation = 0.42f
+    const val MaxSaturation = 0.68f
 
     /** Below this saturation a swatch is treated as grey and keeps its (low) chroma. */
     const val GreySaturationThreshold = 0.10f
@@ -2537,11 +2528,12 @@ private const val GlowTransitionDurationMs = 1_200
  * grey smear, which is exactly the "barely visible, colorless" failure mode. Lifting the tone
  * into a bright, saturated band keeps the artwork's hue while guaranteeing it reads on screen.
  *
- * The saturation ceiling prevents already-vivid artwork from turning neon.
+ * Pushed noticeably higher than before by design: the wash is meant to read as bold, saturated
+ * and contrasty rather than a gentle muted tint, so both the floor and the ceiling are raised.
  */
-private const val GlowMinSaturation = 0.18f
-private const val GlowMaxSaturation = 0.32f
-private const val GlowMinValue = 0.34f
+private const val GlowMinSaturation = 0.48f
+private const val GlowMaxSaturation = 0.74f
+private const val GlowMinValue = 0.52f
 
 /**
  * Saturation below which a palette color is treated as intentionally achromatic.
@@ -2622,6 +2614,19 @@ private fun FrostSoulDynamicBackground(
         ),
         label = "vinyl-glow-phase",
     )
+    // Separate, deliberately out-of-sync cycle that drives how far the two album hues blend into
+    // one another. Running this off its own period (rather than reusing glowPhase) is what makes
+    // the wash read as colors breathing and mixing together instead of one field panning back and
+    // forth in lockstep with the drift.
+    val glowMixPhase by glowMotion.animateFloat(
+        initialValue = 0f,
+        targetValue = GlowTwoPi,
+        animationSpec = infiniteRepeatable(
+            animation = tween(GlowConstraints.MixCycleDurationMs, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "vinyl-glow-mix-phase",
+    )
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (shouldRenderArtworkBlur) {
@@ -2675,11 +2680,11 @@ private fun FrostSoulDynamicBackground(
         }
 
         if (isGlow) {
-            // Height, drift and breathing all read from GlowConstraints — the values measured
-            // off the reference recording — instead of a separate, drifted set of magic numbers.
+            // Height, drift and breathing all read from GlowConstraints, now tuned for a taller,
+            // more saturated wash rather than a strict match to the original reference capture.
             // FrostSoulDynamicBackground is mounted once behind the whole pager (see its single
             // call site above the HorizontalPager), so wiring the real draw to these constants is
-            // what keeps the wash the same height and the same drift/breath phase behind
+            // what keeps the wash the same height and the same drift/breath/mix phase behind
             // Recommendations, Main Player and Lyrics — there is no per-page copy left to drift
             // out of sync with this one.
             val bandHeight = (LocalConfiguration.current.screenHeightDp * GlowConstraints.BandHeightFraction)
@@ -2693,22 +2698,37 @@ private fun FrostSoulDynamicBackground(
                     .graphicsLayer {
                         compositingStrategy = CompositingStrategy.Offscreen
                         if (isAnimatedGlow) {
-                            scaleX = 1.12f
-                            translationX = sin(glowPhase) * driftDistance.toPx()
+                            // Two frequencies layered together (instead of a single sine) so the
+                            // wash never reads as a flat left-right pan — the secondary term
+                            // constantly nudges the motion off a clean back-and-forth path.
+                            translationX = (
+                                sin(glowPhase) * 0.72f + sin(glowMixPhase * 1.3f) * 0.28f
+                            ) * driftDistance.toPx()
+                            // Gentle size pulse on both axes reads as the wash breathing, on top
+                            // of the color mixing below.
+                            scaleX = 1.12f + 0.06f * sin(glowMixPhase)
+                            scaleY = 1.05f + 0.04f * cos(glowPhase)
                             alpha = (1f - GlowConstraints.BreathFraction) +
                                 cos(glowPhase) * GlowConstraints.BreathFraction
                         }
                     }
                     .drawWithCache {
-                        // Four oversized, pre-softened fields overlap in the lower band. Their
+                        // Five oversized, pre-softened fields overlap in the lower band. Their
                         // large radial falloffs provide a blur-like ambient pool without running
                         // Modifier.blur over the whole player or allocating a canvas per frame.
-                        val mixed = lerp(primary, secondary, 0.5f)
+                        //
+                        // The blend ratio between primary/secondary breathes continuously via
+                        // glowMixPhase instead of sitting at a fixed 50/50 split — that is what
+                        // makes the two album hues visibly bleed into and out of one another
+                        // rather than just sliding past each other as separate blobs.
+                        val mixRatio = 0.5f + 0.5f * sin(glowMixPhase)
+                        val mixed = lerp(primary, secondary, mixRatio)
+                        val crossMixed = lerp(secondary, primary, mixRatio)
                         val leftField = Brush.radialGradient(
                             colors = listOf(
-                                primary.copy(alpha = 0.42f),
-                                primary.copy(alpha = 0.20f),
-                                primary.copy(alpha = 0.05f),
+                                primary.copy(alpha = 0.58f),
+                                primary.copy(alpha = 0.30f),
+                                primary.copy(alpha = 0.08f),
                                 Color.Transparent,
                             ),
                             center = Offset(size.width * 0.08f, size.height * 1.04f),
@@ -2716,9 +2736,9 @@ private fun FrostSoulDynamicBackground(
                         )
                         val rightField = Brush.radialGradient(
                             colors = listOf(
-                                secondary.copy(alpha = 0.40f),
-                                secondary.copy(alpha = 0.18f),
-                                secondary.copy(alpha = 0.05f),
+                                secondary.copy(alpha = 0.56f),
+                                secondary.copy(alpha = 0.28f),
+                                secondary.copy(alpha = 0.08f),
                                 Color.Transparent,
                             ),
                             center = Offset(size.width * 0.94f, size.height * 0.92f),
@@ -2726,18 +2746,30 @@ private fun FrostSoulDynamicBackground(
                         )
                         val centerField = Brush.radialGradient(
                             colors = listOf(
-                                mixed.copy(alpha = 0.26f),
-                                mixed.copy(alpha = 0.12f),
-                                mixed.copy(alpha = 0.03f),
+                                mixed.copy(alpha = 0.38f),
+                                mixed.copy(alpha = 0.20f),
+                                mixed.copy(alpha = 0.05f),
                                 Color.Transparent,
                             ),
                             center = Offset(size.width * 0.54f, size.height * 1.14f),
                             radius = size.width * 1.04f,
                         )
+                        // New: a second, cross-blended pool on the opposite corner of centerField
+                        // so the mixing reads as color genuinely traveling between the two lobes,
+                        // not just a static midpoint tint sitting between them.
+                        val mixField = Brush.radialGradient(
+                            colors = listOf(
+                                crossMixed.copy(alpha = 0.30f),
+                                crossMixed.copy(alpha = 0.14f),
+                                Color.Transparent,
+                            ),
+                            center = Offset(size.width * 0.30f, size.height * 0.70f),
+                            radius = size.width * 0.68f,
+                        )
                         val upperField = Brush.radialGradient(
                             colors = listOf(
-                                secondary.copy(alpha = 0.14f),
-                                primary.copy(alpha = 0.07f),
+                                secondary.copy(alpha = 0.20f),
+                                primary.copy(alpha = 0.11f),
                                 Color.Transparent,
                             ),
                             center = Offset(size.width * 0.38f, size.height * 0.46f),
@@ -2745,25 +2777,26 @@ private fun FrostSoulDynamicBackground(
                         )
                         val falloff = Brush.verticalGradient(
                             0f to Color.Transparent,
-                            0.22f to Color.White.copy(alpha = 0.06f),
-                            0.52f to Color.White.copy(alpha = 0.34f),
-                            0.80f to Color.White.copy(alpha = 0.78f),
+                            0.20f to Color.White.copy(alpha = 0.06f),
+                            0.48f to Color.White.copy(alpha = 0.34f),
+                            0.76f to Color.White.copy(alpha = 0.80f),
                             1f to Color.White,
                         )
                         val upperVeil = Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.64f),
-                            0.50f to Color.Black.copy(alpha = 0.42f),
-                            0.78f to Color.Black.copy(alpha = 0.12f),
+                            0f to Color.Black.copy(alpha = 0.58f),
+                            0.50f to Color.Black.copy(alpha = 0.36f),
+                            0.78f to Color.Black.copy(alpha = 0.10f),
                             1f to Color.Transparent,
                         )
                         onDrawBehind {
                             // Static geometry keeps the wash stable while vinyl artwork rotates.
                             // Palette colors crossfade through animateColorAsState when artwork
                             // changes, avoiding an abrupt color swap.
-                            drawRect(brush = leftField, alpha = 0.92f, blendMode = BlendMode.Plus)
-                            drawRect(brush = rightField, alpha = 0.86f, blendMode = BlendMode.Plus)
-                            drawRect(brush = centerField, alpha = 0.82f, blendMode = BlendMode.Plus)
-                            drawRect(brush = upperField, alpha = 0.62f, blendMode = BlendMode.Plus)
+                            drawRect(brush = leftField, alpha = 0.96f, blendMode = BlendMode.Plus)
+                            drawRect(brush = rightField, alpha = 0.92f, blendMode = BlendMode.Plus)
+                            drawRect(brush = centerField, alpha = 0.90f, blendMode = BlendMode.Plus)
+                            drawRect(brush = mixField, alpha = 0.80f, blendMode = BlendMode.Plus)
+                            drawRect(brush = upperField, alpha = 0.72f, blendMode = BlendMode.Plus)
                             drawRect(brush = falloff, blendMode = BlendMode.DstIn)
                             drawRect(brush = upperVeil)
                         }
