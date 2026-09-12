@@ -6021,8 +6021,19 @@ class MusicService :
         val levels = resampleLevelsByIndex(settings.bandLevelsMb, bandCount)
         runCatching { eq.enabled = settings.enabled }
 
+        // Pre-gain headroom must be applied upstream, on the EQ bands themselves, because
+        // BassBoost/Virtualizer/EQ can push samples past full scale internally before the
+        // signal ever reaches LoudnessEnhancer. A downstream negative LoudnessEnhancer target
+        // gain cannot undo clipping that already happened earlier in the chain - see
+        // docs_audio_clipping_findings.md.
+        val eqBoostMb = levels.maxOrNull()?.coerceAtLeast(0) ?: 0
+        val bassBoostHeadroomMb = if (settings.enabled && settings.bassBoostEnabled) (settings.bassBoostStrength * 400 / 1000).coerceIn(0, 400) else 0
+        val virtualizerHeadroomMb = if (settings.enabled && settings.virtualizerEnabled) (settings.virtualizerStrength * 300 / 1000).coerceIn(0, 300) else 0
+        val safeHeadroomEnabled = settings.autoHeadroomEnabled || settings.enabled
+        val preampMb = if (safeHeadroomEnabled) -(eqBoostMb + bassBoostHeadroomMb + virtualizerHeadroomMb) else 0
+
         for (band in 0 until bandCount) {
-            val levelMb = levels.getOrNull(band)?.coerceIn(minMb, maxMb) ?: 0
+            val levelMb = ((levels.getOrNull(band) ?: 0) + preampMb).coerceIn(minMb, maxMb)
             runCatching { eq.setBandLevel(band.toShort(), levelMb.toShort()) }
         }
 
@@ -6037,19 +6048,13 @@ class MusicService :
         }
 
         loudnessEnhancer?.let { le ->
-            val eqBoostMb = levels.maxOrNull()?.coerceAtLeast(0) ?: 0
-            val bassBoostHeadroomMb = if (settings.enabled && settings.bassBoostEnabled) (settings.bassBoostStrength * 400 / 1000).coerceIn(0, 400) else 0
-            val virtualizerHeadroomMb = if (settings.enabled && settings.virtualizerEnabled) (settings.virtualizerStrength * 300 / 1000).coerceIn(0, 300) else 0
-            val automaticHeadroomMb = -(eqBoostMb + bassBoostHeadroomMb + virtualizerHeadroomMb)
-            val safeHeadroomEnabled = settings.autoHeadroomEnabled || settings.enabled
-            val gainMb =
-                when {
-                    safeHeadroomEnabled -> automaticHeadroomMb
-                    settings.outputGainEnabled -> settings.outputGainMb.coerceIn(-1500, 1500)
-                    else -> 0
-                }
+            // Reserved solely for the user's explicit "boost output" request. It is never used
+            // to compensate for EQ/bass/virtualizer headroom anymore: a negative target gain
+            // here cannot undo clipping that already happened upstream (see
+            // docs_audio_clipping_findings.md).
+            val gainMb = if (!safeHeadroomEnabled && settings.outputGainEnabled) settings.outputGainMb.coerceIn(-1500, 1500) else 0
             runCatching { le.setTargetGain(gainMb) }
-            runCatching { le.enabled = settings.enabled && (safeHeadroomEnabled || settings.outputGainEnabled) }
+            runCatching { le.enabled = settings.enabled && !safeHeadroomEnabled && settings.outputGainEnabled }
         }
     }
 
