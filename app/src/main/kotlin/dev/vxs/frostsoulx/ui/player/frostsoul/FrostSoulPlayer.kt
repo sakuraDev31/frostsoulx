@@ -60,6 +60,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -124,6 +125,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -1055,12 +1057,17 @@ private fun FrostSoulMainLyricPreview(
     showExtraPreviewLines: Boolean = !onlyCurrentLine,
     maxLinesPerLyric: Int = 2,
     horizontalPadding: Dp = PlayerLayoutTokens.MasterHorizontalPadding,
+    // The vinyl page pulls the lyric up under the artist name and centers it, QQ Music-style,
+    // instead of leaving it start-aligned at the bottom of the page.
+    centered: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val currentLine = uiState.currentLyricModel
     if (currentLine == null && uiState.lyricPreviewLines.isEmpty()) return
+    val lyricTextAlign = if (centered) TextAlign.Center else TextAlign.Start
 
     Column(
+        horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = modifier
             .fillMaxWidth()
@@ -1079,6 +1086,8 @@ private fun FrostSoulMainLyricPreview(
                 fontWeight = FontWeight.Bold,
                 maxLines = if (onlyCurrentLine) 1 else maxLinesPerLyric,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = lyricTextAlign,
+                modifier = Modifier.fillMaxWidth(),
             )
         } ?: uiState.currentLyricLine?.takeIf { it.isNotBlank() }?.let { line ->
             Text(
@@ -1089,6 +1098,8 @@ private fun FrostSoulMainLyricPreview(
                 fontWeight = FontWeight.Bold,
                 maxLines = if (onlyCurrentLine) 1 else maxLinesPerLyric,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = lyricTextAlign,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         if (showExtraPreviewLines) {
@@ -1100,6 +1111,8 @@ private fun FrostSoulMainLyricPreview(
                     lineHeight = 19.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = lyricTextAlign,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
@@ -1238,16 +1251,17 @@ private fun FrostSoulAlbumPage(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 3.dp).clickable(onClick = onShowArtists),
                     )
+                    // Current lyric line sits directly under the artist name and centered,
+                    // QQ Music-style, instead of anchored to the bottom-left of the page.
+                    FrostSoulMainLyricPreview(
+                        uiState = uiState,
+                        onlyCurrentLine = true,
+                        horizontalPadding = 0.dp,
+                        centered = true,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
             }
             Spacer(modifier = Modifier.weight(1f))
-            FrostSoulMainLyricPreview(
-                uiState = uiState,
-                onlyCurrentLine = true,
-                horizontalPadding = 0.dp,
-                modifier = Modifier
-                    .align(Alignment.Start)
-                    .padding(bottom = 16.dp),
-            )
             FSPlayerControls(
                     state = uiState,
                     actions = actions,
@@ -1579,12 +1593,13 @@ private fun FrostSoulFullPlayerLikeButton(
     val tint = if (isLiked) Color(0xFFFF3B4D) else {
         if (FrostSoulTheme.colors.background.luminance() > 0.5f) Color.Black else Color(0xFFD7DBE0)
     }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    // Count now lives in a small cutout badge tucked into the heart's top-right corner
+    // (QQ Music-style) instead of sitting as separate text to the icon's right.
+    Box(
         modifier = modifier
-            .height(42.dp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp),
+            .size(42.dp)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             painter = painterResource(if (isLiked) R.drawable.favorite else R.drawable.favorite_border),
@@ -1592,13 +1607,24 @@ private fun FrostSoulFullPlayerLikeButton(
             tint = tint,
             modifier = Modifier.size(25.dp),
         )
-        Text(
-            text = formatLikeCount(likeCount ?: 0),
-            color = tint,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 4.dp).widthIn(min = 24.dp),
-        )
+        val count = likeCount ?: 0
+        if (count > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 5.dp, y = (-1).dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(FrostSoulTheme.colors.background.copy(alpha = 0.92f))
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+            ) {
+                Text(
+                    text = formatLikeCount(count),
+                    color = tint,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
     }
 }
 
@@ -2629,7 +2655,20 @@ private fun FrostSoulDynamicBackground(
         label = "vinyl-glow-mix-phase",
     )
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    // Base layer: a very low-alpha wash of the track's own palette mixed into near-black, so
+    // the page never reads as flat pure-black even when no glow/blur/gradient style is active.
+    // The style-specific layers below (blur, glow, gradient) still layer on top of this as
+    // before; this only replaces what used to be plain solid black underneath them.
+    val baseTint = remember(palette) {
+        Brush.verticalGradient(
+            colors = listOf(
+                lerp(Color(0xFF0A0B0E), palette.artworkPrimary, 0.12f),
+                Color(0xFF050506),
+                lerp(Color(0xFF07080A), palette.artworkSecondary, 0.10f),
+            ),
+        )
+    }
+    Box(modifier = Modifier.fillMaxSize().background(baseTint)) {
         if (shouldRenderArtworkBlur) {
             AsyncImage(
                 model = artworkRequest,
