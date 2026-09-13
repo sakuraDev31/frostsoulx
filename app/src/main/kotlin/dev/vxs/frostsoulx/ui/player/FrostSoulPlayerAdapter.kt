@@ -114,6 +114,7 @@ internal fun FrostSoulPlayerAdapter(
         }
     }
     val repeatMode by playerConnection.repeatMode.collectAsState()
+    val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsState()
     val currentFormat by playerConnection.currentFormat.collectAsState(initial = null)
     val outputDevice by playerConnection.service.activeAudioDevice.collectAsStateWithLifecycle()
     val audioQualityBadge =
@@ -175,6 +176,7 @@ internal fun FrostSoulPlayerAdapter(
             sleepTimerActive,
             sleepTimerRemainingMs,
             repeatMode,
+            shuffleModeEnabled,
             blurRadius,
             palette,
             playerBackgroundStyle,
@@ -207,6 +209,7 @@ internal fun FrostSoulPlayerAdapter(
                 sleepTimerActive = sleepTimerActive,
                 sleepTimerRemainingMs = sleepTimerRemainingMs,
                 repeatMode = repeatMode,
+                shuffleModeEnabled = shuffleModeEnabled,
                 blurRadius = blurRadius,
                 palette = palette,
                 playerBackgroundStyle = playerBackgroundStyle,
@@ -223,6 +226,9 @@ internal fun FrostSoulPlayerAdapter(
                 onSkipPrevious = playerConnection::seekToPrevious,
                 onSkipNext = playerConnection::seekToNext,
                 onToggleRepeat = { playerConnection.player.toggleRepeatMode() },
+                onToggleShuffle = {
+                    playerConnection.player.shuffleModeEnabled = !playerConnection.player.shuffleModeEnabled
+                },
                 onSeek = { targetPosition -> playerConnection.player.seekTo(targetPosition) },
                 onToggleLike = playerConnection::toggleLike,
                 onToggleDislike = playerConnection::toggleDislike,

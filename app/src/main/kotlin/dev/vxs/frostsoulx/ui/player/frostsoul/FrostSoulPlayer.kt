@@ -747,15 +747,15 @@ internal fun FSPlayerControls(
             // sturdier touch target, matching the reference design).
             FSIconButton(
                 painter = painterResource(
-                    if (state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) {
-                        R.drawable.repeat_one
-                    } else {
-                        R.drawable.repeat
+                    when {
+                        state.shuffleModeEnabled -> R.drawable.shuffle_on
+                        state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE -> R.drawable.repeat_one
+                        else -> R.drawable.repeat
                     },
                 ),
-                contentDescription = "Toggle repeat mode",
-                onClick = actions.onToggleRepeat,
-                active = state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF,
+                contentDescription = if (state.shuffleModeEnabled) "Shuffle is on" else "Toggle repeat mode",
+                onClick = if (state.shuffleModeEnabled) actions.onToggleShuffle else actions.onToggleRepeat,
+                active = state.shuffleModeEnabled || state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF,
                 buttonSize = 36.dp,
                 iconSize = 19.dp,
                 showContainer = false,
@@ -1574,11 +1574,21 @@ private fun FrostSoulImmersiveControls(
                 Icon(painterResource(R.drawable.skip_next), "Next track", tint = Color.White.copy(alpha = if (state.canSkipNext) 1f else 0.3f), modifier = Modifier.size(32.dp))
             }
             val repeatActive = state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF
-            androidx.compose.material3.IconButton(onClick = actions.onToggleRepeat, modifier = Modifier.size(44.dp)) {
+            val shuffleActive = state.shuffleModeEnabled
+            androidx.compose.material3.IconButton(
+                onClick = if (shuffleActive) actions.onToggleShuffle else actions.onToggleRepeat,
+                modifier = Modifier.size(44.dp),
+            ) {
                 Icon(
-                    painterResource(if (state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) R.drawable.repeat_one else R.drawable.repeat),
-                    "Toggle repeat mode",
-                    tint = if (repeatActive) accent else Color.White.copy(alpha = 0.72f),
+                    painterResource(
+                        when {
+                            shuffleActive -> R.drawable.shuffle_on
+                            state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE -> R.drawable.repeat_one
+                            else -> R.drawable.repeat
+                        },
+                    ),
+                    if (shuffleActive) "Shuffle is on" else "Toggle repeat mode",
+                    tint = if (shuffleActive || repeatActive) accent else Color.White.copy(alpha = 0.72f),
                     modifier = Modifier.size(22.dp),
                 )
             }
