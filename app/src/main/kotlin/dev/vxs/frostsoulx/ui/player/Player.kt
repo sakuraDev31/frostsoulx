@@ -1867,7 +1867,7 @@ if (!aodModeEnabled) {
                 }
             }
 
-        if (aodModeEnabled) {
+        if (!aodModeEnabled) {
             Queue(
                 state = queueSheetState,
                 playerBottomSheetState = state,
