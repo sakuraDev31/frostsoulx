@@ -107,7 +107,6 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
@@ -117,7 +116,6 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -2415,123 +2413,21 @@ internal fun rememberFrostSoulPalette(artworkUrl: String?): FrostSoulPalette {
 private const val PaletteCacheCapacity = 24
 
 /**
- * Bottom ambient-glow constraints.
+ * Motion and rendering constraints for the artwork aura behind the vinyl deck.
  *
- * Originally tuned to match a reference recording 1:1; now intentionally pushed taller and more
- * saturated than that reference per design direction, while keeping the same geometry-free
- * approach: no circle, ellipse, capsule or blob edge anywhere, just a continuous multi-hue field
- * that spans the full width, fades out upward with an eased ramp, and runs into the bottom screen
- * edge with no gap. The values below double as guard rails so the taller band still clears the
- * turntable deck and never buries the transport controls.
+ * The aura is intentionally not assembled from circles or blobs. Several oversized linear colour
+ * fields overlap, cross-mix and pass through a feathered alpha envelope; a final blur removes the
+ * last trace of their source geometry. Mismatched motion periods keep the result from resolving
+ * into a repeated slide while the shared scale/opacity envelope gives it a slow breathing rhythm.
  */
-private object GlowConstraints {
-    /** Vertical extent of the wash. Raised from the original ~0.27 for a bolder, taller band. */
-    const val BandHeightFraction = 0.40f
-
-    /** Absolute clamps so short/tall screens keep the deck area clear and the wash stays visible. */
-    val BandMinHeight = 220.dp
-    val BandMaxHeight = 360.dp
-
-    /**
-     * Peak coverage of the wash. Held just below 1.0 so the white transport icons keep their
-     * contrast; the darkened backdrop underneath is what lets the glow read as light, not paint.
-     */
-    const val PeakAlpha = 0.72f
-
-    /**
-     * Horizontal drift of the hue field, as a fraction of width. Kept modest and now shares the
-     * screen with [MixCycleDurationMs] hue-mixing, so motion reads as living light breathing and
-     * blending rather than a flat left-right pan.
-     */
-    const val DriftFraction = 0.10f
-
-    /**
-     * The hue field is painted wider than the band by this fraction on each side. It is strictly
-     * greater than [DriftFraction], which is what guarantees drift can never pull an unpainted
-     * edge into view — the wash stays edgeless at every phase.
-     */
-    const val BleedFraction = 0.20f
-
-    /** Brightness breathing amplitude — raised so the pulse between hues is clearly visible. */
-    const val BreathFraction = 0.16f
-
-    /** One full drift cycle. Slowed slightly so the taller, more saturated band reads as calm. */
-    const val CycleDurationMs = 6_400
-
-    /**
-     * One full hue-mix cycle, deliberately a different period than [CycleDurationMs] so drift and
-     * color-mixing fall out of phase with each other — this is what keeps the motion from ever
-     * repeating as a simple back-and-forth slide.
-     */
-    const val MixCycleDurationMs = 4_600
-
-    /**
-     * Lightness / saturation window (HSL). Kept for palette hues that go through [toGlowHue];
-     * raised alongside the HSV window below so any caller of that path also lands on saturated,
-     * contrasty tone rather than the old muted wash.
-     */
-    const val MinLightness = 0.34f
-    const val MaxLightness = 0.52f
-    const val MinSaturation = 0.42f
-    const val MaxSaturation = 0.68f
-
-    /** Below this saturation a swatch is treated as grey and keeps its (low) chroma. */
-    const val GreySaturationThreshold = 0.10f
-    const val GreyLiftedSaturation = 0.12f
+private object FluidGlowSpec {
+    const val DriftCycleMs = 15_000
+    const val MixCycleMs = 10_800
+    const val BreathScale = 0.075f
+    const val BreathAlpha = 0.12f
+    const val PeakAlpha = 0.82f
+    val BlurRadius = 46.dp
 }
-
-/**
- * Pushes an extracted palette colour into the [GlowConstraints] lightness / saturation window so
- * it reads as *light* when painted over the darkened backdrop. Greys keep their neutral character
- * (forcing chroma onto a grey would invent a hue); everything else gets a floor on saturation so
- * the two lobes stay distinguishable after the alpha composite desaturates them.
- */
-private fun Color.toGlowHue(): Color {
-    val hsl = FloatArray(3)
-    ColorUtils.colorToHSL(toArgb(), hsl)
-    hsl[1] =
-        if (hsl[1] < GlowConstraints.GreySaturationThreshold) {
-            GlowConstraints.GreyLiftedSaturation
-        } else {
-            hsl[1].coerceIn(GlowConstraints.MinSaturation, GlowConstraints.MaxSaturation)
-        }
-    hsl[2] = hsl[2].coerceIn(GlowConstraints.MinLightness, GlowConstraints.MaxLightness)
-    return Color(ColorUtils.HSLToColor(hsl))
-}
-
-/**
- * Horizontal stop positions and coverages of the measured hue field.
- *
- * The reference profile is two soft lobes on one continuous ramp: the primary hue peaks at
- * x≈0.24, a dim crossover sits at x≈0.46, the secondary hue peaks at x≈0.66, and both ends decay
- * toward the screen edges. No discrete shapes, just a ramp.
- *
- * The coverages are deliberately *not* flat. The previous 0.72–0.86 range produced a uniform
- * tint, so sliding it sideways changed nothing on screen. Two pronounced lobes with dim troughs
- * between and outside them are what make the drift and breath legible as moving light: with
- * these stops a simulated cycle swings the left-edge luminance by ≈50–60 (0–255), matching the
- * ≈58 swing measured in the reference recording.
- */
-private val GlowHueStopPositions = floatArrayOf(0f, 0.10f, 0.24f, 0.46f, 0.66f, 0.84f, 1f)
-private val GlowHueStopAlphas = floatArrayOf(0.14f, 0.36f, 1.00f, 0.34f, 0.98f, 0.36f, 0.14f)
-
-/**
- * Eased vertical ramp of the wash, sampled from the reference at 0.02-screen steps and normalised
- * so 0 = the band's top edge and 1 = the bottom screen edge. Starting at exactly 0 is what removes
- * any visible top border; the ramp is deliberately soft through the middle so the falloff reads as
- * light bleeding upward rather than as a filled rectangle.
- */
-private val GlowVerticalRamp =
-    arrayOf(
-        0.00f to 0.00f,
-        0.15f to 0.06f,
-        0.25f to 0.16f,
-        0.38f to 0.33f,
-        0.54f to 0.62f,
-        0.70f to 0.88f,
-        0.85f to 1.00f,
-        1.00f to 1.00f,
-    )
 
 /** Full turn in radians. Not a `const` because it is computed from [Math.PI]. */
 private val GlowTwoPi = (2.0 * Math.PI).toFloat()
@@ -2626,8 +2522,8 @@ private fun FrostSoulDynamicBackground(
     }
     val shouldRenderArtworkBlur = (isBlur || isImmersiveArtwork) && artworkRequest != null
 
-    // Palette colors interpolate only when artwork changes. The glow remains still between
-    // transitions, so the vinyl can rotate independently without a perpetual background sweep.
+    // Palette colors crossfade only when artwork changes; the fluid motion below then works with
+    // those stable two-color endpoints instead of continuously chasing extraction updates.
     val primaryTarget = remember(palette) { glowTone(palette.artworkPrimary) }
     val secondaryTarget = remember(palette) { glowTone(palette.artworkSecondary) }
     val primary by animateColorAsState(
@@ -2640,30 +2536,6 @@ private fun FrostSoulDynamicBackground(
         animationSpec = tween(GlowTransitionDurationMs),
         label = "vinyl-glow-secondary",
     )
-    val glowMotion = rememberInfiniteTransition(label = "vinyl-glow-motion")
-    val glowPhase by glowMotion.animateFloat(
-        initialValue = 0f,
-        targetValue = GlowTwoPi,
-        animationSpec = infiniteRepeatable(
-            animation = tween(GlowConstraints.CycleDurationMs, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "vinyl-glow-phase",
-    )
-    // Separate, deliberately out-of-sync cycle that drives how far the two album hues blend into
-    // one another. Running this off its own period (rather than reusing glowPhase) is what makes
-    // the wash read as colors breathing and mixing together instead of one field panning back and
-    // forth in lockstep with the drift.
-    val glowMixPhase by glowMotion.animateFloat(
-        initialValue = 0f,
-        targetValue = GlowTwoPi,
-        animationSpec = infiniteRepeatable(
-            animation = tween(GlowConstraints.MixCycleDurationMs, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "vinyl-glow-mix-phase",
-    )
-
     // Base layer: a very low-alpha wash of the track's own palette mixed into near-black, so
     // the page never reads as flat pure-black even when no glow/blur/gradient style is active.
     // The style-specific layers below (blur, glow, gradient) still layer on top of this as
@@ -2729,130 +2601,114 @@ private fun FrostSoulDynamicBackground(
         }
 
         if (isGlow) {
-            // Height, drift and breathing all read from GlowConstraints, now tuned for a taller,
-            // more saturated wash rather than a strict match to the original reference capture.
-            // FrostSoulDynamicBackground is mounted once behind the whole pager (see its single
-            // call site above the HorizontalPager), so wiring the real draw to these constants is
-            // what keeps the wash the same height and the same drift/breath/mix phase behind
-            // Recommendations, Main Player and Lyrics — there is no per-page copy left to drift
-            // out of sync with this one.
-            val bandHeight = (LocalConfiguration.current.screenHeightDp * GlowConstraints.BandHeightFraction)
-                .dp.coerceIn(GlowConstraints.BandMinHeight, GlowConstraints.BandMaxHeight)
-            val driftDistance = (LocalConfiguration.current.screenWidthDp * GlowConstraints.DriftFraction).dp
+            val motion = rememberInfiniteTransition(label = "vinyl-fluid-glow")
+            val driftPhase by motion.animateFloat(
+                initialValue = 0f,
+                targetValue = GlowTwoPi,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(FluidGlowSpec.DriftCycleMs, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "vinyl-fluid-drift",
+            )
+            val mixPhase by motion.animateFloat(
+                initialValue = 0f,
+                targetValue = GlowTwoPi,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(FluidGlowSpec.MixCycleMs, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "vinyl-fluid-mix",
+            )
+            val flow = if (isAnimatedGlow) driftPhase else 0.35f
+            val mixing = if (isAnimatedGlow) mixPhase else 1.1f
+            val breath = if (isAnimatedGlow) (sin(mixing - 0.5f) + 1f) * 0.5f else 0.55f
+
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(bandHeight)
+                    .fillMaxSize()
                     .graphicsLayer {
                         compositingStrategy = CompositingStrategy.Offscreen
-                        if (isAnimatedGlow) {
-                            // Breathing (scale + alpha) is the dominant motion now. What's left of
-                            // the drift is split across X, Y and a couple of degrees of rotation,
-                            // each on its own mismatched frequency — no single sine on one axis,
-                            // which is what used to read as a flat left-right pan. Mixing terms
-                            // this way means the motion never traces the same path twice, so it
-                            // reads as the wash wandering like fluid instead of sliding.
-                            translationX = (
-                                sin(glowPhase * 0.6f) * 0.30f + sin(glowMixPhase * 1.7f) * 0.20f
-                            ) * driftDistance.toPx()
-                            translationY = (
-                                cos(glowMixPhase * 0.8f) * 0.26f + sin(glowPhase * 1.3f) * 0.16f
-                            ) * driftDistance.toPx() * 0.55f
-                            rotationZ = sin(glowPhase * 0.45f + glowMixPhase * 0.3f) * 2.4f
-                            scaleX = 1.14f + 0.09f * sin(glowMixPhase * 0.85f) + 0.05f * cos(glowPhase * 0.5f)
-                            scaleY = 1.09f + 0.08f * cos(glowPhase * 0.7f) + 0.04f * sin(glowMixPhase)
-                            alpha = (1f - GlowConstraints.BreathFraction) +
-                                cos(glowMixPhase * 0.9f) * GlowConstraints.BreathFraction
-                        }
+                        val scale = 1f + breath * FluidGlowSpec.BreathScale
+                        scaleX = scale
+                        scaleY = 0.98f + breath * FluidGlowSpec.BreathScale
+                        rotationZ = if (isAnimatedGlow) sin(flow * 0.43f) * 2.2f else 0f
+                        alpha = FluidGlowSpec.PeakAlpha -
+                            FluidGlowSpec.BreathAlpha + breath * FluidGlowSpec.BreathAlpha
                     }
+                    .blur(
+                        radius = FluidGlowSpec.BlurRadius,
+                        edgeTreatment = BlurredEdgeTreatment.Unbounded,
+                    )
                     .drawWithCache {
-                        // Five oversized, pre-softened fields overlap in the lower band. Their
-                        // large radial falloffs provide a blur-like ambient pool without running
-                        // Modifier.blur over the whole player or allocating a canvas per frame.
-                        //
-                        // The blend ratio between primary/secondary breathes continuously via
-                        // glowMixPhase instead of sitting at a fixed 50/50 split — that is what
-                        // makes the two album hues visibly bleed into and out of one another
-                        // rather than just sliding past each other as separate blobs.
-                        val mixRatio = 0.5f + 0.5f * sin(glowMixPhase)
-                        val mixed = lerp(primary, secondary, mixRatio)
-                        val crossMixed = lerp(secondary, primary, mixRatio)
-                        val leftField = Brush.radialGradient(
-                            colors = listOf(
-                                primary.copy(alpha = 0.58f),
-                                primary.copy(alpha = 0.30f),
-                                primary.copy(alpha = 0.08f),
-                                Color.Transparent,
+                        // All sources are edge-to-edge colour ramps. Their stops travel at
+                        // different speeds while their hues cross-mix, so no circle, ellipse or
+                        // fixed blob can become visible through the soft final envelope.
+                        val mixAmount = 0.18f + 0.64f * ((sin(mixing) + 1f) * 0.5f)
+                        val reverseMix = 0.18f + 0.64f * ((cos(mixing * 0.83f) + 1f) * 0.5f)
+                        val primaryFlow = lerp(primary, secondary, mixAmount)
+                        val secondaryFlow = lerp(secondary, primary, reverseMix)
+                        val middleFlow = lerp(primaryFlow, secondaryFlow, 0.5f)
+                        val horizontalTravel = sin(flow) * size.width * 0.18f
+                        val counterTravel = cos(flow * 0.71f + mixing * 0.24f) * size.width * 0.16f
+                        val verticalTravel = sin(flow * 0.57f - mixing * 0.31f) * size.height * 0.055f
+
+                        val primaryField = Brush.linearGradient(
+                            colorStops = arrayOf(
+                                0.00f to Color.Transparent,
+                                0.18f to primary.copy(alpha = 0.18f),
+                                0.43f to primaryFlow.copy(alpha = 0.64f),
+                                0.68f to middleFlow.copy(alpha = 0.28f),
+                                1.00f to Color.Transparent,
                             ),
-                            center = Offset(size.width * 0.08f, size.height * 1.04f),
-                            radius = size.width * 0.78f,
+                            start = Offset(-size.width * 0.34f + horizontalTravel, size.height * 0.08f + verticalTravel),
+                            end = Offset(size.width * 1.18f + horizontalTravel, size.height * 0.56f - verticalTravel),
                         )
-                        val rightField = Brush.radialGradient(
-                            colors = listOf(
-                                secondary.copy(alpha = 0.56f),
-                                secondary.copy(alpha = 0.28f),
-                                secondary.copy(alpha = 0.08f),
-                                Color.Transparent,
+                        val secondaryField = Brush.linearGradient(
+                            colorStops = arrayOf(
+                                0.00f to Color.Transparent,
+                                0.22f to secondary.copy(alpha = 0.16f),
+                                0.49f to secondaryFlow.copy(alpha = 0.62f),
+                                0.76f to middleFlow.copy(alpha = 0.30f),
+                                1.00f to Color.Transparent,
                             ),
-                            center = Offset(size.width * 0.94f, size.height * 0.92f),
-                            radius = size.width * 0.72f,
+                            start = Offset(size.width * 1.28f + counterTravel, size.height * 0.04f - verticalTravel),
+                            end = Offset(-size.width * 0.24f + counterTravel, size.height * 0.62f + verticalTravel),
                         )
-                        val centerField = Brush.radialGradient(
-                            colors = listOf(
-                                mixed.copy(alpha = 0.38f),
-                                mixed.copy(alpha = 0.20f),
-                                mixed.copy(alpha = 0.05f),
-                                Color.Transparent,
+                        val mixingField = Brush.linearGradient(
+                            colorStops = arrayOf(
+                                0.00f to Color.Transparent,
+                                0.27f to primaryFlow.copy(alpha = 0.12f),
+                                0.50f to middleFlow.copy(alpha = 0.42f),
+                                0.73f to secondaryFlow.copy(alpha = 0.12f),
+                                1.00f to Color.Transparent,
                             ),
-                            center = Offset(size.width * 0.54f, size.height * 1.14f),
-                            radius = size.width * 1.04f,
+                            start = Offset(size.width * 0.02f - counterTravel, size.height * 0.62f),
+                            end = Offset(size.width * 0.98f - counterTravel, size.height * 0.02f),
                         )
-                        // New: a second, cross-blended pool on the opposite corner of centerField
-                        // so the mixing reads as color genuinely traveling between the two lobes,
-                        // not just a static midpoint tint sitting between them.
-                        val mixField = Brush.radialGradient(
-                            colors = listOf(
-                                crossMixed.copy(alpha = 0.30f),
-                                crossMixed.copy(alpha = 0.14f),
-                                Color.Transparent,
-                            ),
-                            center = Offset(size.width * 0.30f, size.height * 0.70f),
-                            radius = size.width * 0.68f,
+                        val verticalEnvelope = Brush.verticalGradient(
+                            0.00f to Color.Transparent,
+                            0.06f to Color.White.copy(alpha = 0.20f),
+                            0.16f to Color.White.copy(alpha = 0.92f),
+                            0.43f to Color.White,
+                            0.60f to Color.White.copy(alpha = 0.62f),
+                            0.76f to Color.Transparent,
+                            1.00f to Color.Transparent,
                         )
-                        val upperField = Brush.radialGradient(
-                            colors = listOf(
-                                secondary.copy(alpha = 0.20f),
-                                primary.copy(alpha = 0.11f),
-                                Color.Transparent,
-                            ),
-                            center = Offset(size.width * 0.38f, size.height * 0.46f),
-                            radius = size.width * 0.74f,
-                        )
-                        val falloff = Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            0.20f to Color.White.copy(alpha = 0.06f),
-                            0.48f to Color.White.copy(alpha = 0.34f),
-                            0.76f to Color.White.copy(alpha = 0.80f),
-                            1f to Color.White,
-                        )
-                        val upperVeil = Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.58f),
-                            0.50f to Color.Black.copy(alpha = 0.36f),
-                            0.78f to Color.Black.copy(alpha = 0.10f),
-                            1f to Color.Transparent,
+                        val horizontalEnvelope = Brush.horizontalGradient(
+                            0.00f to Color.Transparent,
+                            0.10f to Color.White.copy(alpha = 0.72f),
+                            0.22f to Color.White,
+                            0.78f to Color.White,
+                            0.90f to Color.White.copy(alpha = 0.72f),
+                            1.00f to Color.Transparent,
                         )
                         onDrawBehind {
-                            // Static geometry keeps the wash stable while vinyl artwork rotates.
-                            // Palette colors crossfade through animateColorAsState when artwork
-                            // changes, avoiding an abrupt color swap.
-                            drawRect(brush = leftField, alpha = 0.96f, blendMode = BlendMode.Plus)
-                            drawRect(brush = rightField, alpha = 0.92f, blendMode = BlendMode.Plus)
-                            drawRect(brush = centerField, alpha = 0.90f, blendMode = BlendMode.Plus)
-                            drawRect(brush = mixField, alpha = 0.80f, blendMode = BlendMode.Plus)
-                            drawRect(brush = upperField, alpha = 0.72f, blendMode = BlendMode.Plus)
-                            drawRect(brush = falloff, blendMode = BlendMode.DstIn)
-                            drawRect(brush = upperVeil)
+                            drawRect(brush = primaryField, blendMode = BlendMode.Plus)
+                            drawRect(brush = secondaryField, blendMode = BlendMode.Plus)
+                            drawRect(brush = mixingField, blendMode = BlendMode.Plus)
+                            drawRect(brush = verticalEnvelope, blendMode = BlendMode.DstIn)
+                            drawRect(brush = horizontalEnvelope, blendMode = BlendMode.DstIn)
                         }
                     },
             )
