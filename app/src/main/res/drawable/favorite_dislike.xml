@@ -2,20 +2,17 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:viewportWidth="24.0"
+    android:viewportHeight="24.0">
+    <!-- Same heart silhouette as favorite/favorite_border so the dislike icon reads as the same
+         mark, struck through, instead of a differently-shaped heart. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16.5,3c-1.74,0 -3.41,0.81 -4.5,2.09C10.91,3.81 9.24,3 7.5,3 4.42,3 2,5.42 2,8.5c0,3.78 3.4,6.86 8.55,11.54L12,21.35l1.45,-1.32C18.6,15.36 22,12.28 22,8.5 22,5.42 19.58,3 16.5,3zM12.1,18.55l-0.1,0.1 -0.1,-0.1C7.14,14.24 4,11.39 4,8.5 4,6.5 5.5,5 7.5,5c1.54,0 3.04,0.99 3.57,2.36h1.87C13.46,5.99 14.96,5 16.5,5c2,0 3.5,1.5 3.5,3.5 0,2.89 -3.14,5.74 -7.9,10.05z" />
     <path
         android:fillColor="@android:color/transparent"
         android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1.7"
+        android:strokeWidth="1.6"
         android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M12,20.7C11.6,20.3 4,15.3 4,9.1C4,6.3 6.1,4 8.8,4C10.2,4 11.4,4.7 12,5.8C12.6,4.7 13.8,4 15.2,4C17.9,4 20,6.3 20,9.1C20,15.3 12.4,20.3 12,20.7Z" />
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1.9"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M5,19L19,5" />
+        android:pathData="M4.2,4.2L19.8,19.8" />
 </vector>
