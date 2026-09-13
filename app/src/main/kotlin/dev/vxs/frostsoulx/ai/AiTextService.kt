@@ -23,7 +23,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-class AiServiceException(
+open class AiServiceException(
     message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause)
