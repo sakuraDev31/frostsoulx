@@ -351,6 +351,11 @@ internal fun FrostSoulPlayer(
                                     onSearchTrack = onSearchTrack,
                                     onShowArtists = { showArtistDialog = true },
                                     onSeekDraggingChanged = { isSeekbarDragging = it },
+                                    onOpenLyrics = {
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(pages.indexOf(FrostSoulPage.Lyrics))
+                                        }
+                                    },
                                 )
                             }
                         FrostSoulPage.Recommendations -> FrostSoulRecommendationsPage(uiState = uiState, actions = actions)
@@ -1081,8 +1086,8 @@ private fun FrostSoulMainLyricPreview(
                     lineProgress = uiState.currentLineProgress,
                 ),
                 color = FrostSoulOnSurface.copy(alpha = 0.96f),
-                fontSize = if (onlyCurrentLine) 17.sp else 21.sp,
-                lineHeight = if (onlyCurrentLine) 23.sp else 28.sp,
+                fontSize = if (onlyCurrentLine) 19.sp else 21.sp,
+                lineHeight = if (onlyCurrentLine) 25.sp else 28.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = if (onlyCurrentLine) 1 else maxLinesPerLyric,
                 overflow = TextOverflow.Ellipsis,
@@ -1093,8 +1098,8 @@ private fun FrostSoulMainLyricPreview(
             Text(
                 text = line,
                 color = FrostSoulOnSurface.copy(alpha = 0.96f),
-                fontSize = if (onlyCurrentLine) 17.sp else 21.sp,
-                lineHeight = if (onlyCurrentLine) 23.sp else 28.sp,
+                fontSize = if (onlyCurrentLine) 19.sp else 21.sp,
+                lineHeight = if (onlyCurrentLine) 25.sp else 28.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = if (onlyCurrentLine) 1 else maxLinesPerLyric,
                 overflow = TextOverflow.Ellipsis,
@@ -1192,6 +1197,7 @@ private fun FrostSoulAlbumPage(
     onSearchTrack: () -> Unit,
     onShowArtists: () -> Unit,
     onSeekDraggingChanged: (Boolean) -> Unit = {},
+    onOpenLyrics: () -> Unit = {},
 ) {
     val titleScrollState = rememberScrollState()
     Box(modifier = Modifier.fillMaxSize().padding(horizontal = PlayerLayoutTokens.MasterHorizontalPadding)) {
@@ -1251,14 +1257,17 @@ private fun FrostSoulAlbumPage(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 3.dp).clickable(onClick = onShowArtists),
                     )
-                    // Current lyric line sits directly under the artist name and centered,
-                    // QQ Music-style, instead of anchored to the bottom-left of the page.
+                    // Current lyric line sits directly under the artist name, flush with its
+                    // left edge (same vertical line as the title/artist), and is tappable to jump
+                    // straight to the full Lyrics page.
                     FrostSoulMainLyricPreview(
                         uiState = uiState,
                         onlyCurrentLine = true,
                         horizontalPadding = 0.dp,
-                        centered = true,
-                        modifier = Modifier.padding(top = 10.dp),
+                        centered = false,
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .clickable(onClick = onOpenLyrics),
                     )
             }
             Spacer(modifier = Modifier.weight(1f))
@@ -2738,18 +2747,23 @@ private fun FrostSoulDynamicBackground(
                     .graphicsLayer {
                         compositingStrategy = CompositingStrategy.Offscreen
                         if (isAnimatedGlow) {
-                            // Two frequencies layered together (instead of a single sine) so the
-                            // wash never reads as a flat left-right pan — the secondary term
-                            // constantly nudges the motion off a clean back-and-forth path.
+                            // Breathing (scale + alpha) is the dominant motion now. What's left of
+                            // the drift is split across X, Y and a couple of degrees of rotation,
+                            // each on its own mismatched frequency — no single sine on one axis,
+                            // which is what used to read as a flat left-right pan. Mixing terms
+                            // this way means the motion never traces the same path twice, so it
+                            // reads as the wash wandering like fluid instead of sliding.
                             translationX = (
-                                sin(glowPhase) * 0.72f + sin(glowMixPhase * 1.3f) * 0.28f
+                                sin(glowPhase * 0.6f) * 0.30f + sin(glowMixPhase * 1.7f) * 0.20f
                             ) * driftDistance.toPx()
-                            // Gentle size pulse on both axes reads as the wash breathing, on top
-                            // of the color mixing below.
-                            scaleX = 1.12f + 0.06f * sin(glowMixPhase)
-                            scaleY = 1.05f + 0.04f * cos(glowPhase)
+                            translationY = (
+                                cos(glowMixPhase * 0.8f) * 0.26f + sin(glowPhase * 1.3f) * 0.16f
+                            ) * driftDistance.toPx() * 0.55f
+                            rotationZ = sin(glowPhase * 0.45f + glowMixPhase * 0.3f) * 2.4f
+                            scaleX = 1.14f + 0.09f * sin(glowMixPhase * 0.85f) + 0.05f * cos(glowPhase * 0.5f)
+                            scaleY = 1.09f + 0.08f * cos(glowPhase * 0.7f) + 0.04f * sin(glowMixPhase)
                             alpha = (1f - GlowConstraints.BreathFraction) +
-                                cos(glowPhase) * GlowConstraints.BreathFraction
+                                cos(glowMixPhase * 0.9f) * GlowConstraints.BreathFraction
                         }
                     }
                     .drawWithCache {
