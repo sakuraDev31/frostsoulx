@@ -43,6 +43,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
@@ -282,6 +285,29 @@ internal fun FSAlbumArt(
             )
             .border(1.dp, Color.White.copy(alpha = 0.16f), cardShape),
     ) {
+        // Blurred, oversized album artwork behind the deck — the QQ Music-style soft glow that
+        // grounds the turntable in the track's own colors instead of a flat neutral plate.
+        // Scaled up so the blur's edge falloff never shows inside the card, then dimmed with a
+        // dark scrim so the deck plate and grooves still read with full contrast on top of it.
+        if (!artworkUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = artworkUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { scaleX = 1.35f; scaleY = 1.35f }
+                    .blur(radius = 36.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                    .alpha(0.55f),
+            )
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.74f)),
+                    ),
+                ),
+            )
+        }
         // Top-left key light on the plate, then a vignette that sinks the corners. Together
         // they give the flat card a machined, slightly domed metal feel.
         Box(
@@ -414,13 +440,13 @@ internal fun FSAlbumArt(
                     val eased = t * (2f - t)
                     val ringRadius = grooveInner + (grooveOuter - grooveInner) * eased
                     drawCircle(
-                        color = Color.White.copy(alpha = 0.012f + 0.010f * (1f - t)),
+                        color = Color.White.copy(alpha = 0.05f + 0.055f * (1f - t)),
                         radius = ringRadius,
                         center = center,
                         style = Stroke(width = 0.9.dp.toPx()),
                     )
                     drawCircle(
-                        color = Color.Black.copy(alpha = 0.18f),
+                        color = Color.Black.copy(alpha = 0.30f),
                         radius = ringRadius + 0.95.dp.toPx(),
                         center = center,
                         style = Stroke(width = 0.9.dp.toPx()),
