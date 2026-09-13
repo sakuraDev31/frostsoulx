@@ -177,6 +177,7 @@ internal fun FrostSoulPlayer(
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { pages.size })
     val scope = rememberCoroutineScope()
     var queueVisible by remember { mutableStateOf(false) }
+    var queueTab by remember { mutableStateOf(0) }
     var showArtistDialog by remember(uiState.track.id) { mutableStateOf(false) }
     var showPagerDots by remember { mutableStateOf(true) }
     // While the seekbar is being dragged, the pager's own horizontal-swipe gesture must not
@@ -408,23 +409,44 @@ internal fun FrostSoulPlayer(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .height(420.dp)
+                        .heightIn(min = 500.dp, max = 620.dp)
                         .graphicsLayer {
                             shadowElevation = 28.dp.toPx()
-                            shape = RoundedCornerShape(30.dp)
+                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
                             clip = false
                         },
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF1D1D1D).copy(alpha = 0.96f))
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .width(38.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.White.copy(alpha = 0.24f)),
+                    )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                     ) {
                         Text(
-                            text = uiState.queueTitle ?: "Up next",
+                            text = "Queue",
                             color = FrostSoulOnSurface,
-                            fontSize = 18.sp,
+                            fontSize = 20.sp,
                             fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = uiState.queueTitle.orEmpty(),
+                            color = FrostSoulOnSurfaceMuted,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
                         FSIconButton(
@@ -434,14 +456,60 @@ internal fun FrostSoulPlayer(
                             compact = true,
                         )
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(22.dp),
+                    ) {
+                        val tabs = listOf(
+                            "Playing ${uiState.queue.size}",
+                            "Played tracks ${uiState.queue.count { !it.isCurrent }}",
+                            "Played playlists 0",
+                        )
+                        tabs.forEachIndexed { index, label ->
+                            Column(
+                                horizontalAlignment = Alignment.Start,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { queueTab = index },
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (queueTab == index) FrostSoulOnSurface else FrostSoulOnSurfaceMuted.copy(alpha = 0.72f),
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(Modifier.height(9.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(if (queueTab == index) 0.72f else 0.18f)
+                                        .height(3.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(if (queueTab == index) Color.White else Color.Transparent),
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp),
+                    ) {
+                        Icon(painterResource(R.drawable.shuffle), "Shuffle queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
+                        Text("Shuffle", color = FrostSoulOnSurfaceMuted, fontSize = 12.sp)
+                        Text("Queue actions", color = FrostSoulOnSurfaceMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Icon(painterResource(R.drawable.download), "Download queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
+                        Icon(painterResource(R.drawable.playlist_add), "Add to playlist", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(22.dp))
+                        Icon(painterResource(R.drawable.delete), "Clear queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
+                    }
                     FSQueue(
                         title = "",
-                        queue = uiState.queue,
+                        queue = if (queueTab == 0) uiState.queue else emptyList(),
                         onSelect = { index ->
                             actions.onSelectQueueItem(index)
                             queueVisible = false
                         },
-                        modifier = Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).padding(top = 4.dp),
                     )
                 }
             }
@@ -2300,59 +2368,56 @@ private fun FrostSoulQueueRow(
     item: FrostSoulQueueItem,
     onClick: () -> Unit,
 ) {
-    FSGlassCard(
-        accent = if (item.isCurrent) Color.White else Color.White,
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick),
+    val activeColor = Color(0xFF52BF92)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (item.isCurrent) activeColor.copy(alpha = 0.10f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 9.dp, horizontal = 2.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(10.dp),
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(32.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(if (item.isCurrent) activeColor else Color.Transparent),
+        )
+        Column(
+            modifier = Modifier.weight(1f).padding(start = 12.dp, end = 10.dp),
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier =
-                    Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (item.isCurrent) Color.White.copy(alpha = 0.26f) else Color.White.copy(alpha = 0.06f)),
-            ) {
-                Text(
-                    text = if (item.isCurrent) "•" else (item.index + 1).toString(),
-                    color = if (item.isCurrent) Color.White else FrostSoulOnSurfaceMuted,
-                    fontSize = if (item.isCurrent) 24.sp else 12.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            AsyncImage(
-                model = item.artworkUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)),
+            Text(
+                text = item.title,
+                color = if (item.isCurrent) activeColor else FrostSoulOnSurface,
+                fontSize = 16.sp,
+                fontWeight = if (item.isCurrent) FontWeight.Medium else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.title,
-                    color = if (item.isCurrent) FrostSoulOnSurface else FrostSoulOnSurfaceMuted,
-                    fontSize = 15.sp,
-                    fontWeight = if (item.isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = item.artist,
-                    color = FrostSoulOnSurfaceMuted.copy(alpha = 0.76f),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
+            Text(
+                text = item.artist,
+                color = FrostSoulOnSurfaceMuted.copy(alpha = 0.82f),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 3.dp),
+            )
         }
+        Icon(
+            painter = painterResource(R.drawable.favorite_border),
+            contentDescription = "Favorite ${item.title}",
+            tint = if (item.isCurrent) activeColor.copy(alpha = 0.88f) else FrostSoulOnSurfaceMuted,
+            modifier = Modifier.size(22.dp).padding(1.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Icon(
+            painter = painterResource(R.drawable.close),
+            contentDescription = "Remove ${item.title} from queue",
+            tint = FrostSoulOnSurfaceMuted.copy(alpha = 0.86f),
+            modifier = Modifier.size(20.dp).padding(2.dp),
+        )
     }
 }
 
