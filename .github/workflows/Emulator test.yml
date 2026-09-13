@@ -2,7 +2,6 @@ name: Build Emulator Test APK (x86_64)
 
 on:
   workflow_dispatch:
-  push:
     branches:
       - genspark_ai_developer
 
