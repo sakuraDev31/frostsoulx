@@ -66,4 +66,21 @@ class VectorMathTest {
     fun `resource budget rejects oversized realtime candidate pools`() {
         RecommendationBudget(candidateLimit = 5_000)
     }
+
+    @Test
+    fun `weighted bounded probability matches integer counts at whole numbers`() {
+        assertEquals(
+            RecommendationScoreMath.boundedProbability(3, 1),
+            RecommendationScoreMath.boundedProbabilityWeighted(3f, 1f),
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun `weighted bounded probability rewards a partially completed listen`() {
+        val earlySkip = RecommendationScoreMath.boundedProbabilityWeighted(0f, 1.1f)
+        val lateSkip = RecommendationScoreMath.boundedProbabilityWeighted(0.6f, 0f)
+
+        assertTrue(lateSkip > earlySkip)
+    }
 }

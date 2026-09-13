@@ -27,3 +27,17 @@ For the Home mode-specific page, use this order:
 7. Local/offline candidates as a fallback when remote candidates are unavailable.
 
 The empty-page fix should not invent data. It should fall back through existing app-owned candidates: `forThisMoment`, `featuredForYou`, `recentlyPlayed`, `quickPicks`, and `keepListening`.
+
+## Offline engine ranking signals
+
+`OfflineRecommendationEngine.rank()` now also uses:
+
+- **Sequential/co-occurrence affinity** (`buildSequenceAffinity`): a personal, session-derived
+  "usually played after the last few tracks" signal, built purely from this listener's own signal
+  history (no server or other-user data). This was the one signal type named by the cited survey
+  (sequential listening) that the ranking formula did not previously consume; it now feeds both the
+  score and a dedicated `Continue Listening` shelf.
+- **Listen-fraction-aware Skip weighting**: a `Skip` signal's positive/negative contribution now
+  scales with how much of the track had already played (`listenedMs / duration`) instead of being a
+  flat constant, so skipping near the end of a track is no longer scored the same as skipping in the
+  first few seconds.

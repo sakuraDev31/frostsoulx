@@ -118,6 +118,8 @@ data class RecommendationExplanation(
     val replayProbability: Float,
     val skipProbability: Float,
     val reason: String,
+    /** Session-derived "usually played after the last track(s)" affinity, in [0, 1]. */
+    val sequenceAffinity: Float = 0f,
 )
 
 @Immutable
