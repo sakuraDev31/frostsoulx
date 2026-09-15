@@ -7588,10 +7588,16 @@ class MusicService :
             }
         }
 
-        database.query {
-            upsert(
-                formatEntity,
-            )
+        // Persist format metadata off the critical DataSource resolution path. Media3 can start
+        // reading the resolved URL immediately instead of waiting for the database transaction.
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                database.query {
+                    upsert(formatEntity)
+                }
+            }.onFailure { error ->
+                Timber.tag("MusicService").w(error, "Failed to persist playback format for %s", mediaId)
+            }
         }
         scope.launch(Dispatchers.IO) { recoverSong(mediaId, nonNullPlayback) }
 
