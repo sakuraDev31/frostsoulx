@@ -147,7 +147,7 @@ internal fun FrostSoulHomeFeed(
                 top = 8.dp,
                 bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 24.dp,
             ),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.section),
             modifier = modifier.fillMaxSize().frostSoulCalmScreenBackground(),
         ) {
         item(key = "frostsoul_home_header") {
@@ -699,38 +699,10 @@ private fun FrostSoulRecommendationList(
             val isCurrent = song.id == mediaMetadata?.id
             PremiumCard(
                 modifier = Modifier
-                    .width(148.dp)
-                    .height(184.dp)
-                    .graphicsLayer {
-                        // Scroll information is read in the layer so transforms update without
-                        // recomposing the complete recommendation section on every scroll tick.
-                        val item = carouselState.layoutInfo.visibleItemsInfo
-                            .firstOrNull { it.key == "quick_card_${song.id}" }
-                        if (item != null) {
-                            val viewportCenter = (
-                                carouselState.layoutInfo.viewportStartOffset +
-                                    carouselState.layoutInfo.viewportEndOffset
-                            ) / 2f
-                            val itemCenter = item.offset + item.size / 2f
-                            val pageDistance = ((itemCenter - viewportCenter) / item.size)
-                                .coerceIn(-1.25f, 1.25f)
-                            val distance = abs(pageDistance).coerceIn(0f, 1f)
-                            val focus = 1f - distance
-
-                            // Center card stays dominant; neighbors fan back with perspective.
-                            scaleX = 0.86f + 0.14f * focus
-                            scaleY = 0.86f + 0.14f * focus
-                            rotationY = -18f * pageDistance
-                            alpha = 0.64f + 0.36f * focus
-                            translationX = -pageDistance * 8.dp.toPx()
-                            cameraDistance = 12f * density
-                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center
-                            shape = RoundedCornerShape(16.dp)
-                            clip = true
-                        }
-                    },
+                    .width(160.dp)
+                    .heightIn(min = 204.dp),
                 shape = FrostSoulTheme.shapes.medium,
-                contentPadding = PaddingValues(10.dp),
+                contentPadding = PaddingValues(FrostSoulTheme.spacing.medium),
                 onClick = {
                     if (isCurrent) playerConnection.player.togglePlayPause()
                     else playerConnection.playQueue(ListQueue(items = listOf(song.toMediaItem())))
@@ -745,19 +717,19 @@ private fun FrostSoulRecommendationList(
                 Text(
                     text = song.title,
                     color = FrostSoulTheme.colors.onSurface,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
+                    style = FrostSoulTheme.typography.label,
+                    maxLines = 2,
+                    minLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 8.dp),
                 )
                 Text(
                     text = song.artists.firstOrNull()?.name.orEmpty(),
                     color = FrostSoulTheme.colors.onSurfaceMuted,
-                    fontSize = 11.sp,
+                    style = FrostSoulTheme.typography.bodyMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 2.dp, top = 3.dp),
+                    modifier = Modifier.padding(top = FrostSoulTheme.spacing.micro),
                 )
                 FSIcon(
                     painter = painterResource(if (isCurrent && playerConnection.player.isPlaying) R.drawable.pause else R.drawable.play),
@@ -826,7 +798,7 @@ private fun FrostSoulHomeHeader(
             }
             FSText(
                 text = greeting,
-                style = FrostSoulTheme.typography.display.copy(fontSize = 30.sp, lineHeight = 36.sp),
+                style = FrostSoulTheme.typography.title,
                 color = FrostSoulTheme.colors.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

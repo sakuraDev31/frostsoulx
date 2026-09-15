@@ -29,7 +29,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
@@ -97,7 +96,7 @@ data class FrostSoulSpacing(
     val small: Dp = 8.dp,
     val medium: Dp = 12.dp,
     val large: Dp = 16.dp,
-    val section: Dp = 28.dp,
+    val section: Dp = 24.dp,
     val page: Dp = 16.dp,
     val hero: Dp = 28.dp,
 )
@@ -153,17 +152,17 @@ private val DefaultFrostSoulTokens = FrostSoulDesignTokens(
         scrim = Color.Black.copy(alpha = 0.72f),
     ),
     typography = FrostSoulTypography(
-        display = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Normal, fontSize = 42.sp, lineHeight = 48.sp),
-        title = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Normal, fontSize = 34.sp, lineHeight = 40.sp),
-        sectionTitle = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Normal, fontSize = 23.sp, lineHeight = 28.sp),
-        body = TextStyle(fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 22.sp),
-        bodyMuted = TextStyle(fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 20.sp),
-        label = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 18.sp),
-        overline = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 1.4.sp),
+        display = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 32.sp, lineHeight = 40.sp, letterSpacing = (-0.5).sp),
+        title = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 36.sp, letterSpacing = (-0.4).sp),
+        sectionTitle = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 28.sp, letterSpacing = (-0.2).sp),
+        body = TextStyle(fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp),
+        bodyMuted = TextStyle(fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 20.sp),
+        label = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp),
+        overline = TextStyle(fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 16.sp, letterSpacing = 0.8.sp),
     ),
     shapes = FrostSoulShapes(
-        tiny = RoundedCornerShape(10.dp),
-        small = RoundedCornerShape(16.dp),
+        tiny = RoundedCornerShape(8.dp),
+        small = RoundedCornerShape(12.dp),
         medium = RoundedCornerShape(16.dp),
         large = RoundedCornerShape(24.dp),
         extraLarge = RoundedCornerShape(24.dp),
@@ -225,11 +224,6 @@ fun FrostSoulCalmTheme(content: @Composable () -> Unit) {
                 activeGlowAlpha = 0f,
                 ambientGlowAlpha = 0f,
             ),
-            typography = parent.typography.copy(
-                display = parent.typography.display.copy(fontFamily = FontFamily.Default),
-                title = parent.typography.title.copy(fontFamily = FontFamily.Default),
-                sectionTitle = parent.typography.sectionTitle.copy(fontFamily = FontFamily.Default),
-            ),
         )
     }
     val inheritedScheme = MaterialTheme.colorScheme
@@ -264,11 +258,25 @@ fun FrostSoulDesignSystem(
     darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val tokens = remember(darkTheme) {
+    // Keep every surface on the user's selected font, including custom fonts.
+    val fontFamily = MaterialTheme.typography.bodyLarge.fontFamily
+    val tokens = remember(darkTheme, fontFamily) {
+        val typography = DefaultFrostSoulTokens.typography
+        val base = DefaultFrostSoulTokens.copy(
+            typography = typography.copy(
+                display = typography.display.copy(fontFamily = fontFamily),
+                title = typography.title.copy(fontFamily = fontFamily),
+                sectionTitle = typography.sectionTitle.copy(fontFamily = fontFamily),
+                body = typography.body.copy(fontFamily = fontFamily),
+                bodyMuted = typography.bodyMuted.copy(fontFamily = fontFamily),
+                label = typography.label.copy(fontFamily = fontFamily),
+                overline = typography.overline.copy(fontFamily = fontFamily),
+            ),
+        )
         if (darkTheme) {
-            DefaultFrostSoulTokens
+            base
         } else {
-            DefaultFrostSoulTokens.copy(
+            base.copy(
                 colors = DefaultFrostSoulTokens.colors.copy(
                     background = Color.White,
                     surface = Color.White,

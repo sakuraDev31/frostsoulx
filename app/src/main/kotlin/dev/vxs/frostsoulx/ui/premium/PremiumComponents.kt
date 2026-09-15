@@ -76,7 +76,7 @@ fun PremiumTopBar(
             .padding(horizontal = FrostSoulTheme.spacing.page, vertical = FrostSoulTheme.spacing.large),
     ) {
         navigationIcon?.invoke()
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro)) {
             eyebrow?.let {
                 Text(
                     text = it.uppercase(),
@@ -89,10 +89,10 @@ fun PremiumTopBar(
             }
             Text(
                 text = title,
-                style = FrostSoulTheme.typography.display.copy(fontSize = 30.sp, lineHeight = 36.sp),
+                style = FrostSoulTheme.typography.title,
                 color = FrostSoulTheme.colors.onBackground,
-                fontWeight = FontWeight.Normal,
-                maxLines = 1,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             subtitle?.takeIf { it.isNotBlank() }?.let {
@@ -223,7 +223,7 @@ fun PremiumListRow(
                 contentDescription = null,
             )
         }
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro)) {
             Text(
                 text = title,
                 style = FrostSoulTheme.typography.body,
@@ -238,7 +238,6 @@ fun PremiumListRow(
                     color = FrostSoulTheme.colors.onSurfaceMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 2.dp),
                 )
             }
         }

@@ -279,7 +279,7 @@ fun FSListItem(
             contentDescription = null,
             modifier = Modifier.size(54.dp),
         )
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro)) {
             FSText(
                 text = title,
                 color = if (isActive) colors.accentBright else colors.onSurface,
@@ -315,7 +315,7 @@ fun FSAlbumCard(
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.small),
-        modifier = modifier.width(width).clip(FrostSoulTheme.shapes.medium).clickable(
+        modifier = modifier.width(width).clickable(
             indication = null,
             interactionSource = remember { MutableInteractionSource() },
             onClick = onClick,
@@ -325,7 +325,7 @@ fun FSAlbumCard(
             FSAlbumArt(
                 artworkUrl = artworkUrl,
                 contentDescription = title,
-                showGlow = true,
+                showGlow = false,
                 modifier = Modifier.fillMaxWidth().aspectRatio(artworkAspectRatio),
             )
             if (showPlayOverlay) {
@@ -365,17 +365,17 @@ fun FSAlbumCard(
             text = title,
             color = FrostSoulTheme.colors.onSurface,
             style = FrostSoulTheme.typography.label,
-            maxLines = 1,
+            maxLines = 2,
+            minLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        subtitle?.let {
+        subtitle?.takeIf { it.isNotBlank() }?.let {
             FSText(
                 text = it,
                 color = FrostSoulTheme.colors.onSurfaceMuted,
                 style = FrostSoulTheme.typography.bodyMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 2.dp),
             )
         }
     }
@@ -439,7 +439,7 @@ fun FSSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.fillMaxWidth().padding(horizontal = FrostSoulTheme.spacing.page),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro)) {
             eyebrow?.let {
                 FSText(
                     text = it.uppercase(),
@@ -452,12 +452,8 @@ fun FSSectionHeader(
             FSText(
                 text = title,
                 color = FrostSoulTheme.colors.onSurface,
-                style = FrostSoulTheme.typography.sectionTitle.copy(
-                    fontSize = 18.sp,
-                    lineHeight = 23.sp,
-                    fontWeight = FontWeight.Normal,
-                ),
-                maxLines = 1,
+                style = FrostSoulTheme.typography.sectionTitle,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -470,7 +466,7 @@ fun FSSectionHeader(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() },
                     onClick = onAction,
-                ).padding(horizontal = 8.dp, vertical = 6.dp),
+                ).heightIn(min = 48.dp).padding(horizontal = 8.dp, vertical = 14.dp),
             )
         }
     }
