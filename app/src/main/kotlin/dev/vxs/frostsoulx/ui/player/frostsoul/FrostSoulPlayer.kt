@@ -12,13 +12,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -91,6 +86,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.State
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
@@ -159,6 +162,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import java.util.LinkedHashMap
 import kotlin.math.cos
@@ -2492,7 +2497,7 @@ internal fun rememberFrostSoulPalette(artworkUrl: String?): FrostSoulPalette {
                                     .maximumColorCount(PlayerColorExtractor.Config.MAX_COLOR_COUNT)
                                     .resizeBitmapArea(PlayerColorExtractor.Config.BITMAP_AREA)
                                     .generate()
-                            PlayerColorExtractor.extractGradientColors(nativePalette, Color.Black.toArgb())
+                            extractGlowColors(nativePalette)
                         }
                     FrostSoulPalette(
                         artworkPrimary = colors.firstOrNull() ?: Color.White,
@@ -2513,25 +2518,187 @@ internal fun rememberFrostSoulPalette(artworkUrl: String?): FrostSoulPalette {
 
 private const val PaletteCacheCapacity = 24
 
-/**
- * Motion and rendering constraints for the artwork aura behind the vinyl deck.
- *
- * The aura is intentionally not assembled from circles or blobs. Several oversized linear colour
- * fields overlap, cross-mix and pass through a feathered alpha envelope; a final blur removes the
- * last trace of their source geometry. Mismatched motion periods keep the result from resolving
- * into a repeated slide while the shared scale/opacity envelope gives it a slow breathing rhythm.
- */
-private object FluidGlowSpec {
-    const val DriftCycleMs = 15_000
-    const val MixCycleMs = 10_800
-    const val BreathScale = 0.075f
-    const val BreathAlpha = 0.12f
-    const val PeakAlpha = 0.82f
-    val BlurRadius = 46.dp
+/** Select actual artwork swatches, not hue-shifted gradient filler colors. Runs off-main. */
+private fun extractGlowColors(palette: Palette): List<Color> {
+    val swatches = palette.swatches.sortedByDescending { it.population }
+    val primary = swatches.firstOrNull()?.let { Color(it.rgb) } ?: Color.DarkGray
+    // Prefer the next populous, visibly distinct color over another quantization of the first.
+    val secondary = swatches.firstOrNull { swatch ->
+        val candidate = Color(swatch.rgb)
+        val r = candidate.red - primary.red
+        val g = candidate.green - primary.green
+        val b = candidate.blue - primary.blue
+        r * r + g * g + b * b > 0.035f
+    }?.let { Color(it.rgb) } ?: primary
+    return listOf(primary, secondary)
 }
 
-/** Full turn in radians. Not a `const` because it is computed from [Math.PI]. */
+private object FluidGlowSpec {
+    const val Columns = 24
+    const val Rows = 18
+    const val FrameIntervalNanos = 33_333_333L
+    const val CycleSeconds = 120f
+}
+
 private val GlowTwoPi = (2.0 * Math.PI).toFloat()
+
+/**
+ * A single untextured mesh, feathered by vertex alpha, replaces full-screen blur and additive
+ * layers. All arrays and spatial waves are reused; only colors change on a motion frame.
+ * Two counter-moving wave fields fold the color boundary like slowly stirred paint. The
+ * broad blend retains both pigments instead of adding them into a washed-out third color.
+ */
+private class VinylGlowMesh {
+    private val stride = FluidGlowSpec.Columns + 1
+    private val vertexCount = stride * (FluidGlowSpec.Rows + 1)
+    private val positions = FloatArray(vertexCount * 2)
+    private val colors = IntArray(vertexCount)
+    private val waveSin = FloatArray(vertexCount)
+    private val waveCos = FloatArray(vertexCount)
+    private val curlSin = FloatArray(vertexCount)
+    private val curlCos = FloatArray(vertexCount)
+    private val indices = ShortArray(FluidGlowSpec.Columns * FluidGlowSpec.Rows * 6)
+    private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    // Hardware drawVertices starts at API 29. Older devices rasterize the same mesh into a
+    // reusable 36 KiB tile rather than enabling a full-screen software layer or blur buffer.
+    private val legacyBitmap = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        android.graphics.Bitmap.createBitmap(96, 96, android.graphics.Bitmap.Config.ARGB_8888)
+    } else {
+        null
+    }
+    private val legacyCanvas = legacyBitmap?.let { android.graphics.Canvas(it) }
+    private val legacyBounds = android.graphics.RectF()
+    private val bitmapPaint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+    private var width = -1f
+    private var height = -1f
+
+    init {
+        for (row in 0..FluidGlowSpec.Rows) {
+            for (column in 0..FluidGlowSpec.Columns) {
+                val i = row * stride + column
+                val x = column.toFloat() / FluidGlowSpec.Columns
+                val y = row.toFloat() / FluidGlowSpec.Rows
+                waveSin[i] = sin(x * 6f + y * 4f)
+                waveCos[i] = cos(x * 6f + y * 4f)
+                curlSin[i] = sin(x * 10f - y * 7f)
+                curlCos[i] = cos(x * 10f - y * 7f)
+            }
+        }
+        var offset = 0
+        for (row in 0 until FluidGlowSpec.Rows) {
+            for (column in 0 until FluidGlowSpec.Columns) {
+                val i = row * stride + column
+                indices[offset++] = i.toShort()
+                indices[offset++] = (i + 1).toShort()
+                indices[offset++] = (i + stride).toShort()
+                indices[offset++] = (i + 1).toShort()
+                indices[offset++] = (i + stride + 1).toShort()
+                indices[offset++] = (i + stride).toShort()
+            }
+        }
+    }
+
+    fun draw(canvas: android.graphics.Canvas, w: Float, h: Float, phase: Float, primary: Color, secondary: Color) {
+        if (w <= 0f || h <= 0f) return
+        if (canvas.isHardwareAccelerated && legacyBitmap != null && legacyCanvas != null) {
+            legacyBitmap.eraseColor(android.graphics.Color.TRANSPARENT)
+            draw(legacyCanvas, 96f, 96f, phase, primary, secondary)
+            legacyBounds.set(0f, 0f, w, h)
+            canvas.drawBitmap(legacyBitmap, null, legacyBounds, bitmapPaint)
+            return
+        }
+        if (w != width || h != height) {
+            width = w
+            height = h
+            for (row in 0..FluidGlowSpec.Rows) {
+                for (column in 0..FluidGlowSpec.Columns) {
+                    val i = row * stride + column
+                    positions[i * 2] = column.toFloat() / FluidGlowSpec.Columns * w
+                    // Bottom-anchored wash, with the top feather disappearing below the record.
+                    positions[i * 2 + 1] = (0.50f + row.toFloat() / FluidGlowSpec.Rows * 0.50f) * h
+                }
+            }
+        }
+        // Integer harmonics make the two-minute phase wrap seamless, including breathing.
+        val flowSin = sin(phase * 5f)
+        val flowCos = cos(phase * 5f)
+        val mixSin = sin(-phase * 3f)
+        val mixCos = cos(-phase * 3f)
+        val breath = sin(phase * 15f)
+        val drift = sin(phase * 6f) * 0.08f
+        val red = primary.red * 255f
+        val green = primary.green * 255f
+        val blue = primary.blue * 255f
+        val redDelta = secondary.red * 255f - red
+        val greenDelta = secondary.green * 255f - green
+        val blueDelta = secondary.blue * 255f - blue
+        for (row in 0..FluidGlowSpec.Rows) {
+            val y = row.toFloat() / FluidGlowSpec.Rows
+            for (column in 0..FluidGlowSpec.Columns) {
+                val i = row * stride + column
+                val x = column.toFloat() / FluidGlowSpec.Columns
+                val fold = waveSin[i] * flowCos + waveCos[i] * flowSin
+                val curl = curlSin[i] * mixCos + curlCos[i] * mixSin
+                val mix = glowSmoothStep(0.12f, 0.88f, x + fold * 0.22f + curl * 0.10f + drift)
+                val rise = y + fold * 0.075f + breath * 0.045f
+                val envelope = glowSmoothStep(0f, 0.35f, y) * glowSmoothStep(0.12f, 1f, rise)
+                val alpha = (255f * envelope * (0.74f + 0.055f * breath)).toInt().coerceIn(0, 255)
+                colors[i] = android.graphics.Color.argb(
+                    alpha,
+                    (red + redDelta * mix).toInt().coerceIn(0, 255),
+                    (green + greenDelta * mix).toInt().coerceIn(0, 255),
+                    (blue + blueDelta * mix).toInt().coerceIn(0, 255),
+                )
+            }
+        }
+        canvas.drawVertices(
+            android.graphics.Canvas.VertexMode.TRIANGLES,
+            positions.size, positions, 0, null, 0, colors, 0, indices, 0, indices.size, paint,
+        )
+    }
+}
+
+private fun glowSmoothStep(low: Float, high: Float, value: Float): Float {
+    val t = ((value - low) / (high - low)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+}
+
+@Composable
+private fun VinylFluidGlow(animated: Boolean, primary: State<Color>, secondary: State<Color>) {
+    val mesh = remember { VinylGlowMesh() }
+    val phase = remember { mutableFloatStateOf(0.15f) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(animated, lifecycleOwner) {
+        if (!animated) return@LaunchedEffect
+        val durationScale = coroutineContext[MotionDurationScale]
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            snapshotFlow { durationScale?.scaleFactor ?: 1f }.collectLatest { scale ->
+                if (scale <= 0f) return@collectLatest
+                var previousFrame = 0L
+                while (isActive) {
+                    withFrameNanos { now ->
+                        if (previousFrame == 0L) previousFrame = now
+                        val elapsed = now - previousFrame
+                        if (elapsed >= FluidGlowSpec.FrameIntervalNanos) {
+                            // Resume from the same phase; never catch up after suspension/jank.
+                            val seconds = elapsed.coerceAtMost(100_000_000L) / 1_000_000_000f
+                            phase.floatValue = (phase.floatValue + seconds * GlowTwoPi /
+                                (FluidGlowSpec.CycleSeconds * scale)) % GlowTwoPi
+                            previousFrame = now
+                        }
+                    }
+                    delay(24L)
+                }
+            }
+        }
+    }
+    Canvas(Modifier.fillMaxSize()) {
+        // State is read only during drawing: motion never recomposes the player or cache.
+        drawIntoCanvas { canvas ->
+            mesh.draw(canvas.nativeCanvas, size.width, size.height, phase.floatValue, primary.value, secondary.value)
+        }
+    }
+}
 
 /**
  * Pixel size the ambient backdrop artwork is decoded at. The image is blurred into a soft wash,
@@ -2553,43 +2720,12 @@ private val GradientBackgroundStyles: Set<PlayerBackgroundStyle> =
 
 private const val GlowTransitionDurationMs = 1_200
 
-/**
- * Minimum saturation/value forced onto palette colors before they are painted.
- *
- * Album palettes are frequently near-black (the default secondary is `#30262B`, value ~0.16).
- * Painting those directly over black and then scaling by alpha collapses the wash to a dim
- * grey smear, which is exactly the "barely visible, colorless" failure mode. Lifting the tone
- * into a bright, saturated band keeps the artwork's hue while guaranteeing it reads on screen.
- *
- * Pushed noticeably higher than before by design: the wash is meant to read as bold, saturated
- * and contrasty rather than a gentle muted tint, so both the floor and the ceiling are raised.
- */
-private const val GlowMinSaturation = 0.48f
-private const val GlowMaxSaturation = 0.74f
-private const val GlowMinValue = 0.52f
-
-/**
- * Saturation below which a palette color is treated as intentionally achromatic.
- *
- * Applying a saturation floor to a truly grey color would invent a hue out of nothing (grey has
- * hue 0, so it would turn red). Below this threshold the color is only brightened, never tinted.
- */
-private const val GlowAchromaticThreshold = 0.10f
-
-/**
- * Lifts [color] into a vibrant tone suitable for an additive glow while preserving its hue.
- *
- * Hue is never modified, so the wash still reads as "this album's color". Only saturation and
- * value are adjusted: this rescues dark or muddy palettes without over-saturating vivid ones,
- * and leaves genuinely monochrome artwork looking monochrome.
- */
+/** Lift dark pigments just enough to read on black; never invent saturation or a new hue. */
 private fun glowTone(color: Color): Color {
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(color.toArgb(), hsv)
-    if (hsv[1] > GlowAchromaticThreshold) {
-        hsv[1] = hsv[1].coerceIn(GlowMinSaturation, GlowMaxSaturation)
-    }
-    hsv[2] = hsv[2].coerceAtLeast(GlowMinValue)
+    hsv[1] = hsv[1].coerceAtMost(0.74f)
+    hsv[2] = hsv[2].coerceIn(0.42f, 0.90f)
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
@@ -2627,12 +2763,12 @@ private fun FrostSoulDynamicBackground(
     // those stable two-color endpoints instead of continuously chasing extraction updates.
     val primaryTarget = remember(palette) { glowTone(palette.artworkPrimary) }
     val secondaryTarget = remember(palette) { glowTone(palette.artworkSecondary) }
-    val primary by animateColorAsState(
+    val primary = animateColorAsState(
         targetValue = primaryTarget,
         animationSpec = tween(GlowTransitionDurationMs),
         label = "vinyl-glow-primary",
     )
-    val secondary by animateColorAsState(
+    val secondary = animateColorAsState(
         targetValue = secondaryTarget,
         animationSpec = tween(GlowTransitionDurationMs),
         label = "vinyl-glow-secondary",
@@ -2702,117 +2838,7 @@ private fun FrostSoulDynamicBackground(
         }
 
         if (isGlow) {
-            val motion = rememberInfiniteTransition(label = "vinyl-fluid-glow")
-            val driftPhase by motion.animateFloat(
-                initialValue = 0f,
-                targetValue = GlowTwoPi,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(FluidGlowSpec.DriftCycleMs, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart,
-                ),
-                label = "vinyl-fluid-drift",
-            )
-            val mixPhase by motion.animateFloat(
-                initialValue = 0f,
-                targetValue = GlowTwoPi,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(FluidGlowSpec.MixCycleMs, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart,
-                ),
-                label = "vinyl-fluid-mix",
-            )
-            val flow = if (isAnimatedGlow) driftPhase else 0.35f
-            val mixing = if (isAnimatedGlow) mixPhase else 1.1f
-            val breath = if (isAnimatedGlow) (sin(mixing - 0.5f) + 1f) * 0.5f else 0.55f
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        compositingStrategy = CompositingStrategy.Offscreen
-                        val scale = 1f + breath * FluidGlowSpec.BreathScale
-                        scaleX = scale
-                        scaleY = 0.98f + breath * FluidGlowSpec.BreathScale
-                        rotationZ = if (isAnimatedGlow) sin(flow * 0.43f) * 2.2f else 0f
-                        alpha = FluidGlowSpec.PeakAlpha -
-                            FluidGlowSpec.BreathAlpha + breath * FluidGlowSpec.BreathAlpha
-                    }
-                    .blur(
-                        radius = FluidGlowSpec.BlurRadius,
-                        edgeTreatment = BlurredEdgeTreatment.Unbounded,
-                    )
-                    .drawWithCache {
-                        // All sources are edge-to-edge colour ramps. Their stops travel at
-                        // different speeds while their hues cross-mix, so no circle, ellipse or
-                        // fixed blob can become visible through the soft final envelope.
-                        val mixAmount = 0.18f + 0.64f * ((sin(mixing) + 1f) * 0.5f)
-                        val reverseMix = 0.18f + 0.64f * ((cos(mixing * 0.83f) + 1f) * 0.5f)
-                        val primaryFlow = lerp(primary, secondary, mixAmount)
-                        val secondaryFlow = lerp(secondary, primary, reverseMix)
-                        val middleFlow = lerp(primaryFlow, secondaryFlow, 0.5f)
-                        val horizontalTravel = sin(flow) * size.width * 0.18f
-                        val counterTravel = cos(flow * 0.71f + mixing * 0.24f) * size.width * 0.16f
-                        val verticalTravel = sin(flow * 0.57f - mixing * 0.31f) * size.height * 0.055f
-
-                        val primaryField = Brush.linearGradient(
-                            colorStops = arrayOf(
-                                0.00f to Color.Transparent,
-                                0.18f to primary.copy(alpha = 0.18f),
-                                0.43f to primaryFlow.copy(alpha = 0.64f),
-                                0.68f to middleFlow.copy(alpha = 0.28f),
-                                1.00f to Color.Transparent,
-                            ),
-                            start = Offset(-size.width * 0.34f + horizontalTravel, size.height * 0.08f + verticalTravel),
-                            end = Offset(size.width * 1.18f + horizontalTravel, size.height * 0.56f - verticalTravel),
-                        )
-                        val secondaryField = Brush.linearGradient(
-                            colorStops = arrayOf(
-                                0.00f to Color.Transparent,
-                                0.22f to secondary.copy(alpha = 0.16f),
-                                0.49f to secondaryFlow.copy(alpha = 0.62f),
-                                0.76f to middleFlow.copy(alpha = 0.30f),
-                                1.00f to Color.Transparent,
-                            ),
-                            start = Offset(size.width * 1.28f + counterTravel, size.height * 0.04f - verticalTravel),
-                            end = Offset(-size.width * 0.24f + counterTravel, size.height * 0.62f + verticalTravel),
-                        )
-                        val mixingField = Brush.linearGradient(
-                            colorStops = arrayOf(
-                                0.00f to Color.Transparent,
-                                0.27f to primaryFlow.copy(alpha = 0.12f),
-                                0.50f to middleFlow.copy(alpha = 0.42f),
-                                0.73f to secondaryFlow.copy(alpha = 0.12f),
-                                1.00f to Color.Transparent,
-                            ),
-                            start = Offset(size.width * 0.02f - counterTravel, size.height * 0.62f),
-                            end = Offset(size.width * 0.98f - counterTravel, size.height * 0.02f),
-                        )
-                        val verticalEnvelope = Brush.verticalGradient(
-                            0.00f to Color.Transparent,
-                            0.06f to Color.White.copy(alpha = 0.20f),
-                            0.16f to Color.White.copy(alpha = 0.92f),
-                            0.43f to Color.White,
-                            0.60f to Color.White.copy(alpha = 0.62f),
-                            0.76f to Color.Transparent,
-                            1.00f to Color.Transparent,
-                        )
-                        val horizontalEnvelope = Brush.horizontalGradient(
-                            0.00f to Color.Transparent,
-                            0.10f to Color.White.copy(alpha = 0.72f),
-                            0.22f to Color.White,
-                            0.78f to Color.White,
-                            0.90f to Color.White.copy(alpha = 0.72f),
-                            1.00f to Color.Transparent,
-                        )
-                        onDrawBehind {
-                            drawRect(brush = primaryField, blendMode = BlendMode.Plus)
-                            drawRect(brush = secondaryField, blendMode = BlendMode.Plus)
-                            drawRect(brush = mixingField, blendMode = BlendMode.Plus)
-                            drawRect(brush = verticalEnvelope, blendMode = BlendMode.DstIn)
-                            drawRect(brush = horizontalEnvelope, blendMode = BlendMode.DstIn)
-                        }
-                    },
-            )
+            VinylFluidGlow(animated = isAnimatedGlow, primary = primary, secondary = secondary)
         }
     }
 }
