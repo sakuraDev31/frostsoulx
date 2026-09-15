@@ -83,22 +83,8 @@ import kotlin.math.hypot
 import kotlin.math.sin
 import kotlinx.coroutines.isActive
 
-/**
- * How far the tonearm swings off the record when playback stops.
- *
- * Negative = counter-clockwise in Canvas space, which moves the authored down-left arm
- * OUTWARD toward the deck's right edge and onto its rest post.
- *
- * Derivation (all values as fractions of the square deck card, y growing downward):
- *   pivot  = (0.828, 0.176)      playing stylus = (0.663, 0.722)
- *   arm    = (-0.165, 0.546) → span 0.570, bearing atan2(0.546, -0.165) ≈ 106.8°
- *   record = centre (0.5, 0.5), radius 268/330/2 = 0.406, label radius 126/330/2 = 0.191
- * Playing: |stylus - centre| = 0.276, i.e. between the label and the rim → on the grooves.
- * Parked at -22°: bearing 84.8° → stylus (0.880, 0.744), |· - centre| = 0.452 > 0.406, so the
- * headshell clears the rim by ~0.046 of the card (~15.dp at the 330.dp card) and still sits
- * inside the deck. Anything past about -26° would push the tip off the card's right edge.
- */
-private const val TonearmParkedDegrees = -22f
+/** Park outward, clear of the record rim, without crossing the enlarged artwork label. */
+private const val TonearmParkedDegrees = -12f
 
 @Composable
 internal fun FSGlassCard(
@@ -280,43 +266,13 @@ internal fun FSAlbumArt(
                 // is itself near-black, so contrast has to come from the card's own floor tone
                 // and a crisper border rather than from the page ever going lighter.
                 Brush.linearGradient(
-                    colors = listOf(Color(0xFF2C2E36), Color(0xFF17181D), Color(0xFF060607)),
+                    colors = listOf(Color(0xFF181818), Color(0xFF111111), Color(0xFF101010)),
                 ),
             )
-            .border(1.dp, Color.White.copy(alpha = 0.16f), cardShape),
+            .border(1.dp, Color.White.copy(alpha = 0.035f), cardShape),
     ) {
-        // Blurred, oversized album artwork behind the deck — the QQ Music-style soft glow that
-        // grounds the turntable in the track's own colors instead of a flat neutral plate.
-        // Scaled up so the blur's edge falloff never shows inside the card, then dimmed with a
-        // dark scrim so the deck plate and grooves still read with full contrast on top of it.
-        if (!artworkUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = artworkUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { scaleX = 1.35f; scaleY = 1.35f }
-                    .blur(radius = 36.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-                    .alpha(0.55f),
-            )
-            Box(
-                modifier = Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.74f)),
-                    ),
-                ),
-            )
-        }
-        // Top-left key light on the plate, then a vignette that sinks the corners. Together
-        // they give the flat card a machined, slightly domed metal feel.
-        Box(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.linearGradient(
-                    colors = listOf(Color.White.copy(alpha = 0.09f), Color.Transparent),
-                ),
-            ),
-        )
+        // Matte neutral deck, as in the reference; atmosphere belongs behind the player,
+        // not in a second full-size blurred artwork layer inside the turntable.
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawRect(
                 brush = Brush.radialGradient(
@@ -394,47 +350,10 @@ internal fun FSAlbumArt(
                     style = Stroke(width = platterRadius * 0.16f),
                 )
 
-                // Two oversized, softly-stopped color pools simulate blurred light refracting
-                // through tinted plastic vinyl. They live inside the rotating layer, so the
-                // color turns with the record — like dye baked into colored vinyl — rather than
-                // reading as a reflection painted on top of it.
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            palette.artworkPrimary.copy(alpha = 0.22f),
-                            palette.artworkPrimary.copy(alpha = 0.08f),
-                            Color.Transparent,
-                        ),
-                        center = Offset(
-                            center.x - platterRadius * 0.38f,
-                            center.y - platterRadius * 0.42f,
-                        ),
-                        radius = platterRadius * 0.9f,
-                    ),
-                    radius = platterRadius,
-                    center = center,
-                )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            palette.artworkSecondary.copy(alpha = 0.20f),
-                            palette.artworkSecondary.copy(alpha = 0.07f),
-                            Color.Transparent,
-                        ),
-                        center = Offset(
-                            center.x + platterRadius * 0.44f,
-                            center.y + platterRadius * 0.36f,
-                        ),
-                        radius = platterRadius * 0.85f,
-                    ),
-                    radius = platterRadius,
-                    center = center,
-                )
-
-                // Fewer, softer grooves with wider strokes to read slightly blurred and premium.
+                // Fine pressed grooves with dark valleys under the fixed room reflection.
                 val grooveInner = labelRadius + 3.dp.toPx()
                 val grooveOuter = platterRadius * 0.968f
-                val grooveCount = 34
+                val grooveCount = 52
                 for (index in 0 until grooveCount) {
                     val t = index / (grooveCount - 1f)
                     val eased = t * (2f - t)
@@ -443,13 +362,13 @@ internal fun FSAlbumArt(
                         color = Color.White.copy(alpha = 0.05f + 0.055f * (1f - t)),
                         radius = ringRadius,
                         center = center,
-                        style = Stroke(width = 0.9.dp.toPx()),
+                        style = Stroke(width = 0.45.dp.toPx()),
                     )
                     drawCircle(
                         color = Color.Black.copy(alpha = 0.30f),
                         radius = ringRadius + 0.95.dp.toPx(),
                         center = center,
-                        style = Stroke(width = 0.9.dp.toPx()),
+                        style = Stroke(width = 0.45.dp.toPx()),
                     )
                 }
 
@@ -474,8 +393,7 @@ internal fun FSAlbumArt(
                 )
             }
 
-            // Compact center label. Keeps focus on the artwork while avoiding an oversized
-            // center-disc visual.
+            // Large circular artwork label with a fine warm edge, matching the reference.
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -508,7 +426,7 @@ internal fun FSAlbumArt(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape),
+                        .border(1.dp, palette.artworkPrimary.copy(alpha = 0.40f), CircleShape),
                 )
             }
 
@@ -531,10 +449,10 @@ internal fun FSAlbumArt(
                 drawCircle(
                     brush = Brush.sweepGradient(
                         0.00f to Color.Transparent,
-                        0.14f to Color.White.copy(alpha = 0.055f),
+                        0.14f to Color.White.copy(alpha = 0.26f),
                         0.28f to Color.Transparent,
                         0.58f to Color.Transparent,
-                        0.74f to Color.White.copy(alpha = 0.035f),
+                        0.74f to Color.White.copy(alpha = 0.20f),
                         0.88f to Color.Transparent,
                         1.00f to Color.Transparent,
                         center = center,
@@ -567,10 +485,10 @@ internal fun FSAlbumArt(
         //   stopped → the arm swings OUTWARD to the right and parks on its rest post.
         Canvas(modifier = Modifier.fillMaxSize()) {
             val deck = size.minDimension
-            val pivot = Offset(size.width * 0.838f, size.height * 0.168f)
+            val pivot = Offset(size.width * 0.91f, size.height * 0.12f)
             // Playing-state stylus target: in the outer third of the groove band, lower-right.
             // The shorter reach keeps the arm proportional on narrow phones instead of stretched.
-            val playingNeedle = Offset(size.width * 0.668f, size.height * 0.692f)
+            val playingNeedle = Offset(size.width * 0.79f, size.height * 0.76f)
             val armVector = playingNeedle - pivot
             val armSpan = hypot(armVector.x.toDouble(), armVector.y.toDouble()).toFloat()
             if (armSpan <= 0f) return@Canvas
@@ -924,10 +842,13 @@ internal fun FSTopBar(
         modifier = modifier.fillMaxWidth(),
     ) {
         FSIconButton(
-            painter = painterResource(R.drawable.expand_less),
+            painter = painterResource(R.drawable.expand_more),
             contentDescription = "Collapse player",
             onClick = onDismiss,
-            compact = true,
+            buttonSize = 56.dp,
+            iconSize = 40.dp,
+            showContainer = false,
+            dimBackdrop = false,
         )
         Spacer(Modifier.width(12.dp))
         Box(

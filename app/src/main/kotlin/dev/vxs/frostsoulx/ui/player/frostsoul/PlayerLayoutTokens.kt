@@ -26,11 +26,11 @@ internal object PlayerLayoutTokens {
      * square). Tonearm parts are sized against the deck card so the whole assembly scales with
      * whatever width the player page hands to FSAlbumArt. */
     val TurntableCardSize = 320.dp
-    val TurntablePlatterSize = 254.dp
+    val TurntablePlatterSize = 264.dp
 
-    /** Subtle center label: smaller and cleaner to avoid a toy-like center disc. */
-    val TurntableLabelSize = 94.dp
-    val TurntableLabelArtSize = 90.dp
+    /** Reference proportions: artwork occupies a little over half the record diameter. */
+    val TurntableLabelSize = 150.dp
+    val TurntableLabelArtSize = 146.dp
 
     /** Tonearm assembly: pivot housing, counterweight barrel, headshell and the parking post. */
     val TurntableTonearmMountSize = 28.dp

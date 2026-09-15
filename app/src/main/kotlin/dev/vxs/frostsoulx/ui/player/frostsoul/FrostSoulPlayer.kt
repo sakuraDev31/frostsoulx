@@ -11,6 +11,7 @@ import dev.vxs.frostsoulx.ui.utils.formatLikeCount
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -184,6 +185,19 @@ internal fun FrostSoulPlayer(
     val scope = rememberCoroutineScope()
     var queueVisible by remember { mutableStateOf(false) }
     var queueTab by remember { mutableStateOf(0) }
+    val currentQueuePosition = remember(uiState.queue) { uiState.queue.indexOfFirst { it.isCurrent } }
+    val previousQueue = remember(uiState.queue, currentQueuePosition) {
+        if (currentQueuePosition >= 0) uiState.queue.take(currentQueuePosition) else emptyList()
+    }
+    val upcomingQueue = remember(uiState.queue, currentQueuePosition) {
+        if (currentQueuePosition >= 0) uiState.queue.drop(currentQueuePosition + 1) else uiState.queue
+    }
+    val visibleQueue = when (queueTab) {
+        1 -> previousQueue
+        2 -> upcomingQueue
+        else -> uiState.queue
+    }
+    BackHandler(enabled = queueVisible) { queueVisible = false }
     val queueListState = androidx.compose.foundation.lazy.rememberLazyListState()
     var showArtistDialog by remember(uiState.track.id) { mutableStateOf(false) }
     var showPagerDots by remember { mutableStateOf(true) }
@@ -266,10 +280,8 @@ internal fun FrostSoulPlayer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(
-                        // Bumped up from 48/42.dp so the collapse chevron below gets a full
-                        // 48.dp touch target instead of being squeezed down by the row's own
-                        // height + padding.
-                        Modifier.height(if (isImmersiveArtworkMainPage) 56.dp else 52.dp),
+                        // Full 56dp touch target plus vertical padding in both player styles.
+                        Modifier.height(64.dp),
                     )
                     .zIndex(12f)
                     .padding(
@@ -282,12 +294,12 @@ internal fun FrostSoulPlayer(
                 Icon(
                     painter = painterResource(R.drawable.expand_more),
                     contentDescription = "Collapse player",
-                    tint = FrostSoulTheme.colors.onSurface,
+                    tint = Color.White.copy(alpha = 0.86f),
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .size(48.dp)
-                        .clickable(onClick = actions.onDismiss)
-                        .padding(6.dp),
+                        .size(56.dp)
+                        .clickable(role = Role.Button, onClick = actions.onDismiss)
+                        .padding(5.dp),
                 )
                 if (showPagerDots) {
                     FrostSoulPagerDots(
@@ -308,9 +320,8 @@ internal fun FrostSoulPlayer(
                 beyondViewportPageCount = 1,
                 userScrollEnabled = !isSeekbarDragging,
                 modifier = Modifier.fillMaxSize()
-                    // Kept in sync with the header Box height above (52.dp) so vinyl/other
-                    // non-immersive pages still start right below the taller header.
-                    .padding(top = if (isImmersiveArtworkMainPage) 0.dp else 52.dp),
+                    // Immersive artwork stays full bleed beneath the enlarged header.
+                    .padding(top = if (isImmersiveArtworkMainPage) 0.dp else 64.dp),
             ) { pageIndex ->
                 val pageDistance = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
                 Box(
@@ -399,152 +410,113 @@ internal fun FrostSoulPlayer(
                 }
             }
         }
+        // Dim only the player behind the sheet; tapping outside or Back closes the queue.
+        if (queueVisible) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.62f))
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                    ) { queueVisible = false },
+            )
+        }
         AnimatedVisibility(
             visible = queueVisible,
-            enter =
-                fadeIn(animationSpec = tween(160)) +
-                    slideInVertically(animationSpec = tween(200)) { height -> height / 3 },
-            exit =
-                fadeOut(animationSpec = tween(120)) +
-                    slideOutVertically(animationSpec = tween(160)) { height -> height / 3 },
+            enter = fadeIn(tween(160)) + slideInVertically(tween(220)) { it },
+            exit = fadeOut(tween(120)) + slideOutVertically(tween(180)) { it },
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
         ) {
-            FSGlassCard(
-                accent = uiState.palette.accent,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.62f)
-                        .graphicsLayer {
-                            shadowElevation = 18.dp.toPx()
-                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-                            clip = false
-                        },
+            Column(
+                modifier = Modifier.fillMaxWidth().fillMaxHeight(0.65f)
+                    .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                    .background(Color(0xFF202020))
+                    .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
+                    .padding(horizontal = 16.dp),
             ) {
                 var queueDismissDrag by remember { mutableFloatStateOf(0f) }
+                val dismissThreshold = with(LocalDensity.current) { 64.dp.toPx() }
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF1D1D1D).copy(alpha = 0.96f))
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .pointerInput(Unit) {
-                                detectTapGestures(onTap = { queueVisible = false })
-                            }
-                            .pointerInput(Unit) {
-                                detectVerticalDragGestures(
-                                    onVerticalDrag = { _, dragAmount ->
-                                        queueDismissDrag = (queueDismissDrag + dragAmount).coerceAtLeast(0f)
-                                    },
-                                    onDragEnd = {
-                                        if (queueDismissDrag >= 90f) queueVisible = false
-                                        queueDismissDrag = 0f
-                                    },
-                                    onDragCancel = { queueDismissDrag = 0f },
-                                )
+                    Modifier.fillMaxWidth().pointerInput(dismissThreshold) {
+                        detectVerticalDragGestures(
+                            onDragStart = { queueDismissDrag = 0f },
+                            onVerticalDrag = { change, amount ->
+                                change.consume()
+                                queueDismissDrag = (queueDismissDrag + amount).coerceAtLeast(0f)
                             },
+                            onDragEnd = {
+                                if (queueDismissDrag > dismissThreshold) queueVisible = false
+                                queueDismissDrag = 0f
+                            },
+                            onDragCancel = { queueDismissDrag = 0f },
+                        )
+                    },
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .width(38.dp)
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color.White.copy(alpha = 0.24f)),
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                        ) {
-                            Text(
-                                text = "Queue",
-                                color = FrostSoulOnSurface,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = uiState.queueTitle.orEmpty(),
-                                color = FrostSoulOnSurfaceMuted,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
-                            horizontalArrangement = Arrangement.spacedBy(22.dp),
-                        ) {
-                        val tabs = listOf(
-                            "Playing ${uiState.queue.size}",
-                            "Played tracks ${uiState.queue.count { !it.isCurrent }}",
-                            "Played playlists 0",
-                        )
-                        tabs.forEachIndexed { index, label ->
+                        // These are queue positions, not fabricated listening-history counts.
+                        val tabs = listOf("Playing" to uiState.queue.size, "Previous" to previousQueue.size, "Up next" to upcomingQueue.size)
+                        tabs.forEachIndexed { index, (label, count) ->
                             Column(
-                                horizontalAlignment = Alignment.Start,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { queueTab = index },
+                                Modifier.weight(1f).clickable(role = Role.Tab) {
+                                    queueTab = index
+                                    scope.launch { queueListState.scrollToItem(0) }
+                                }.padding(vertical = 8.dp),
                             ) {
                                 Text(
-                                    text = label,
-                                    color = if (queueTab == index) FrostSoulOnSurface else FrostSoulOnSurfaceMuted.copy(alpha = 0.72f),
-                                    fontSize = 14.sp,
+                                    buildAnnotatedString {
+                                        append(label)
+                                        withStyle(SpanStyle(fontSize = 10.sp)) { append(" $count") }
+                                    },
+                                    color = Color.White.copy(alpha = if (queueTab == index) 0.92f else 0.38f),
+                                    fontSize = 16.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Spacer(Modifier.height(9.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(if (queueTab == index) 0.72f else 0.18f)
-                                        .height(3.dp)
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(if (queueTab == index) Color.White else Color.Transparent),
-                                )
+                                Spacer(Modifier.height(6.dp))
+                                Box(Modifier.width(62.dp).height(2.dp).background(if (queueTab == index) Color.White else Color.Transparent))
                             }
                         }
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(18.dp),
-                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp),
-                    ) {
-                        Icon(painterResource(R.drawable.shuffle), "Shuffle queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
-                        Text("Shuffle", color = FrostSoulOnSurfaceMuted, fontSize = 12.sp)
-                        Text("Queue actions", color = FrostSoulOnSurfaceMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                        Icon(
-                            painter = painterResource(R.drawable.location_on),
-                            contentDescription = "Scroll to current song",
-                            tint = Color.White.copy(alpha = 0.76f),
-                            modifier = Modifier
-                                .size(18.dp)
-                                .clickable {
-                                    val idx = uiState.queue.indexOfFirst { it.isCurrent }
-                                    if (idx >= 0) {
-                                        scope.launch { queueListState.animateScrollToItem(idx) }
-                                    }
-                                },
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        FSIconButton(
+                            painterResource(R.drawable.shuffle), "Toggle shuffle", actions.onToggleShuffle,
+                            active = uiState.shuffleModeEnabled, buttonSize = 48.dp, iconSize = 20.dp,
+                            showContainer = false, dimBackdrop = false,
                         )
-                        Icon(painterResource(R.drawable.download), "Download queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
-                        Icon(painterResource(R.drawable.playlist_add), "Add to playlist", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(22.dp))
-                        Icon(painterResource(R.drawable.delete), "Clear queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
-                        }
+                        Text(
+                            if (uiState.shuffleModeEnabled) "Shuffle on" else "Shuffle",
+                            color = Color.White.copy(alpha = 0.42f), fontSize = 12.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        FSIconButton(
+                            painterResource(R.drawable.location_on), "Scroll to current song", {
+                                queueTab = 0
+                                if (currentQueuePosition >= 0) scope.launch { queueListState.animateScrollToItem(currentQueuePosition) }
+                            },
+                            buttonSize = 48.dp, iconSize = 20.dp, showContainer = false, dimBackdrop = false,
+                        )
+                        FSIconButton(
+                            painterResource(R.drawable.download), "Download queue", actions.onDownloadQueue,
+                            buttonSize = 48.dp, iconSize = 20.dp, showContainer = false, dimBackdrop = false,
+                        )
+                        FSIconButton(
+                            painterResource(R.drawable.more_vert), "Queue options", actions.onOpenOptions,
+                            buttonSize = 48.dp, iconSize = 20.dp, showContainer = false, dimBackdrop = false,
+                        )
                     }
-                    FSQueue(
-                        title = "",
-                        queue = if (queueTab == 0) uiState.queue else emptyList(),
-                        listState = queueListState,
-                        onSelect = { index ->
-                            actions.onSelectQueueItem(index)
-                            queueVisible = false
-                        },
-                        modifier = Modifier.weight(1f).padding(top = 4.dp),
-                    )
                 }
+                FSQueue(
+                    title = "",
+                    queue = visibleQueue,
+                    listState = queueListState,
+                    isPlaying = uiState.isPlaying,
+                    onToggleLike = actions.onToggleQueueLike,
+                    onRemove = actions.onRemoveQueueItem,
+                    onSelect = actions.onSelectQueueItem,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }
@@ -1024,14 +996,62 @@ private fun FSPlayButton(
                     scaleX = scale
                     scaleY = scale
                 }
-                .clickable(onClick = onClick),
+                .clip(CircleShape)
+                .border(1.5.dp, Color.White.copy(alpha = 0.72f), CircleShape)
+                .clickable(role = Role.Button, onClick = onClick)
+                .semantics { contentDescription = if (isPlaying) "Pause" else "Play" },
     ) {
-        Icon(
-            painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
-            contentDescription = if (isPlaying) "Pause" else "Play",
-            tint = Color.White,
-            modifier = Modifier.size(if (isBuffering) 36.dp else 44.dp).alpha(if (isBuffering) 0.54f else 1f),
-        )
+        if (isBuffering) {
+            FSPlaybackBars(Modifier.size(30.dp), contentDescription = "Fetching song")
+        } else {
+            Icon(
+                painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(32.dp),
+            )
+        }
+    }
+}
+
+/** One draw-only clock for all five bars; no recomposition or per-bar animators. */
+@Composable
+private fun FSPlaybackBars(
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+    animated: Boolean = true,
+    contentDescription: String = "Playing",
+) {
+    val phase = remember { mutableFloatStateOf(0f) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(animated, lifecycleOwner) {
+        if (!animated) return@LaunchedEffect
+        val durationScale = coroutineContext[MotionDurationScale]
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            snapshotFlow { durationScale?.scaleFactor ?: 1f }.collectLatest { scale ->
+                if (scale <= 0f) return@collectLatest
+                var previousFrame = 0L
+                while (isActive) {
+                    withFrameNanos { now ->
+                        if (previousFrame != 0L) {
+                            val elapsed = (now - previousFrame).coerceAtMost(100_000_000L)
+                            phase.floatValue = (phase.floatValue + elapsed / 1_000_000_000f * GlowTwoPi / (1.1f * scale)) % GlowTwoPi
+                        }
+                        previousFrame = now
+                    }
+                    delay(24L)
+                }
+            }
+        }
+    }
+    Canvas(modifier.semantics { this.contentDescription = contentDescription }) {
+        val step = size.width / 6f
+        repeat(5) { index ->
+            val wave = (sin(phase.floatValue + index * 1.15f) + 1f) * 0.5f
+            val height = size.height * (0.22f + 0.64f * wave)
+            val x = step * (index + 1)
+            drawLine(color, Offset(x, center.y - height / 2f), Offset(x, center.y + height / 2f), strokeWidth = step * 0.48f, cap = StrokeCap.Round)
+        }
     }
 }
 
@@ -1665,12 +1685,11 @@ private fun FrostSoulImmersiveControls(
             androidx.compose.material3.IconButton(onClick = actions.onSkipPrevious, enabled = state.canSkipPrevious, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.skip_previous), "Previous track", tint = Color.White.copy(alpha = if (state.canSkipPrevious) 1f else 0.3f), modifier = Modifier.size(32.dp))
             }
-            androidx.compose.material3.IconButton(
+            FSPlayButton(
+                isPlaying = state.isPlaying,
+                isBuffering = state.isBuffering,
                 onClick = actions.onTogglePlayPause,
-                modifier = Modifier.size(72.dp).clip(CircleShape).background(accent.copy(alpha = 0.94f)),
-            ) {
-                Icon(painterResource(if (state.isPlaying) R.drawable.pause else R.drawable.play), if (state.isPlaying) "Pause" else "Play", tint = Color(0xFF151515), modifier = Modifier.size(34.dp))
-            }
+            )
             androidx.compose.material3.IconButton(onClick = actions.onSkipNext, enabled = state.canSkipNext, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.skip_next), "Next track", tint = Color.White.copy(alpha = if (state.canSkipNext) 1f else 0.3f), modifier = Modifier.size(32.dp))
             }
@@ -1756,15 +1775,14 @@ private fun FrostSoulFullPlayerDislikeButton(
     val tint = if (isDisliked) Color(0xFFFF6B6B) else {
         if (FrostSoulTheme.colors.background.luminance() > 0.5f) Color.Black else Color(0xFFD7DBE0)
     }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = modifier
-            .height(42.dp)
-            .clickable {
+            .size(48.dp)
+            .clickable(role = Role.Button) {
                 isDisliked = !isDisliked
                 onClick()
-            }
-            .padding(horizontal = 4.dp),
+            },
     ) {
         Icon(
             painter = painterResource(R.drawable.favorite_dislike),
@@ -2365,10 +2383,13 @@ internal fun FSQueue(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
+    isPlaying: Boolean = false,
+    onToggleLike: (Int) -> Unit = {},
+    onRemove: (Int) -> Unit = {},
 ) {
     LazyColumn(
         state = listState,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
         modifier = modifier.fillMaxSize(),
     ) {
         if (title.isNotBlank()) {
@@ -2393,7 +2414,12 @@ internal fun FSQueue(
             }
         }
         items(queue, key = { item -> "${item.index}-${item.id}" }) { item ->
-            FrostSoulQueueRow(item = item, onClick = { onSelect(item.index) })
+            FrostSoulQueueRow(
+                item = item, isPlaying = isPlaying,
+                onClick = { onSelect(item.index) },
+                onToggleLike = { onToggleLike(item.index) },
+                onRemove = { onRemove(item.index) },
+            )
         }
     }
 }
@@ -2401,58 +2427,41 @@ internal fun FSQueue(
 @Composable
 private fun FrostSoulQueueRow(
     item: FrostSoulQueueItem,
+    isPlaying: Boolean,
     onClick: () -> Unit,
+    onToggleLike: () -> Unit,
+    onRemove: () -> Unit,
 ) {
-    val activeColor = Color(0xFF52BF92)
+    val activeColor = Color(0xFF20B486)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 9.dp, horizontal = 2.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .clickable(role = Role.Button, onClick = onClick),
     ) {
-        Box(
-            modifier = Modifier
-                .width(3.dp)
-                .height(32.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(if (item.isCurrent) activeColor else Color.Transparent),
+        Text(
+            text = buildAnnotatedString {
+                append(item.title)
+                withStyle(SpanStyle(color = if (item.isCurrent) activeColor.copy(alpha = 0.60f) else Color.White.copy(alpha = 0.36f), fontSize = 12.sp)) {
+                    append(" - ${item.artist}")
+                }
+            },
+            color = if (item.isCurrent) activeColor else Color.White.copy(alpha = 0.84f),
+            fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 4.dp, end = 8.dp),
         )
-        Column(
-            modifier = Modifier.weight(1f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (item.isCurrent) activeColor.copy(alpha = 0.10f) else Color.Transparent)
-                .padding(start = 12.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
-        ) {
-            Text(
-                text = item.title,
-                color = if (item.isCurrent) activeColor else FrostSoulOnSurface,
-                fontSize = 16.sp,
-                fontWeight = if (item.isCurrent) FontWeight.Medium else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = item.artist,
-                color = FrostSoulOnSurfaceMuted.copy(alpha = 0.82f),
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 3.dp),
-            )
+        if (item.isCurrent) {
+            FSPlaybackBars(Modifier.size(18.dp), color = activeColor, animated = isPlaying, contentDescription = if (isPlaying) "Playing" else "Paused")
         }
-        Icon(
-            painter = painterResource(R.drawable.favorite_border),
-            contentDescription = "Favorite ${item.title}",
-            tint = if (item.isCurrent) activeColor.copy(alpha = 0.88f) else FrostSoulOnSurfaceMuted,
-            modifier = Modifier.size(22.dp).padding(1.dp),
+        FSIconButton(
+            painterResource(if (item.isLiked) R.drawable.favorite else R.drawable.favorite_border),
+            if (item.isLiked) "Unlike ${item.title}" else "Like ${item.title}", onToggleLike,
+            buttonSize = 48.dp, iconSize = 19.dp, showContainer = false, dimBackdrop = false,
+            tintOverride = if (item.isLiked) activeColor else Color.White.copy(alpha = 0.40f),
         )
-        Spacer(Modifier.width(16.dp))
-        Icon(
-            painter = painterResource(R.drawable.close),
-            contentDescription = "Remove ${item.title} from queue",
-            tint = FrostSoulOnSurfaceMuted.copy(alpha = 0.86f),
-            modifier = Modifier.size(20.dp).padding(2.dp),
+        FSIconButton(
+            painterResource(R.drawable.close), "Remove ${item.title} from queue", onRemove,
+            buttonSize = 48.dp, iconSize = 18.dp, showContainer = false, dimBackdrop = false,
+            tintOverride = Color.White.copy(alpha = 0.40f),
         )
     }
 }
@@ -2542,7 +2551,7 @@ private object FluidGlowSpec {
     const val Columns = 24
     const val Rows = 18
     const val FrameIntervalNanos = 33_333_333L
-    const val CycleSeconds = 120f
+    const val CycleSeconds = 48f
 }
 
 private val GlowTwoPi = (2.0 * Math.PI).toFloat()
@@ -2624,13 +2633,13 @@ private class VinylGlowMesh {
                 }
             }
         }
-        // Integer harmonics make the two-minute phase wrap seamless, including breathing.
+        // Integer harmonics keep the faster 48-second phase wrap seamless.
         val flowSin = sin(phase * 5f)
         val flowCos = cos(phase * 5f)
         val mixSin = sin(-phase * 3f)
         val mixCos = cos(-phase * 3f)
-        val breath = sin(phase * 15f)
-        val drift = sin(phase * 6f) * 0.08f
+        val breath = sin(phase * 6f)
+        val drift = sin(phase * 6f) * 0.14f
         val red = primary.red * 255f
         val green = primary.green * 255f
         val blue = primary.blue * 255f
@@ -2644,7 +2653,7 @@ private class VinylGlowMesh {
                 val x = column.toFloat() / FluidGlowSpec.Columns
                 val fold = waveSin[i] * flowCos + waveCos[i] * flowSin
                 val curl = curlSin[i] * mixCos + curlCos[i] * mixSin
-                val mix = glowSmoothStep(0.12f, 0.88f, x + fold * 0.22f + curl * 0.10f + drift)
+                val mix = glowSmoothStep(0.12f, 0.88f, x + fold * 0.30f + curl * 0.14f + drift)
                 val rise = y + fold * 0.075f + breath * 0.045f
                 val envelope = glowSmoothStep(0f, 0.35f, y) * glowSmoothStep(0.12f, 1f, rise)
                 val alpha = (255f * envelope * (0.74f + 0.055f * breath)).toInt().coerceIn(0, 255)
@@ -2723,7 +2732,7 @@ private val GradientBackgroundStyles: Set<PlayerBackgroundStyle> =
         PlayerBackgroundStyle.BLUR_GRADIENT,
     )
 
-private const val GlowTransitionDurationMs = 1_200
+private const val GlowTransitionDurationMs = 850
 
 /** Lift dark pigments just enough to read on black; never invent saturation or a new hue. */
 private fun glowTone(color: Color): Color {

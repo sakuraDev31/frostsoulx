@@ -78,6 +78,7 @@ internal data class FrostSoulQueueItem(
     val albumTitle: String? = null,
     val durationMs: Long = 0L,
     val isCurrent: Boolean,
+    val isLiked: Boolean = false,
 )
 
 @Immutable
@@ -148,6 +149,9 @@ internal data class FrostSoulPlayerActions(
     val onRefetchLyrics: () -> Unit = {},
     val isRefetchingLyrics: Boolean = false,
     val onSelectQueueItem: (Int) -> Unit,
+    val onRemoveQueueItem: (Int) -> Unit = {},
+    val onToggleQueueLike: (Int) -> Unit = {},
+    val onDownloadQueue: () -> Unit = {},
 )
 
 internal enum class FrostSoulPage {
