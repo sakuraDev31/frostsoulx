@@ -764,20 +764,24 @@ private fun FrostSoulHomeHeader(
         in 17..21 -> "Good Evening"
         else -> "Good Night"
     }
-    // Keep the Home brand row at the same 35.dp icon/title scale as the Library shell header.
-    Row(
+    // Brand row + action icons live in their own Row, centered against EACH OTHER only
+    // (not the whole greeting stack) so the icon row lands at the exact same height and
+    // scale as the Library/Settings shell header. Greeting/username sit below as their
+    // own lines, same as before.
+    Column(
         modifier = Modifier
             .statusBarsPadding()
             .fillMaxWidth()
             .padding(horizontal = FrostSoulTheme.spacing.page, vertical = FrostSoulTheme.spacing.large),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.medium),
+        verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro),
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.medium),
         ) {
             Row(
+                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -789,64 +793,64 @@ private fun FrostSoulHomeHeader(
                 )
                 FSText(
                     text = "FROSTSOULX",
-                    color = Color.White.copy(alpha = 0.68f),
+                    color = FrostSoulTheme.colors.onBackground,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                FSIconButton(
+                    onClick = onOpenRecent,
+                    contentDescription = "Recently played",
+                ) {
+                    FSIcon(
+                        painter = painterResource(R.drawable.history),
+                        contentDescription = "Recently played",
+                        tint = FrostSoulTheme.colors.onSurface,
+                    )
+                }
+                FSIconButton(
+                    onClick = onOpenNewReleases,
+                    contentDescription = "New releases",
+                ) {
+                    FSIcon(
+                        painter = painterResource(R.drawable.new_release),
+                        contentDescription = "New releases",
+                        tint = FrostSoulTheme.colors.onSurface,
+                    )
+                }
+                FSIconButton(
+                    onClick = onOpenSettings,
+                    contentDescription = "Settings",
+                ) {
+                    FSIcon(
+                        painter = painterResource(R.drawable.settings),
+                        contentDescription = "Settings",
+                        tint = FrostSoulTheme.colors.onSurface,
+                    )
+                }
+            }
+        }
+        FSText(
+            text = greeting,
+            style = FrostSoulTheme.typography.title,
+            color = FrostSoulTheme.colors.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        userName?.takeIf { it.isNotBlank() }?.let {
             FSText(
-                text = greeting,
-                style = FrostSoulTheme.typography.title,
-                color = FrostSoulTheme.colors.onBackground,
+                text = it,
+                style = FrostSoulTheme.typography.body,
+                color = FrostSoulTheme.colors.onSurfaceMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            userName?.takeIf { it.isNotBlank() }?.let {
-                FSText(
-                    text = it,
-                    style = FrostSoulTheme.typography.body,
-                    color = FrostSoulTheme.colors.onSurfaceMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            FSIconButton(
-                onClick = onOpenRecent,
-                contentDescription = "Recently played",
-            ) {
-                FSIcon(
-                    painter = painterResource(R.drawable.history),
-                    contentDescription = "Recently played",
-                    tint = FrostSoulTheme.colors.onSurface,
-                )
-            }
-            FSIconButton(
-                onClick = onOpenNewReleases,
-                contentDescription = "New releases",
-            ) {
-                FSIcon(
-                    painter = painterResource(R.drawable.new_release),
-                    contentDescription = "New releases",
-                    tint = FrostSoulTheme.colors.onSurface,
-                )
-            }
-            FSIconButton(
-                onClick = onOpenSettings,
-                contentDescription = "Settings",
-            ) {
-                FSIcon(
-                    painter = painterResource(R.drawable.settings),
-                    contentDescription = "Settings",
-                    tint = FrostSoulTheme.colors.onSurface,
-                )
-            }
         }
     }
 }
