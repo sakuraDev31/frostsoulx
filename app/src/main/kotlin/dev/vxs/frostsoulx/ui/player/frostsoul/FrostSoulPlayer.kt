@@ -43,6 +43,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -391,75 +392,81 @@ internal fun FrostSoulPlayer(
             visible = queueVisible,
             enter =
                 fadeIn(animationSpec = tween(160)) +
-                    slideInVertically(
-                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 460f),
-                    ) { height -> height / 2 } +
-                    scaleIn(
-                        initialScale = 0.94f,
-                        animationSpec = spring(dampingRatio = 0.84f, stiffness = 500f),
-                    ),
+                    slideInVertically(animationSpec = tween(200)) { height -> height / 3 },
             exit =
                 fadeOut(animationSpec = tween(120)) +
-                    slideOutVertically(animationSpec = tween(180)) { height -> height / 3 } +
-                    scaleOut(targetScale = 0.96f, animationSpec = tween(180)),
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 18.dp),
+                    slideOutVertically(animationSpec = tween(160)) { height -> height / 3 },
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
         ) {
             FSGlassCard(
                 accent = uiState.palette.accent,
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 500.dp, max = 620.dp)
+                        .fillMaxHeight(0.82f)
                         .graphicsLayer {
-                            shadowElevation = 28.dp.toPx()
-                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                            shadowElevation = 18.dp.toPx()
+                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
                             clip = false
                         },
             ) {
+                var queueDismissDrag by remember { mutableFloatStateOf(0f) }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color(0xFF1D1D1D).copy(alpha = 0.96f))
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 ) {
-                    Box(
+                    Column(
                         modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .width(38.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.White.copy(alpha = 0.24f)),
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            .fillMaxWidth()
+                            .pointerInput(Unit) {
+                                detectTapGestures(onTap = { queueVisible = false })
+                            }
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onVerticalDrag = { _, dragAmount ->
+                                        queueDismissDrag = (queueDismissDrag + dragAmount).coerceAtLeast(0f)
+                                    },
+                                    onDragEnd = {
+                                        if (queueDismissDrag >= 90f) queueVisible = false
+                                        queueDismissDrag = 0f
+                                    },
+                                    onDragCancel = { queueDismissDrag = 0f },
+                                )
+                            },
                     ) {
-                        Text(
-                            text = "Queue",
-                            color = FrostSoulOnSurface,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f),
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .width(38.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.24f)),
                         )
-                        Text(
-                            text = uiState.queueTitle.orEmpty(),
-                            color = FrostSoulOnSurfaceMuted,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        FSIconButton(
-                            painter = painterResource(R.drawable.close),
-                            contentDescription = "Close playback queue",
-                            onClick = { queueVisible = false },
-                            compact = true,
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
-                        horizontalArrangement = Arrangement.spacedBy(22.dp),
-                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        ) {
+                            Text(
+                                text = "Queue",
+                                color = FrostSoulOnSurface,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = uiState.queueTitle.orEmpty(),
+                                color = FrostSoulOnSurfaceMuted,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                            horizontalArrangement = Arrangement.spacedBy(22.dp),
+                        ) {
                         val tabs = listOf(
                             "Playing ${uiState.queue.size}",
                             "Played tracks ${uiState.queue.count { !it.isCurrent }}",
@@ -501,6 +508,7 @@ internal fun FrostSoulPlayer(
                         Icon(painterResource(R.drawable.download), "Download queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
                         Icon(painterResource(R.drawable.playlist_add), "Add to playlist", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(22.dp))
                         Icon(painterResource(R.drawable.delete), "Clear queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
+                        }
                     }
                     FSQueue(
                         title = "",
