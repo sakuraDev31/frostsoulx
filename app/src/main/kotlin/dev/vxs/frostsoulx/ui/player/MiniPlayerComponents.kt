@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
@@ -59,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -75,12 +77,15 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.BlurRadiusKey
 import dev.vxs.frostsoulx.constants.EnableHapticFeedbackKey
+import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
 import dev.vxs.frostsoulx.constants.MiniPlayerHeight
 import dev.vxs.frostsoulx.constants.NavigationBarHorizontalPadding
 import dev.vxs.frostsoulx.extensions.togglePlayPause
 import dev.vxs.frostsoulx.models.MediaMetadata
 import dev.vxs.frostsoulx.playback.PlayerConnection
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulBackdropSurface
 import dev.vxs.frostsoulx.together.isConnectedToSession
 import dev.vxs.frostsoulx.utils.rememberLowDataModeActive
 import dev.vxs.frostsoulx.utils.rememberPreference
@@ -125,6 +130,8 @@ fun SwipeableMiniPlayerBox(
 
     val view = LocalView.current
     val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
+    val (glassBlurRadius) = rememberPreference(BlurRadiusKey, defaultValue = 32f)
 
     val animationSpec =
         spring<Float>(
@@ -144,15 +151,16 @@ fun SwipeableMiniPlayerBox(
             }
         }
 
-    Box(
+        Box(
         modifier =
             modifier
+                .clipToBounds()
                 .fillMaxWidth()
                 .height(MiniPlayerHeight)
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
+        FrostSoulBackdropSurface(
             modifier =
                 Modifier
                     .let { baseModifier ->
@@ -257,6 +265,10 @@ fun SwipeableMiniPlayerBox(
                             baseModifier
                         }
                     },
+            shape = RoundedCornerShape(24.dp),
+            grain = glassGrain,
+            blurRadius = (glassBlurRadius + 10f).coerceIn(0f, 64f),
+            tint = Color.White,
         ) {
             content(offsetXAnimatable.value)
 

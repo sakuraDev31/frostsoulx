@@ -50,6 +50,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -79,8 +82,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.BlurRadiusKey
+import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
+import dev.vxs.frostsoulx.utils.rememberPreference
 import coil3.request.CachePolicy
-import coil3.size.Size
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import kotlin.math.abs
@@ -97,6 +102,8 @@ fun FSButton(
 ) {
     val colors = FrostSoulTheme.colors
     val shape = FrostSoulTheme.shapes.pill
+    val emphasizedSurface = Color.Black.copy(alpha = if (colors.background.luminance() < 0.5f) 0.92f else 1f)
+    val emphasizedInk = if (emphasizedSurface.luminance() < 0.5f) Color.White else Color.Black
     val interactionSource = remember { MutableInteractionSource() }
     Row(
         horizontalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.small, Alignment.CenterHorizontally),
@@ -107,9 +114,7 @@ fun FSButton(
                 .clip(shape)
                 .background(
                     if (emphasized) {
-                        Brush.horizontalGradient(
-                            listOf(colors.accent, colors.accentBright),
-                        )
+                        Brush.horizontalGradient(listOf(emphasizedSurface, emphasizedSurface))
                     } else {
                         Brush.horizontalGradient(
                             listOf(colors.surfaceRaised, colors.surface),
@@ -117,7 +122,7 @@ fun FSButton(
                     },
                     shape,
                 ).border(
-                    BorderStroke(1.dp, if (emphasized) colors.accentBright.copy(alpha = 0.38f) else colors.outline),
+                    BorderStroke(1.dp, if (emphasized) colors.onSurface.copy(alpha = 0.28f) else colors.outline),
                     shape,
                 ).clickable(
                     enabled = enabled,
@@ -130,7 +135,7 @@ fun FSButton(
         FSText(
             text = label,
             style = FrostSoulTheme.typography.label,
-            color = if (emphasized) colors.surface else colors.onSurface,
+            color = if (emphasized) emphasizedInk else colors.onSurface,
             maxLines = 1,
         )
         trailing?.invoke()
@@ -176,11 +181,12 @@ fun FSGlassCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
     Column(
         modifier =
             modifier
                 .clip(shape)
-                .frostSoulGlass(shape)
+                .frostSoulTexturedGlass(grain = glassGrain, shape = shape)
                 .then(
                     if (onClick != null) {
                         Modifier.clickable(
@@ -212,7 +218,6 @@ fun FSAlbumArt(
             .data(artworkUrl)
             .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCachePolicy(CachePolicy.ENABLED)
-            .size(Size(768, 768))
             .crossfade(true)
             .build()
     }
@@ -274,7 +279,7 @@ fun FSListItem(
             contentDescription = null,
             modifier = Modifier.size(54.dp),
         )
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro)) {
             FSText(
                 text = title,
                 color = if (isActive) colors.accentBright else colors.onSurface,
@@ -310,7 +315,7 @@ fun FSAlbumCard(
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.small),
-        modifier = modifier.width(width).clip(FrostSoulTheme.shapes.medium).clickable(
+        modifier = modifier.width(width).clickable(
             indication = null,
             interactionSource = remember { MutableInteractionSource() },
             onClick = onClick,
@@ -320,7 +325,7 @@ fun FSAlbumCard(
             FSAlbumArt(
                 artworkUrl = artworkUrl,
                 contentDescription = title,
-                showGlow = true,
+                showGlow = false,
                 modifier = Modifier.fillMaxWidth().aspectRatio(artworkAspectRatio),
             )
             if (showPlayOverlay) {
@@ -360,17 +365,17 @@ fun FSAlbumCard(
             text = title,
             color = FrostSoulTheme.colors.onSurface,
             style = FrostSoulTheme.typography.label,
-            maxLines = 1,
+            maxLines = 2,
+            minLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        subtitle?.let {
+        subtitle?.takeIf { it.isNotBlank() }?.let {
             FSText(
                 text = it,
                 color = FrostSoulTheme.colors.onSurfaceMuted,
                 style = FrostSoulTheme.typography.bodyMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 2.dp),
             )
         }
     }
@@ -434,7 +439,7 @@ fun FSSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.fillMaxWidth().padding(horizontal = FrostSoulTheme.spacing.page),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro)) {
             eyebrow?.let {
                 FSText(
                     text = it.uppercase(),
@@ -448,7 +453,7 @@ fun FSSectionHeader(
                 text = title,
                 color = FrostSoulTheme.colors.onSurface,
                 style = FrostSoulTheme.typography.sectionTitle,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -461,7 +466,7 @@ fun FSSectionHeader(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() },
                     onClick = onAction,
-                ).padding(horizontal = 8.dp, vertical = 6.dp),
+                ).heightIn(min = 48.dp).padding(horizontal = 8.dp, vertical = 14.dp),
             )
         }
     }
@@ -497,21 +502,38 @@ fun FSChip(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    containerColor: Color = FrostSoulTheme.colors.surfaceGlass,
+    leadingIcon: (@Composable () -> Unit)? = null,
 ) {
     val colors = FrostSoulTheme.colors
     val shape = FrostSoulTheme.shapes.pill
-    FSText(
-        text = label,
-        style = FrostSoulTheme.typography.label,
-        color = if (selected) Color(0xFF001416) else colors.onSurfaceMuted,
-        maxLines = 1,
-        modifier =
-            modifier
-                .clip(shape)
-                .background(if (selected) colors.accentBright else colors.surfaceGlass, shape)
-                .border(BorderStroke(1.dp, if (selected) colors.accentBright else colors.outline), shape)
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 9.dp),
+            val selectedInk = Color(0xFF101318)
+
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            FSText(
+                text = label,
+                style = FrostSoulTheme.typography.label,
+                color = if (selected) selectedInk else colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        leadingIcon = leadingIcon,
+        shape = shape,
+        border = null,
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = Color.Transparent,
+            selectedContainerColor = Color.White,
+            selectedLabelColor = selectedInk,
+            selectedLeadingIconColor = selectedInk,
+            iconColor = colors.onSurfaceMuted,
+        ),
+        modifier = modifier.heightIn(min = 48.dp).then(
+            if (selected) Modifier else Modifier.frostSoulGlass(shape, tint = containerColor),
+        ),
     )
 }
 
@@ -571,33 +593,49 @@ data class FSNavigationItem(
 fun FSNavigationBar(
     items: List<FSNavigationItem>,
     selectedRoute: String?,
+    pureBlack: Boolean = false,
     onItemClick: (FSNavigationItem, Boolean) -> Unit,
     modifier: Modifier = Modifier,
     pairedWithMiniPlayer: Boolean = false,
-    onCenterClick: (() -> Unit)? = null,
+    onMoreClick: (() -> Unit)? = null,
 ) {
+    val colors = FrostSoulTheme.colors
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
+    val (glassBlurRadius) = rememberPreference(BlurRadiusKey, defaultValue = 32f)
     val homeSelected = selectedRoute == "home"
-    val selectedTint = if (homeSelected) Color(0xFFFFE4AD) else FrostSoulTheme.colors.accentBright
-    val shape = if (pairedWithMiniPlayer) {
-        androidx.compose.foundation.shape.RoundedCornerShape(12.dp, 12.dp, 28.dp, 28.dp)
-    } else {
-        FrostSoulTheme.shapes.extraLarge
-    }
-    Row(
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-        modifier =
-            modifier
-                .height(60.dp)
-                .clip(shape)
-                .then(if (homeSelected) Modifier.background(Color(0xFF080A0F), shape) else Modifier.frostSoulGlass(shape))
-                .padding(horizontal = FrostSoulTheme.spacing.small, vertical = 4.dp),
+    val selectedTint = if (pureBlack) Color.White else Color.Black
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
+    val navSurface = if (pureBlack) Color.Black else Color.White
+    val displayItems =
+        if (onMoreClick != null) {
+            items + FSNavigationItem(
+                route = "__frostsoul_more__",
+                label = "More",
+                activeIcon = R.drawable.more_vert,
+                inactiveIcon = R.drawable.more_vert,
+            )
+        } else {
+            items
+        }
+    FrostSoulBackdropSurface(
+        modifier = modifier.height(56.dp).frostSoulBackdropBorder(shape),
+        shape = shape,
+        grain = glassGrain,
+        blurRadius = glassBlurRadius.coerceIn(0f, 64f),
+        tint = if (pureBlack) Color.White else navSurface,
     ) {
-        items.forEachIndexed { index, item ->
-            if (onCenterClick != null && index == 2) {
-                FrostSoulCenterNavigationAction(onClick = onCenterClick)
-            }
-            val selected = selectedRoute == item.route
+        Row(
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxSize().padding(vertical = 3.dp),
+        ) {
+        displayItems.forEachIndexed { index, item ->
+            val isMore = item.route == "__frostsoul_more__"
+            val selected = !isMore && selectedRoute == item.route
+            // The selected surface is inset inside the 56dp outer capsule;
+            // use the same radius so it follows the nav bar instead of forming
+            // a mismatched rectangular overlay at either edge.
+            val itemShape = shape
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -605,7 +643,7 @@ fun FSNavigationBar(
                     Modifier
                         .weight(1f)
                         .fillMaxSize()
-                        .clip(FrostSoulTheme.shapes.medium)
+                        .clip(itemShape)
                         .background(Brush.verticalGradient(listOf(
                             if (selected) selectedTint.copy(alpha = 0.06f) else Color.Transparent,
                             if (selected) selectedTint.copy(alpha = 0.18f) else Color.Transparent,
@@ -613,7 +651,9 @@ fun FSNavigationBar(
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
-                        ) { onItemClick(item, selected) }
+                        ) {
+                            if (isMore) onMoreClick?.invoke() else onItemClick(item, selected)
+                        }
                         .padding(vertical = 4.dp),
             ) {
                 FSIcon(
@@ -630,37 +670,8 @@ fun FSNavigationBar(
                     maxLines = 1,
                 )
             }
+            }
         }
-    }
-}
-
-@Composable
-private fun FrostSoulCenterNavigationAction(onClick: () -> Unit) {
-    val transition = rememberInfiniteTransition(label = "frostsoul-center-navigation-glow")
-    val glowAlpha by transition.animateFloat(
-        initialValue = 0.16f,
-        targetValue = 0.34f,
-        animationSpec = infiniteRepeatable(tween(1_800, easing = LinearEasing), RepeatMode.Reverse),
-        label = "frostsoul-center-navigation-glow-alpha",
-    )
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .width(58.dp)
-            .fillMaxSize()
-            .padding(horizontal = 4.dp)
-            .clip(CircleShape)
-            .background(FrostSoulTheme.colors.accent.copy(alpha = glowAlpha), CircleShape)
-            .border(BorderStroke(1.dp, FrostSoulTheme.colors.accent.copy(alpha = 0.62f)), CircleShape)
-            .frostSoulGlow(FrostSoulTheme.colors.accentBright, alpha = glowAlpha)
-            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onClick),
-    ) {
-        FSIcon(
-            painter = painterResource(R.drawable.about_appbar),
-            contentDescription = "Open FrostSoul player",
-            tint = FrostSoulTheme.colors.accentBright,
-            modifier = Modifier.size(34.dp),
-        )
     }
 }
 

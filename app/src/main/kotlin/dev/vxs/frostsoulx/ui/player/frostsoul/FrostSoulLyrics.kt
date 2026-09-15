@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
@@ -29,8 +30,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.TextButton
 import dev.vxs.frostsoulx.ui.frostsoul.FSIcon as Icon
@@ -45,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -297,6 +302,7 @@ internal fun FSLyrics(
             languageMenuExpanded = languageMenuExpanded,
             onLanguageMenuExpandedChange = { languageMenuExpanded = it },
             languages = translatorLanguages,
+            selectedLanguageCode = selectedLanguageCode,
             currentOffsetMs = document?.offsetMs ?: 0L,
             onOpenOffset = {
                 draftOffsetMs = document?.offsetMs ?: 0L
@@ -381,6 +387,7 @@ private fun BoxScope.FrostSoulLyricsBottomControls(
     languageMenuExpanded: Boolean,
     onLanguageMenuExpandedChange: (Boolean) -> Unit,
     languages: List<TranslatorLang>,
+    selectedLanguageCode: String,
     currentOffsetMs: Long,
     onOpenOffset: () -> Unit,
 ) {
@@ -426,16 +433,75 @@ private fun BoxScope.FrostSoulLyricsBottomControls(
                 enabled = !isRefetchingLyrics,
                 active = showTranslation || isTranslating,
             )
-            androidx.compose.material3.DropdownMenu(
-                expanded = languageMenuExpanded,
-                onDismissRequest = { onLanguageMenuExpandedChange(false) },
-            ) {
-                languages.forEach { language ->
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = { Text(language.name, color = Color.White, fontSize = 14.sp) },
-                        onClick = { onChooseTranslationLanguage(language.code) },
-                    )
-                }
+            if (languageMenuExpanded) {
+                AlertDialog(
+                    onDismissRequest = { onLanguageMenuExpandedChange(false) },
+                    containerColor = FrostSoulTheme.colors.surfaceRaised,
+                    tonalElevation = AlertDialogDefaults.TonalElevation,
+                    shape = RoundedCornerShape(28.dp),
+                    title = {
+                        Column {
+                            Text(
+                                text = "Translate lyrics",
+                                color = FrostSoulTheme.colors.onSurface,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = "Choose a language for this song",
+                                color = FrostSoulOnSurfaceMuted,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(320.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            languages.forEach { language ->
+                                val selected = language.code == selectedLanguageCode
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(
+                                            if (selected) FrostSoulTheme.colors.accentBright.copy(alpha = 0.16f)
+                                            else FrostSoulTheme.colors.surface.copy(alpha = 0.42f),
+                                        )
+                                        .clickable { onChooseTranslationLanguage(language.code) }
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                ) {
+                                    Text(
+                                        text = language.name,
+                                        color = if (selected) FrostSoulTheme.colors.accentBright else FrostSoulTheme.colors.onSurface,
+                                        fontSize = 15.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    if (selected) {
+                                        Text(
+                                            text = "Selected",
+                                            color = FrostSoulTheme.colors.accentBright,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { onLanguageMenuExpandedChange(false) }) {
+                            Text("Cancel", color = FrostSoulTheme.colors.accentBright)
+                        }
+                    },
+                )
             }
         }
         LyricsActionButton(

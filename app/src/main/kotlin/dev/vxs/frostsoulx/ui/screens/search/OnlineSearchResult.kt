@@ -209,6 +209,14 @@ fun OnlineSearchResult(
                     else -> false
                 },
             isPlaying = isPlaying,
+            badges = {
+                Text(
+                    text = "ONLINE",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            },
             trailingContent = {
                 IconButton(
                     onClick = longClick,

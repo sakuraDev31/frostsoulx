@@ -214,6 +214,12 @@ fun LocalSearchScreen(
                                 isActive = item.id == mediaMetadata?.id,
                                 isPlaying = isPlaying,
                                 trailingContent = {
+                                    Text(
+                                        text = "LOCAL",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
                                     IconButton(
                                         onClick = {
                                             menuState.show {
@@ -278,6 +284,14 @@ fun LocalSearchScreen(
                                 album = item,
                                 isActive = item.id == mediaMetadata?.album?.id,
                                 isPlaying = isPlaying,
+                                trailingContent = {
+                                    Text(
+                                        text = "LOCAL",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                },
                                 modifier =
                                     Modifier
                                         .clickable {
@@ -290,6 +304,14 @@ fun LocalSearchScreen(
                         is Artist -> {
                             ArtistListItem(
                                 artist = item,
+                                trailingContent = {
+                                    Text(
+                                        text = "LOCAL",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                },
                                 modifier =
                                     Modifier
                                         .clickable {
@@ -302,6 +324,14 @@ fun LocalSearchScreen(
                         is Playlist -> {
                             PlaylistListItem(
                                 playlist = item,
+                                trailingContent = {
+                                    Text(
+                                        text = "LOCAL",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                },
                                 modifier =
                                     Modifier
                                         .clickable {

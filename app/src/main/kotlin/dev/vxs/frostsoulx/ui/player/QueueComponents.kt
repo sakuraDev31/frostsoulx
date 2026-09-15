@@ -52,6 +52,15 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.input.pointer.pointerInput
+import dev.vxs.frostsoulx.db.entities.EventWithSong
+import dev.vxs.frostsoulx.db.entities.Playlist
+import dev.vxs.frostsoulx.ui.component.PlaylistListItem
+import dev.vxs.frostsoulx.ui.component.SongListItem
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -1595,6 +1604,161 @@ fun QueueCollapsedContentV9(
                     }
                 }
             }
+        }
+    }
+}
+
+
+@Composable
+fun QueueHandleBar(onTap: () -> Unit) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onTap() })
+                }.padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(width = 32.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(LocalContentColor.current.copy(alpha = 0.3f)),
+        )
+    }
+}
+
+@Composable
+fun QueueTabRow(
+    selectedTab: Int,
+    playingCount: Int,
+    playedTracksCount: Int,
+    playedPlaylistsCount: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tabs =
+        listOf(
+            stringResource(R.string.queue_tab_playing, playingCount),
+            stringResource(R.string.queue_tab_played_tracks, playedTracksCount),
+            stringResource(R.string.queue_tab_played_playlists, playedPlaylistsCount),
+        )
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        tabs.forEachIndexed { index, label ->
+            val selected = index == selectedTab
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onTabSelected(index) }
+                        .padding(vertical = 6.dp, horizontal = 4.dp),
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    color =
+                        if (selected) {
+                            LocalContentColor.current
+                        } else {
+                            LocalContentColor.current.copy(alpha = 0.6f)
+                        },
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier =
+                        Modifier
+                            .height(2.dp)
+                            .width(if (selected) 20.dp else 0.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(if (selected) LocalContentColor.current else Color.Transparent),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PlayedTracksTabContent(
+    events: List<EventWithSong>,
+    isPlaying: Boolean,
+    activeMediaId: String?,
+    onSongClick: (Int) -> Unit,
+    onSongMenu: (EventWithSong) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (events.isEmpty()) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = stringResource(R.string.history_local_empty_title),
+                style = MaterialTheme.typography.bodyMedium,
+                color = LocalContentColor.current.copy(alpha = 0.6f),
+            )
+        }
+        return
+    }
+    LazyColumn(modifier = modifier.fillMaxSize()) {
+        itemsIndexed(
+            items = events,
+            key = { _, event -> event.event.id },
+            contentType = { _, _ -> "played_track" },
+        ) { index, event ->
+            SongListItem(
+                song = event.song,
+                isActive = event.song.id == activeMediaId,
+                isPlaying = isPlaying && event.song.id == activeMediaId,
+                trailingContent = {
+                    IconButton(onClick = { onSongMenu(event) }) {
+                        Icon(painter = painterResource(R.drawable.more_vert), contentDescription = null)
+                    }
+                },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onSongClick(index) },
+            )
+        }
+    }
+}
+
+@Composable
+fun PlayedPlaylistsTabContent(
+    playlists: List<Playlist>,
+    onPlaylistClick: (Playlist) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (playlists.isEmpty()) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = stringResource(R.string.history_local_empty_title),
+                style = MaterialTheme.typography.bodyMedium,
+                color = LocalContentColor.current.copy(alpha = 0.6f),
+            )
+        }
+        return
+    }
+    LazyColumn(modifier = modifier.fillMaxSize()) {
+        items(
+            items = playlists,
+            key = { it.id },
+            contentType = { "played_playlist" },
+        ) { playlist ->
+            PlaylistListItem(
+                playlist = playlist,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onPlaylistClick(playlist) },
+            )
         }
     }
 }

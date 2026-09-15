@@ -51,7 +51,7 @@ import java.io.File
 
 internal class MusicServiceWidgetUpdater(
     private val service: MusicService,
-    private val player: Player,
+    private val playerProvider: () -> Player,
     private val scope: CoroutineScope,
     private val loadWidgetInsights: LoadWidgetInsightsUseCase,
 ) {
@@ -69,6 +69,7 @@ internal class MusicServiceWidgetUpdater(
 
     fun updateProgressTracking() {
         progressJob?.cancel()
+        val player = playerProvider()
         if (player.isPlaying && player.duration > 0) {
             progressJob =
                 scope.launch(SilentHandler) {
@@ -89,6 +90,7 @@ internal class MusicServiceWidgetUpdater(
         val installedTargets = findInstalledTargets(playbackWidgets)
         if (installedTargets.isEmpty()) return
 
+        val player = playerProvider()
         val mediaItem = player.currentMediaItem
         val meta = mediaItem?.mediaMetadata
         val artFile = meta?.artworkUri?.let { cacheAlbumArt(it) }
