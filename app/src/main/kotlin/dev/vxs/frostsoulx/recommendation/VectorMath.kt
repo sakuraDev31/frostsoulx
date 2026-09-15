@@ -140,6 +140,20 @@ object RecommendationScoreMath {
     ): Float =
         ((positives + 1f) / (positives + negatives + 2f)).coerceIn(0f, 1f)
 
+    /**
+     * Same Laplace-smoothed estimate as [boundedProbability], but over continuous weights instead
+     * of integer counts — lets callers feed in graded signals (e.g. a skip weighted by how much of
+     * the track had already played) instead of collapsing everything to a positive/negative count.
+     */
+    fun boundedProbabilityWeighted(
+        positiveWeight: Float,
+        negativeWeight: Float,
+    ): Float {
+        val safePositive = positiveWeight.takeIf(Float::isFinite)?.coerceAtLeast(0f) ?: 0f
+        val safeNegative = negativeWeight.takeIf(Float::isFinite)?.coerceAtLeast(0f) ?: 0f
+        return ((safePositive + 1f) / (safePositive + safeNegative + 2f)).coerceIn(0f, 1f)
+    }
+
     fun freshnessScore(
         ageDays: Float,
         horizonDays: Float = 45f,

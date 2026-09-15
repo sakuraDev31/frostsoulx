@@ -190,6 +190,7 @@ fun DebugSettings(navController: NavController) {
                         onClick = { navController.navigate("settings/logcat") },
                     )
                 }
+
             }
 
             AnimatedVisibility(

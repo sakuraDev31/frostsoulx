@@ -42,6 +42,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
@@ -81,7 +82,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
@@ -91,22 +91,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.contentColorFor
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -198,7 +195,6 @@ import dev.vxs.frostsoulx.constants.HasPressedStarKey
 import dev.vxs.frostsoulx.constants.LaunchCountKey
 import dev.vxs.frostsoulx.constants.MiniPlayerBottomSpacing
 import dev.vxs.frostsoulx.constants.MiniPlayerHeight
-import dev.vxs.frostsoulx.constants.MiniPlayerPeekHeight
 import dev.vxs.frostsoulx.constants.MiniPlayerLastAnchorKey
 import dev.vxs.frostsoulx.constants.NavigationBarAnimationSpec
 import dev.vxs.frostsoulx.constants.NavigationBarBottomPadding
@@ -280,6 +276,7 @@ import dev.vxs.frostsoulx.ui.theme.ArchiveTuneTheme
 import dev.vxs.frostsoulx.ui.theme.TARGET_REFRESH_RATE_FPS
 import dev.vxs.frostsoulx.ui.theme.rememberSupportedHighestFps
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
+import dev.vxs.frostsoulx.ui.frostsoul.LocalFrostSoulHazeState
 import dev.vxs.frostsoulx.ui.frostsoul.SearchTheme
 import dev.vxs.frostsoulx.ui.utils.appBarScrollBehavior
 import dev.vxs.frostsoulx.ui.utils.backToMain
@@ -298,7 +295,6 @@ import dev.vxs.frostsoulx.viewmodels.BackupCategory
 import dev.vxs.frostsoulx.viewmodels.BackupRestoreViewModel
 import dev.vxs.frostsoulx.viewmodels.HomeViewModel
 import dev.vxs.frostsoulx.viewmodels.NetworkBannerViewModel
-import dev.vxs.frostsoulx.viewmodels.NewsViewModel
 import dev.vxs.frostsoulx.viewmodels.OnlineSearchSort
 import java.util.Locale
 import javax.inject.Inject
@@ -552,9 +548,9 @@ class MainActivity : ComponentActivity() {
                 }
         }
 
-        setContent {
-
-
+                setContent {
+            val frostSoulHazeState = rememberHazeState()
+            CompositionLocalProvider(LocalFrostSoulHazeState provides frostSoulHazeState) {
             val updateChannel by rememberEnumPreference(UpdateChannelKey, defaultValue = defaultUpdateChannel)
 
             LaunchedEffect(Unit) {
@@ -675,11 +671,9 @@ class MainActivity : ComponentActivity() {
                     val coroutineScope = rememberCoroutineScope()
                     val homeViewModel: HomeViewModel = hiltViewModel()
                     val networkBannerViewModel: NetworkBannerViewModel = hiltViewModel()
-                    val newsViewModel: NewsViewModel = hiltViewModel()
                     val allLocalItems by homeViewModel.allLocalItems.collectAsState()
                     val allYtItems by homeViewModel.allYtItems.collectAsState()
                     val networkBannerState by networkBannerViewModel.bannerState.collectAsStateWithLifecycle()
-                    val hasUnreadNews by newsViewModel.hasUnreadNews.collectAsStateWithLifecycle()
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val (previousTab) = rememberSaveable { mutableStateOf("home") }
                     val currentRoute = navBackStackEntry?.destination?.route
@@ -786,7 +780,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                     val shouldShowHomeShuffleButton =
-                        currentRoute == Screens.Home.route &&
+                        currentRoute in setOf(Screens.Home.route, Screens.Library.route) &&
                             (allLocalItems.isNotEmpty() || allYtItems.isNotEmpty())
 
                     fun getBottomNavPadding(): Dp =
@@ -805,8 +799,9 @@ class MainActivity : ComponentActivity() {
                         label = "",
                     )
 
-                    var miniPlayerPeeked by remember { mutableStateOf(false) }
-                    val miniPlayerOccupiedHeight = if (miniPlayerPeeked) MiniPlayerPeekHeight else MiniPlayerHeight
+                    // Keep the mini-player and bottom navigation on one stable compact contract.
+                    // Opening the full player must not expand the bar beneath the center action.
+                    val miniPlayerOccupiedHeight = MiniPlayerHeight
                     val playerBottomSheetState =
                         rememberBottomSheetState(
                             dismissedBound = 0.dp,
@@ -821,7 +816,9 @@ class MainActivity : ComponentActivity() {
                     var homeOverflowMenuExpanded by rememberSaveable { mutableStateOf(false) }
                     val showHomeOverflowFab =
                         shouldShowHomeShuffleButton &&
+                            (currentRoute == Screens.Home.route || currentRoute == Screens.Library.route) &&
                             !useRail &&
+                            !playerBottomSheetState.isExpandedOrExpanding &&
                             (playerBottomSheetState.isDismissed || playerBottomSheetState.isCollapsed)
 
                     LaunchedEffect(showHomeOverflowFab) {
@@ -1565,9 +1562,10 @@ class MainActivity : ComponentActivity() {
                                                 title = {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         // app icon
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.about_appbar),
+                                                        Image(
+                                                            painter = painterResource(R.mipmap.ic_launcher_foreground),
                                                             contentDescription = null,
+                                                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                                                             modifier =
                                                                 Modifier
                                                                     .size(35.dp)
@@ -1589,43 +1587,6 @@ class MainActivity : ComponentActivity() {
                                                             painter = painterResource(R.drawable.history),
                                                             contentDescription = stringResource(R.string.history),
                                                         )
-                                                    }
-                                                    TooltipBox(
-                                                        positionProvider =
-                                                            if (hasUnreadNews) {
-                                                                TooltipDefaults.rememberRichTooltipPositionProvider()
-                                                            } else {
-                                                                TooltipDefaults.rememberPlainTooltipPositionProvider()
-                                                            },
-                                                        tooltip = {
-                                                            if (hasUnreadNews) {
-                                                                RichTooltip(
-                                                                    title = { Text(stringResource(R.string.news_tooltip_title)) },
-                                                                ) {
-                                                                    Text(stringResource(R.string.news_tooltip_body))
-                                                                }
-                                                            } else {
-                                                                PlainTooltip {
-                                                                    Text(stringResource(R.string.news))
-                                                                }
-                                                            }
-                                                        },
-                                                        state = rememberTooltipState(),
-                                                    ) {
-                                                        TranslucentTopAppBarIconButton(
-                                                            onClick = { navController.navigate("news") },
-                                                        ) {
-                                                            BadgedBox(badge = {
-                                                                if (hasUnreadNews) {
-                                                                    Badge()
-                                                                }
-                                                            }) {
-                                                                Icon(
-                                                                    painter = painterResource(R.drawable.newspaper),
-                                                                    contentDescription = stringResource(R.string.news),
-                                                                )
-                                                            }
-                                                        }
                                                     }
                                                     TranslucentTopAppBarIconButton(
                                                         onClick = { navController.navigate("new_release") },
@@ -1890,10 +1851,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 bottomBar = {
                                     Box {
-                                        val areBottomBarsPaired =
-                                            shouldShowNavigationBar &&
-                                                !useRail &&
-                                                playerBottomSheetState.isCollapsed
+                                        // Keep the floating navigation geometry fixed. The mini-player
+                                        // must not reflow or expand the pill when it opens.
+                                        val areBottomBarsPaired = false
 
                                         if (useRail) return@Box
 
@@ -1957,6 +1917,9 @@ class MainActivity : ComponentActivity() {
                                                     searchSource = SearchSource.ONLINE
                                                     openSearch()
                                                 },
+                                                onMoreClick = {
+                                                    if (showHomeOverflowFab) homeOverflowMenuExpanded = !homeOverflowMenuExpanded
+                                                },
                                             )
                                         }
 
@@ -1967,27 +1930,22 @@ class MainActivity : ComponentActivity() {
             navController = navController,
             pureBlack = pureBlack,
             isMiniPlayerPairedWithNavigation = areBottomBarsPaired,
-            onMiniPlayerPeekChanged = { miniPlayerPeeked = it },
+            // Smart-peek is intentionally disabled: the compact height is always reserved.
+            onMiniPlayerPeekChanged = {},
             modifier = Modifier.zIndex(1f),
         )
 
                                         val homeOverflowFabBottomPadding =
-                                            bottomInset +
-                                                floatingBarsBottomPadding +
-                                                navVisibleHeight +
-                                                HomeOverflowFabSpacing +
-                                                if (playerBottomSheetState.isCollapsed) {
-                                                    miniPlayerOccupiedHeight + MiniPlayerBottomSpacing
-                                                } else {
-                                                    0.dp
-                                                }
+                                            bottomInset + floatingBarsBottomPadding +
+                                                (navVisibleHeight / 2f).coerceAtLeast(0.dp)
                                         HomeOverflowFabVisibility(
                                             visible = showHomeOverflowFab,
                                             modifier =
                                                 Modifier
                                                     .align(Alignment.BottomEnd)
+                                                    .zIndex(12f)
                                                     .padding(
-                                                        end = NavigationBarHorizontalPadding,
+                                                        end = NavigationBarHorizontalPadding + 4.dp,
                                                         bottom = homeOverflowFabBottomPadding,
                                                     ),
                                         ) {
@@ -2184,7 +2142,7 @@ class MainActivity : ComponentActivity() {
                                                 } else {
                                                     Modifier
                                                 },
-                                            ).nestedScroll(
+                                            ).hazeSource(frostSoulHazeState).nestedScroll(
                                                 // Step 2b: the NavHost-level connection now serves
                                                 // ONLY shell-driven sub-screens (Album/Artist/
                                                 // Playlist/...). Home and Search attach their own
@@ -2294,9 +2252,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
+                }
+            }
     }
-
     private fun isBackupUri(uri: Uri?): Boolean {
         if (uri == null) return false
         val path = uri.lastPathSegment?.lowercase(Locale.US)
@@ -2727,8 +2685,6 @@ val LocalPlayerAwareWindowInsets =
 val LocalDownloadUtil = staticCompositionLocalOf<DownloadUtil> { error("No DownloadUtil provided") }
 val LocalSyncUtils = staticCompositionLocalOf<SyncUtils> { error("No SyncUtils provided") }
 
-private val HomeOverflowFabSize = 56.dp
-private val HomeOverflowFabSpacing = 12.dp
 private val HomeOverflowMenuIconSize = 40.dp
 
 @Composable
@@ -2781,18 +2737,6 @@ private fun HomeOverflowFab(
         )
 
     Box {
-        FloatingActionButton(
-            onClick = { onExpandedChange(!expanded) },
-            modifier = Modifier.size(HomeOverflowFabSize),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.more_horiz),
-                contentDescription = stringResource(R.string.more),
-            )
-        }
-
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },

@@ -16,16 +16,26 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlinx.coroutines.delay
 import dev.vxs.frostsoulx.BuildConfig
 import dev.vxs.frostsoulx.constants.AiProvider
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-class AiServiceException(
+open class AiServiceException(
     message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+/**
+ * Thrown when the upstream AI provider responds with HTTP 429 (rate limited).
+ * [retryAfterMs] is populated from the Retry-After header when the provider sends one.
+ */
+class AiRateLimitException(
+    message: String,
+    val retryAfterMs: Long? = null,
+) : AiServiceException(message)
 
 object AiTextService {
     private const val OpenAiEndpoint = "https://api.openai.com/v1/chat/completions"
@@ -43,6 +53,30 @@ object AiTextService {
                 }
             }
         }
+
+    private const val MaxRateLimitRetries = 3
+    private const val BaseBackoffMs = 1_000L
+    private const val MaxBackoffMs = 15_000L
+
+    /**
+     * Retries [block] with exponential backoff whenever it throws [AiRateLimitException]
+     * (HTTP 429). Honors the provider's Retry-After header when present, otherwise backs
+     * off 1s, 2s, 4s. This is what was previously surfacing as an unhandled
+     * "HTTP request: 429 Too Many Requests" failure in lyric translation.
+     */
+    private suspend fun <T> withRateLimitRetry(block: suspend () -> T): T {
+        var attempt = 0
+        while (true) {
+            try {
+                return block()
+            } catch (e: AiRateLimitException) {
+                if (attempt >= MaxRateLimitRetries) throw e
+                val backoff = e.retryAfterMs ?: (BaseBackoffMs shl attempt)
+                delay(backoff.coerceIn(BaseBackoffMs, MaxBackoffMs))
+                attempt++
+            }
+        }
+    }
 
     suspend fun test(config: AiServiceConfig) {
         val response =
@@ -169,23 +203,27 @@ object AiTextService {
                 .put("temperature", temperature)
                 .put("max_tokens", maxTokens)
                 .toString()
-        val response =
-            client.post(endpoint.trim()) {
-                header("Authorization", "Bearer ${apiKey.trim()}")
-                contentType(ContentType.Application.Json)
-                setBody(body)
+        return withRateLimitRetry {
+            val response =
+                client.post(endpoint.trim()) {
+                    header("Authorization", "Bearer ${apiKey.trim()}")
+                    contentType(ContentType.Application.Json)
+                    setBody(body)
+                }
+            val raw = response.bodyAsText()
+            if (response.status.value !in 200..299) {
+                throw apiException(response.status.value, raw, response.headers["Retry-After"])
             }
-        val raw = response.bodyAsText()
-        if (response.status.value !in 200..299) throw apiException(response.status.value, raw)
-        val json = JSONObject(raw)
-        val content =
-            json
-                .optJSONArray("choices")
-                ?.optJSONObject(0)
-                ?.optJSONObject("message")
-                ?.optString("content")
-                ?.takeIf { it.isNotBlank() }
-        return content ?: throw AiServiceException("AI API returned an empty response")
+            val json = JSONObject(raw)
+            val content =
+                json
+                    .optJSONArray("choices")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("message")
+                    ?.optString("content")
+                    ?.takeIf { it.isNotBlank() }
+            content ?: throw AiServiceException("AI API returned an empty response")
+        }
     }
 
     private suspend fun completeGemini(
@@ -215,23 +253,27 @@ object AiTextService {
                         .put("temperature", temperature)
                         .put("maxOutputTokens", maxTokens),
                 ).toString()
-        val response =
-            client.post(endpoint) {
-                contentType(ContentType.Application.Json)
-                setBody(body)
+        return withRateLimitRetry {
+            val response =
+                client.post(endpoint) {
+                    contentType(ContentType.Application.Json)
+                    setBody(body)
+                }
+            val raw = response.bodyAsText()
+            if (response.status.value !in 200..299) {
+                throw apiException(response.status.value, raw, response.headers["Retry-After"])
             }
-        val raw = response.bodyAsText()
-        if (response.status.value !in 200..299) throw apiException(response.status.value, raw)
-        val content =
-            JSONObject(raw)
-                .optJSONArray("candidates")
-                ?.optJSONObject(0)
-                ?.optJSONObject("content")
-                ?.optJSONArray("parts")
-                ?.optJSONObject(0)
-                ?.optString("text")
-                ?.takeIf { it.isNotBlank() }
-        return content ?: throw AiServiceException("AI API returned an empty response")
+            val content =
+                JSONObject(raw)
+                    .optJSONArray("candidates")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("content")
+                    ?.optJSONArray("parts")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                    ?.takeIf { it.isNotBlank() }
+            content ?: throw AiServiceException("AI API returned an empty response")
+        }
     }
 
     private fun defaultModelFor(provider: AiProvider): String =
@@ -284,10 +326,18 @@ object AiTextService {
     private fun apiException(
         status: Int,
         raw: String,
+        retryAfterHeader: String? = null,
     ): AiServiceException {
         val message =
             runCatching { JSONObject(raw).readErrorMessage() }.getOrNull()
                 ?: raw.take(240).ifBlank { "HTTP $status" }
+        if (status == 429) {
+            val retryAfterMs = retryAfterHeader?.trim()?.toDoubleOrNull()?.let { (it * 1_000).toLong() }
+            return AiRateLimitException(
+                "The AI provider is rate limiting translation requests. Retrying automatically\u2026 ($message)",
+                retryAfterMs,
+            )
+        }
         return AiServiceException("AI API failed ($status): $message")
     }
 }
