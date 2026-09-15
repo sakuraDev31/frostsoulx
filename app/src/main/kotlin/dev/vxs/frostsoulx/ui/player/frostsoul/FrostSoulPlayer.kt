@@ -266,14 +266,17 @@ internal fun FrostSoulPlayer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(
-                        Modifier.height(if (isImmersiveArtworkMainPage) 48.dp else 42.dp),
+                        // Bumped up from 48/42.dp so the collapse chevron below gets a full
+                        // 48.dp touch target instead of being squeezed down by the row's own
+                        // height + padding.
+                        Modifier.height(if (isImmersiveArtworkMainPage) 56.dp else 52.dp),
                     )
                     .zIndex(12f)
                     .padding(
                         start = PlayerLayoutTokens.MasterHorizontalPadding,
                         end = PlayerLayoutTokens.MasterHorizontalPadding,
-                        top = 6.dp,
-                        bottom = 6.dp,
+                        top = 4.dp,
+                        bottom = 4.dp,
                     ),
             ) {
                 Icon(
@@ -284,7 +287,7 @@ internal fun FrostSoulPlayer(
                         .align(Alignment.CenterStart)
                         .size(48.dp)
                         .clickable(onClick = actions.onDismiss)
-                        .padding(10.dp),
+                        .padding(6.dp),
                 )
                 if (showPagerDots) {
                     FrostSoulPagerDots(
@@ -305,7 +308,9 @@ internal fun FrostSoulPlayer(
                 beyondViewportPageCount = 1,
                 userScrollEnabled = !isSeekbarDragging,
                 modifier = Modifier.fillMaxSize()
-                    .padding(top = if (isImmersiveArtworkMainPage) 0.dp else 42.dp),
+                    // Kept in sync with the header Box height above (52.dp) so vinyl/other
+                    // non-immersive pages still start right below the taller header.
+                    .padding(top = if (isImmersiveArtworkMainPage) 0.dp else 52.dp),
             ) { pageIndex ->
                 val pageDistance = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
                 Box(
