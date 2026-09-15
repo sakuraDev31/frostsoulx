@@ -1289,6 +1289,23 @@ interface DatabaseDao {
 
     @Transaction
     @Query(
+        """
+        SELECT playlist.*, (SELECT COUNT(*) FROM playlist_song_map WHERE playlistId = playlist.id) AS songCount
+        FROM playlist
+        JOIN (
+            SELECT playlist_song_map.playlistId AS playlistId, MAX(event.rowId) AS latestRowId
+            FROM event
+            JOIN playlist_song_map ON playlist_song_map.songId = event.songId
+            GROUP BY playlist_song_map.playlistId
+        ) recent ON playlist.id = recent.playlistId
+        ORDER BY recent.latestRowId DESC
+        LIMIT :limit
+        """,
+    )
+    fun recentlyPlayedPlaylists(limit: Int = 20): Flow<List<Playlist>>
+
+    @Transaction
+    @Query(
         "SELECT *, (SELECT COUNT(*) FROM playlist_song_map WHERE playlistId = playlist.id) AS songCount FROM playlist WHERE browseId = :browseId",
     )
     fun playlistByBrowseId(browseId: String): Flow<Playlist?>

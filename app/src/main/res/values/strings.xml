@@ -542,6 +542,9 @@
     <string name="low_data_mode_title">Low Data Mode</string>
     <string name="low_data_mode_description">Reduces mobile data usage by using low-quality streams and disabling playback cache, canvas, and background lyrics preloading on metered networks</string>
     <string name="queue">Queue</string>
+    <string name="queue_tab_playing">Playing %1$d</string>
+    <string name="queue_tab_played_tracks">Played tracks %1$d</string>
+    <string name="queue_tab_played_playlists">Played playlists %1$d</string>
     <string name="persistent_queue">Persistent queue</string>
     <string name="persistent_queue_desc">Restore your last queue when the app starts</string>
     <string name="permanent_shuffle">Permanent shuffle mode</string>
