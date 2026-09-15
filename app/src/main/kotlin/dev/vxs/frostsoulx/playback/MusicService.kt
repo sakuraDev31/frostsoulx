@@ -372,6 +372,7 @@ class MusicService :
     private val binder = MusicBinder()
     private var hasBoundClients = false
     private var idleStopJob: Job? = null
+    private var nextStreamPreloadJob: Job? = null
 
     private lateinit var connectivityManager: ConnectivityManager
     lateinit var connectivityObserver: NetworkConnectivityObserver
@@ -6681,6 +6682,34 @@ class MusicService :
         widgetUpdater.updateProgressTracking()
     }
 
+    private fun preloadNextRemoteStream() {
+        val nextIndex = player.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET) return
+        val nextItem = runCatching { player.getMediaItemAt(nextIndex) }.getOrNull() ?: return
+        val mediaId = nextItem.mediaId.trim()
+        if (mediaId.isBlank() || mediaId.isLocalMediaId() || nextItem.localConfiguration != null) return
+
+        val contentLength = downloadCache.getContentMetadata(mediaId).get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
+        if (contentLength > 0L && downloadCache.isCached(mediaId, 0L, contentLength)) return
+
+        nextStreamPreloadJob?.cancel()
+        nextStreamPreloadJob = scope.launch(Dispatchers.IO) {
+            runCatching {
+                YTPlayerUtils.playerResponseForPlayback(
+                    videoId = mediaId,
+                    audioQuality = if (connectivityManager.isActiveNetworkMetered) AudioQuality.LOW else audioQuality,
+                    connectivityManager = connectivityManager,
+                    preferredStreamClient = preferredStreamClient,
+                    networkMetered = connectivityManager.isActiveNetworkMetered,
+                )
+            }.onFailure { error ->
+                if (error !is CancellationException) {
+                    Timber.tag("MusicService").v(error, "Next-track stream preload skipped for %s", mediaId)
+                }
+            }
+        }
+    }
+
     override fun onEvents(
         player: Player,
         events: Player.Events,
@@ -6693,6 +6722,7 @@ class MusicService :
         }
         if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
             playbackStreamRecoveryTracker.onMediaItemChanged(currentMediaId)
+            preloadNextRemoteStream()
         }
         if (
             (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_READY) ||
