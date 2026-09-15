@@ -280,7 +280,7 @@ internal fun FrostSoulPlayer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(
-                        // Full 56dp touch target plus vertical padding in both player styles.
+                        // Compact 26dp chevron inside the existing generous 56dp touch target.
                         Modifier.height(64.dp),
                     )
                     .zIndex(12f)
@@ -299,7 +299,7 @@ internal fun FrostSoulPlayer(
                         .align(Alignment.CenterStart)
                         .size(56.dp)
                         .clickable(role = Role.Button, onClick = actions.onDismiss)
-                        .padding(5.dp),
+                        .padding(15.dp),
                 )
                 if (showPagerDots) {
                     FrostSoulPagerDots(
@@ -556,7 +556,8 @@ internal fun FSMiniPlayer(
     val isLightTheme = FrostSoulTheme.colors.background.luminance() > 0.5f
     val backgroundColor = FrostSoulTheme.colors.surface
     val primaryTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurface else FrostSoulOnSurface
-    val mutedTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurfaceMuted else FrostSoulOnSurfaceMuted
+    val mutedTextColor = FrostSoulTheme.colors.onSurfaceMuted
+    val progressColor = FrostSoulTheme.colors.accent
 
     Box(
         modifier =
@@ -569,8 +570,13 @@ internal fun FSMiniPlayer(
                     clip = false
                 }
                 .clip(shape)
-                .background(backgroundColor.copy(alpha = 0.88f))
-                .border(1.dp, palette.accent.copy(alpha = if (isPlaying) 0.32f else 0.16f), shape)
+                .background(backgroundColor)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(palette.accent.copy(alpha = 0.12f), Color.Transparent),
+                    ),
+                )
+                .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.65f), shape)
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = null,
@@ -580,15 +586,14 @@ internal fun FSMiniPlayer(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 5.dp),
-
+            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp),
         ) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.size(artworkSize + 10.dp),
             ) {
                 Canvas(modifier = Modifier.matchParentSize()) {
-                    val strokeWidth = 2.5.dp.toPx()
+                    val strokeWidth = 1.5.dp.toPx()
                     val inset = strokeWidth / 2f
                     val left = inset
                     val top = inset
@@ -596,7 +601,7 @@ internal fun FSMiniPlayer(
                     val bottom = size.height - inset
                     val cornerRadius = 10.dp.toPx().coerceAtMost((minOf(size.width, size.height) / 2f) - inset)
                     val topMidX = (left + right) / 2f
-                    val timelineColor = if (isLightTheme) Color.Black else Color.White
+                    val timelineColor = progressColor
                     // Built by hand (instead of Path.addRoundRect, whose start point sits near a
                     // corner and which Compose defaults to counter-clockwise) so distance=0 on
                     // this path is exactly the middle of the top edge and the path winds
@@ -682,37 +687,29 @@ internal fun FSMiniPlayer(
                     }
                 }
             }
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = buildAnnotatedString {
-                    withStyle(
-                        SpanStyle(
-                            color = primaryTextColor,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        ),
-                    ) {
-                        append(track.title)
-                    }
-                    if (track.artist.isNotBlank()) {
-                        withStyle(
-                            SpanStyle(
-                                color = mutedTextColor,
-                                fontSize = 14.sp,
-                            ),
-                        ) {
-                            append("  -  ${track.artist}")
-                        }
-                    }
-                },
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
-                modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE),
-            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = track.title,
+                    color = primaryTextColor,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (track.artist.isNotBlank()) {
+                    Text(
+                        text = track.artist,
+                        color = mutedTextColor,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.size(42.dp).zIndex(1f).clickable(onClick = onToggleLike),
+                modifier = Modifier.size(48.dp).zIndex(1f).clickable(role = Role.Button, onClick = onToggleLike),
             ) {
                 Icon(
                     painter = painterResource(if (track.isLiked) R.drawable.favorite else R.drawable.favorite_border),
@@ -726,9 +723,9 @@ internal fun FSMiniPlayer(
                 contentDescription = if (isPlaying) "Pause" else "Play",
                 onClick = onTogglePlayPause,
                 active = false,
-                buttonSize = 42.dp,
+                buttonSize = 48.dp,
                 iconSize = 24.dp,
-                showContainer = false,
+                showContainer = true,
                 dimBackdrop = false,
                 tintOverride = if (isLightTheme) Color.Black else Color.White,
                 modifier = Modifier.zIndex(1f),
@@ -740,7 +737,7 @@ internal fun FSMiniPlayer(
                         Modifier
                             .size(48.dp)
                             .zIndex(2f)
-                            .clickable(onClick = openQueue),
+                            .clickable(role = Role.Button, onClick = openQueue),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.queue_music),
@@ -2535,9 +2532,11 @@ private const val PaletteCacheCapacity = 24
 /** Select actual artwork swatches, not hue-shifted gradient filler colors. Runs off-main. */
 private fun extractGlowColors(palette: Palette): List<Color> {
     val swatches = palette.swatches.sortedByDescending { it.population }
-    val primary = swatches.firstOrNull()?.let { Color(it.rgb) } ?: Color.DarkGray
+    // Prefer a real artwork pigment over a populous black/gray background.
+    val primary = (palette.vibrantSwatch ?: palette.darkVibrantSwatch ?: swatches.firstOrNull())
+        ?.let { Color(it.rgb) } ?: Color.DarkGray
     // Prefer the next populous, visibly distinct color over another quantization of the first.
-    val secondary = swatches.firstOrNull { swatch ->
+    val secondary = swatches.sortedByDescending { it.hsl[1] * it.hsl[2] }.firstOrNull { swatch ->
         val candidate = Color(swatch.rgb)
         val r = candidate.red - primary.red
         val g = candidate.green - primary.green
@@ -2629,7 +2628,7 @@ private class VinylGlowMesh {
                     val i = row * stride + column
                     positions[i * 2] = column.toFloat() / FluidGlowSpec.Columns * w
                     // Bottom-anchored wash, with the top feather disappearing below the record.
-                    positions[i * 2 + 1] = (0.50f + row.toFloat() / FluidGlowSpec.Rows * 0.50f) * h
+                    positions[i * 2 + 1] = (0.36f + row.toFloat() / FluidGlowSpec.Rows * 0.64f) * h
                 }
             }
         }
@@ -2655,8 +2654,8 @@ private class VinylGlowMesh {
                 val curl = curlSin[i] * mixCos + curlCos[i] * mixSin
                 val mix = glowSmoothStep(0.12f, 0.88f, x + fold * 0.30f + curl * 0.14f + drift)
                 val rise = y + fold * 0.075f + breath * 0.045f
-                val envelope = glowSmoothStep(0f, 0.35f, y) * glowSmoothStep(0.12f, 1f, rise)
-                val alpha = (255f * envelope * (0.74f + 0.055f * breath)).toInt().coerceIn(0, 255)
+                val envelope = glowSmoothStep(0f, 0.30f, y) * glowSmoothStep(0.02f, 0.78f, rise)
+                val alpha = (255f * envelope * (0.90f + 0.045f * breath)).toInt().coerceIn(0, 255)
                 colors[i] = android.graphics.Color.argb(
                     alpha,
                     (red + redDelta * mix).toInt().coerceIn(0, 255),
@@ -2734,12 +2733,12 @@ private val GradientBackgroundStyles: Set<PlayerBackgroundStyle> =
 
 private const val GlowTransitionDurationMs = 850
 
-/** Lift dark pigments just enough to read on black; never invent saturation or a new hue. */
+/** Lift artwork pigments for OLED visibility; preserve hue and leave neutral artwork neutral. */
 private fun glowTone(color: Color): Color {
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(color.toArgb(), hsv)
-    hsv[1] = hsv[1].coerceAtMost(0.74f)
-    hsv[2] = hsv[2].coerceIn(0.42f, 0.90f)
+    if (hsv[1] > 0.12f) hsv[1] = (hsv[1] * 1.18f).coerceAtMost(0.95f)
+    hsv[2] = hsv[2].coerceIn(0.62f, 0.96f)
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
