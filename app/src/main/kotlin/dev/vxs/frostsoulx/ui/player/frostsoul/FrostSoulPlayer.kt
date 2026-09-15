@@ -179,6 +179,7 @@ internal fun FrostSoulPlayer(
     val scope = rememberCoroutineScope()
     var queueVisible by remember { mutableStateOf(false) }
     var queueTab by remember { mutableStateOf(0) }
+    val queueListState = androidx.compose.foundation.lazy.rememberLazyListState()
     var showArtistDialog by remember(uiState.track.id) { mutableStateOf(false) }
     var showPagerDots by remember { mutableStateOf(true) }
     // While the seekbar is being dragged, the pager's own horizontal-swipe gesture must not
@@ -403,7 +404,7 @@ internal fun FrostSoulPlayer(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight(0.82f)
+                        .fillMaxHeight(0.62f)
                         .graphicsLayer {
                             shadowElevation = 18.dp.toPx()
                             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
@@ -505,6 +506,19 @@ internal fun FrostSoulPlayer(
                         Icon(painterResource(R.drawable.shuffle), "Shuffle queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
                         Text("Shuffle", color = FrostSoulOnSurfaceMuted, fontSize = 12.sp)
                         Text("Queue actions", color = FrostSoulOnSurfaceMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Icon(
+                            painter = painterResource(R.drawable.location_on),
+                            contentDescription = "Scroll to current song",
+                            tint = Color.White.copy(alpha = 0.76f),
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clickable {
+                                    val idx = uiState.queue.indexOfFirst { it.isCurrent }
+                                    if (idx >= 0) {
+                                        scope.launch { queueListState.animateScrollToItem(idx) }
+                                    }
+                                },
+                        )
                         Icon(painterResource(R.drawable.download), "Download queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
                         Icon(painterResource(R.drawable.playlist_add), "Add to playlist", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(22.dp))
                         Icon(painterResource(R.drawable.delete), "Clear queue", tint = Color.White.copy(alpha = 0.76f), modifier = Modifier.size(21.dp))
@@ -513,6 +527,7 @@ internal fun FrostSoulPlayer(
                     FSQueue(
                         title = "",
                         queue = if (queueTab == 0) uiState.queue else emptyList(),
+                        listState = queueListState,
                         onSelect = { index ->
                             actions.onSelectQueueItem(index)
                             queueVisible = false
@@ -2339,8 +2354,10 @@ internal fun FSQueue(
     queue: List<FrostSoulQueueItem>,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
 ) {
     LazyColumn(
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = modifier.fillMaxSize(),
     ) {
@@ -2381,8 +2398,6 @@ private fun FrostSoulQueueRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (item.isCurrent) activeColor.copy(alpha = 0.10f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(vertical = 9.dp, horizontal = 2.dp),
     ) {
@@ -2394,7 +2409,10 @@ private fun FrostSoulQueueRow(
                 .background(if (item.isCurrent) activeColor else Color.Transparent),
         )
         Column(
-            modifier = Modifier.weight(1f).padding(start = 12.dp, end = 10.dp),
+            modifier = Modifier.weight(1f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (item.isCurrent) activeColor.copy(alpha = 0.10f) else Color.Transparent)
+                .padding(start = 12.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
         ) {
             Text(
                 text = item.title,
