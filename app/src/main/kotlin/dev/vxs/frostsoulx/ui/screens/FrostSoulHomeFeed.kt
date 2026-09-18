@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -109,7 +110,9 @@ internal fun FrostSoulHomeFeed(
     val openSearchPortal: () -> Unit = {
         navController.currentBackStackEntry?.savedStateHandle?.set("openSearch", true)
     }
-    val pageSections = uiState.homePage?.sections.orEmpty()
+    val isMoodSelected = uiState.selectedChip != null
+    val pageSections = if (uiState.isChipLoading || uiState.chipLoadFailed) emptyList()
+        else uiState.homePage?.sections.orEmpty().filter { it.items.isNotEmpty() }
 
     FrostSoulCalmTheme {
         LazyColumn(
@@ -124,23 +127,39 @@ internal fun FrostSoulHomeFeed(
         verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.section),
             modifier = modifier.fillMaxSize().frostSoulCalmScreenBackground(),
         ) {
-        uiState.homePage?.chips.orEmpty().takeIf { it.isNotEmpty() }?.let { sourceChips ->
-            // Preserve server chip titles so the selected label matches its destination.
-            val displayChips = sourceChips
-            item(key = "frostsoul_home_tabs") {
-                FrostSoulHomeTabs(
-                    chips = displayChips,
-                    selectedChip = displayChips.firstOrNull { display ->
-                        display.endpoint == uiState.selectedChip?.endpoint
-                    },
-                    onChipSelected = { displayChip ->
-                        val sourceChip = sourceChips.firstOrNull { it.endpoint == displayChip?.endpoint }
-                        onAction(HomeAction.SelectChip(sourceChip.takeUnless { it?.endpoint == uiState.selectedChip?.endpoint }))
-                    },
+        if (uiState.showCategoryChips) {
+            uiState.homePage?.chips.orEmpty().takeIf { it.isNotEmpty() }?.let { chips ->
+                item(key = "frostsoul_home_tabs", contentType = "chips") {
+                    FrostSoulHomeTabs(
+                        chips = chips,
+                        selectedChip = uiState.selectedChip,
+                        onChipSelected = { onAction(HomeAction.SelectChip(it)) },
+                    )
+                }
+            }
+        }
+
+        if (uiState.isChipLoading) {
+            item(key = "frostsoul_mood_loading", contentType = "status") {
+                Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
+                    FSLoading()
+                }
+            }
+        } else if (uiState.chipLoadFailed) {
+            item(key = "frostsoul_mood_error", contentType = "status") {
+                FSEmptyState(
+                    title = stringResource(R.string.home_mood_error),
+                    message = stringResource(R.string.home_mood_retry),
+                    actionLabel = stringResource(R.string.retry),
+                    onAction = { onAction(HomeAction.Refresh) },
+                    modifier = Modifier.height(280.dp),
                 )
             }
         }
 
+        // Mood endpoints supply their own shelves. Do not leave unrelated local
+        // recommendations above them, which makes a successful selection look inert.
+        if (!isMoodSelected) {
         if (uiState.featuredForYou.isNotEmpty()) {
             item(key = "frostsoul_featured_for_you_top") {
                 FrostSoulBannerCarousel(
@@ -155,8 +174,8 @@ internal fun FrostSoulHomeFeed(
         if (uiState.keepListening.isNotEmpty()) {
             item(key = "frostsoul_continue_listening_header") {
                 FSSectionHeader(
-                    title = "Continue Listening",
-                    actionLabel = "See All",
+                    title = stringResource(R.string.home_continue_listening),
+                    actionLabel = stringResource(R.string.see_all),
                     onAction = { navController.navigate("home_collection/continue") },
                 )
             }
@@ -172,7 +191,7 @@ internal fun FrostSoulHomeFeed(
 
         if (uiState.forThisMoment.isNotEmpty()) {
             item(key = "frostsoul_for_this_moment_header") {
-                FSSectionHeader(title = "For This Moment", actionLabel = "See All", onAction = { navController.navigate("home_collection/moment") })
+                FSSectionHeader(title = stringResource(R.string.home_for_this_moment), actionLabel = stringResource(R.string.see_all), onAction = { navController.navigate("home_collection/moment") })
             }
             item(key = "frostsoul_for_this_moment") {
                 FrostSoulSongShelf(
@@ -188,7 +207,7 @@ internal fun FrostSoulHomeFeed(
 
         if (uiState.offlineMixes.isNotEmpty()) {
             item(key = "frostsoul_daily_mix_header") {
-                FSSectionHeader(title = "Daily Mix", actionLabel = "See All", onAction = { navController.navigate(Screens.Library.route) })
+                FSSectionHeader(title = "Daily Mix", actionLabel = stringResource(R.string.see_all), onAction = { navController.navigate(Screens.Library.route) })
             }
             item(key = "frostsoul_daily_mix") {
                 FrostSoulOfflineMixShelf(
@@ -202,7 +221,7 @@ internal fun FrostSoulHomeFeed(
         if (uiState.forgottenFavorites.isNotEmpty()) {
             item(key = "frostsoul_recently_added_header") {
                 FSSectionHeader(title = "Rediscover",
-                    actionLabel = "See All", onAction = { navController.navigate(Screens.Library.route) })
+                    actionLabel = stringResource(R.string.see_all), onAction = { navController.navigate(Screens.Library.route) })
             }
             item(key = "frostsoul_recently_added") {
                 FrostSoulSongShelf(
@@ -220,7 +239,7 @@ internal fun FrostSoulHomeFeed(
                 FSSectionHeader(
                     title = "Recently Played",
                     eyebrow = "YOUR HISTORY",
-                    actionLabel = "See All",
+                    actionLabel = stringResource(R.string.see_all),
                     onAction = { navController.navigate("history") },
                 )
             }
@@ -303,6 +322,16 @@ internal fun FrostSoulHomeFeed(
             }
         }
 
+        if (uiState.quickPicks.isNotEmpty()) {
+            item(key = "frostsoul_quick_picks_header", contentType = "header") {
+                FSSectionHeader(title = stringResource(R.string.quick_picks))
+            }
+            item(key = "frostsoul_quick_picks", contentType = "shelf") {
+                FrostSoulRecommendationList(uiState.quickPicks, mediaMetadata, playerConnection)
+            }
+        }
+        }
+
         pageSections.forEachIndexed { index, section ->
             val sectionKey = "${section.endpoint?.browseId ?: section.title}_$index"
             item(key = "frostsoul_remote_header_$sectionKey") {
@@ -335,22 +364,20 @@ internal fun FrostSoulHomeFeed(
             }
         }
 
-        if (
-            uiState.keepListening.isEmpty() &&
-                uiState.recentlyPlayed.isEmpty() &&
-                                uiState.featuredForYou.isEmpty() &&
-                    uiState.forThisMoment.isEmpty() &&
-                    uiState.quickPicks.isEmpty() &&
-                    uiState.speedDialItems.isEmpty() &&
-                pageSections.isEmpty()
-        ) {
-            item(key = "frostsoul_home_empty") {
+        val hasLocalShelves = uiState.keepListening.isNotEmpty() || recentItems.isNotEmpty() ||
+            uiState.featuredForYou.isNotEmpty() || uiState.forThisMoment.isNotEmpty() ||
+            uiState.quickPicks.isNotEmpty() || albums.isNotEmpty() || artists.isNotEmpty() ||
+            uiState.offlineMixes.isNotEmpty() || uiState.forgottenFavorites.isNotEmpty() ||
+            uiState.similarRecommendations.isNotEmpty()
+        if (!uiState.isChipLoading && !uiState.chipLoadFailed && pageSections.isEmpty() &&
+            (isMoodSelected || !hasLocalShelves)) {
+            item(key = "frostsoul_home_empty", contentType = "status") {
                 FSEmptyState(
-                    title = "Your music will appear here",
-                    message = "Start a search or play something to build a listening home tailored to you.",
-                    modifier = Modifier.height(360.dp),
-                    actionLabel = "Quick Search",
-                    onAction = { openSearchPortal() },
+                    title = stringResource(R.string.no_results_found),
+                    message = stringResource(R.string.home_mood_retry),
+                    modifier = Modifier.height(280.dp),
+                    actionLabel = stringResource(R.string.refresh),
+                    onAction = { onAction(HomeAction.Refresh) },
                 )
             }
         }
@@ -666,9 +693,10 @@ private fun FrostSoulHomeTabs(
     if (chips.isEmpty()) return
 
     val selectedEndpoint = selectedChip?.endpoint
-    val selectedIndex = chips.indexOfFirst { it.endpoint == selectedEndpoint } + 1
+    val selectedIndex = if (selectedEndpoint == null) 0
+        else chips.indexOfFirst { it.endpoint == selectedEndpoint } + 1
     PremiumSegmentedTabs(
-        labels = listOf("For you") + chips.map { it.title },
+        labels = listOf(stringResource(R.string.home_for_you)) + chips.map { it.title },
         selectedIndex = selectedIndex,
         onSelected = { index -> onChipSelected(chips.getOrNull(index - 1)) },
         modifier = Modifier.heightIn(min = 56.dp),

@@ -16,6 +16,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.runtime.remember
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -119,9 +121,14 @@ fun NavGraphBuilder.navigationBuilder(
         route = "home_collection/{kind}",
         arguments = listOf(navArgument("kind") { type = NavType.StringType }),
     ) { backStackEntry ->
+        val homeEntry = remember(backStackEntry) {
+            // Reuse Home's ranked shelves instead of starting another load/sync cycle.
+            runCatching { navController.getBackStackEntry(Screens.Home.route) }.getOrDefault(backStackEntry)
+        }
         FrostSoulHomeCollectionScreen(
             navController = navController,
             kind = backStackEntry.arguments?.getString("kind").orEmpty(),
+            viewModel = hiltViewModel(homeEntry),
         )
     }
     composable("stats") {

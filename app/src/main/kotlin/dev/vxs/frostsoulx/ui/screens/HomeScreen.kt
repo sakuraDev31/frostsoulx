@@ -34,6 +34,8 @@ import dev.vxs.frostsoulx.home.HomeScreenState
 import dev.vxs.frostsoulx.ui.component.ExpressivePullToRefreshBox
 import dev.vxs.frostsoulx.ui.component.LocalMenuState
 import dev.vxs.frostsoulx.ui.frostsoul.FSEmptyState
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
 import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
 import dev.vxs.frostsoulx.viewmodels.HomeViewModel
 
@@ -49,7 +51,8 @@ fun HomeScreen(
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
-    val lazyListState = rememberLazyListState()
+    val forYouListState = rememberLazyListState()
+    val moodListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val scrollToTop =
@@ -58,6 +61,11 @@ fun HomeScreen(
             ?.getStateFlow("scrollToTop", false)
             ?.collectAsStateWithLifecycle()
     val uiState = (screenState as? HomeScreenState.Success)?.uiState
+    val lazyListState = if (uiState?.selectedChip == null) forYouListState else moodListState
+
+    LaunchedEffect(uiState?.selectedChip?.endpoint) {
+        if (uiState?.selectedChip != null) moodListState.scrollToItem(0)
+    }
 
     LaunchedEffect(scrollToTop?.value) {
         if (scrollToTop?.value == true) {
@@ -66,7 +74,8 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(uiState?.homePage?.continuation) {
+    LaunchedEffect(uiState?.homePage?.continuation, uiState?.selectedChip, uiState?.isChipLoading, uiState?.chipLoadFailed) {
+        if (uiState?.isChipLoading == true || uiState?.chipLoadFailed == true) return@LaunchedEffect
         val continuation = uiState?.homePage?.continuation ?: return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = lazyListState.layoutInfo
@@ -87,10 +96,12 @@ fun HomeScreen(
         }
     }
 
+    FrostSoulCalmTheme {
     Box(
         modifier =
             Modifier
                 .fillMaxSize()
+                .frostSoulCalmScreenBackground()
                 .then(
                     if (headerScrollConnection != null) Modifier.nestedScroll(headerScrollConnection) else Modifier,
                 ),
@@ -120,6 +131,7 @@ fun HomeScreen(
                 }
             }
         }
+    }
     }
 }
 

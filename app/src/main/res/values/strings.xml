@@ -1,6 +1,15 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="home">Home</string>
+    <string name="home_for_you">For you</string>
+    <string name="home_continue_listening">Continue Listening</string>
+    <string name="home_for_this_moment">For This Moment</string>
+    <string name="home_mood_error">Could not load this mood</string>
+    <string name="home_mood_retry">Try refreshing or choose another mood.</string>
+    <string name="home_moment_description">Discoveries inspired by your recent listening.</string>
+    <string name="home_continue_description">Your recent songs, in the order you last played them.</string>
+    <string name="home_collection_empty">Play some music to build your listening home.</string>
+    <string name="home_navigate_back">Go back</string>
     <string name="songs">Songs</string>
     <string name="artists">Artists</string>
     <string name="albums">Albums</string>
