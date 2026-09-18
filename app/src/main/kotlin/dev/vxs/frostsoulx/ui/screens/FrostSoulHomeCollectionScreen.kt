@@ -138,7 +138,7 @@ fun FrostSoulHomeCollectionScreen(
                                 IconButton(onClick = play) {
                                     Icon(
                                         painterResource(if (active && isPlaying) R.drawable.pause else R.drawable.play),
-                                        contentDescription = null,
+                                        contentDescription = stringResource(if (active && isPlaying) R.string.home_pause_track else R.string.play),
                                         tint = FrostSoulTheme.colors.onSurface,
                                     )
                                 }

@@ -10,6 +10,7 @@
     <string name="home_continue_description">Your recent songs, in the order you last played them.</string>
     <string name="home_collection_empty">Play some music to build your listening home.</string>
     <string name="home_navigate_back">Go back</string>
+    <string name="home_pause_track">Pause</string>
     <string name="songs">Songs</string>
     <string name="artists">Artists</string>
     <string name="albums">Albums</string>

@@ -76,7 +76,6 @@ import dev.vxs.frostsoulx.ui.frostsoul.FSEmptyState
 import dev.vxs.frostsoulx.ui.frostsoul.FSIconButton
 import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
 import dev.vxs.frostsoulx.ui.frostsoul.FSSectionHeader
-import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.premium.PremiumCard
 import dev.vxs.frostsoulx.ui.premium.PremiumHeroBanner
@@ -107,16 +106,12 @@ internal fun FrostSoulHomeFeed(
     val albums = remember(uiState.speedDialItems) { uiState.speedDialItems.filterIsInstance<Album>() }
     val artists = remember(uiState.speedDialItems) { uiState.speedDialItems.filterIsInstance<Artist>() }
     val recentItems = remember(uiState.recentlyPlayed) { uiState.recentlyPlayed.take(6) }
-    val openSearchPortal: () -> Unit = {
-        navController.currentBackStackEntry?.savedStateHandle?.set("openSearch", true)
-    }
     val isMoodSelected = uiState.selectedChip != null
     val pageSections = if (uiState.isChipLoading || uiState.chipLoadFailed) emptyList()
         else uiState.homePage?.sections.orEmpty().filter { it.items.isNotEmpty() }
 
-    FrostSoulCalmTheme {
-        LazyColumn(
-            state = lazyListState,
+    LazyColumn(
+        state = lazyListState,
         contentPadding =
             PaddingValues(
                 // Match Library: status-bar inset + shared brand header + micro spacing.
@@ -125,8 +120,8 @@ internal fun FrostSoulHomeFeed(
                 bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 24.dp,
             ),
         verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.section),
-            modifier = modifier.fillMaxSize().frostSoulCalmScreenBackground(),
-        ) {
+        modifier = modifier.fillMaxSize().frostSoulCalmScreenBackground(),
+    ) {
         if (uiState.showCategoryChips) {
             uiState.homePage?.chips.orEmpty().takeIf { it.isNotEmpty() }?.let { chips ->
                 item(key = "frostsoul_home_tabs", contentType = "chips") {
@@ -160,176 +155,176 @@ internal fun FrostSoulHomeFeed(
         // Mood endpoints supply their own shelves. Do not leave unrelated local
         // recommendations above them, which makes a successful selection look inert.
         if (!isMoodSelected) {
-        if (uiState.featuredForYou.isNotEmpty()) {
-            item(key = "frostsoul_featured_for_you_top") {
-                FrostSoulBannerCarousel(
-                    songs = uiState.featuredForYou.take(5),
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                    isPlaying = isPlaying,
-                )
-            }
-        }
-
-        if (uiState.keepListening.isNotEmpty()) {
-            item(key = "frostsoul_continue_listening_header") {
-                FSSectionHeader(
-                    title = stringResource(R.string.home_continue_listening),
-                    actionLabel = stringResource(R.string.see_all),
-                    onAction = { navController.navigate("home_collection/continue") },
-                )
-            }
-            item(key = "frostsoul_continue_listening") {
-                FrostSoulLocalShelf(
-                    items = uiState.keepListening,
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                    navController = navController,
-                )
-            }
-        }
-
-        if (uiState.forThisMoment.isNotEmpty()) {
-            item(key = "frostsoul_for_this_moment_header") {
-                FSSectionHeader(title = stringResource(R.string.home_for_this_moment), actionLabel = stringResource(R.string.see_all), onAction = { navController.navigate("home_collection/moment") })
-            }
-            item(key = "frostsoul_for_this_moment") {
-                FrostSoulSongShelf(
-                    songs = uiState.forThisMoment,
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                    badge = "PLAY",
-                    spotlight = false,
-                )
-            }
-
-        }
-
-        if (uiState.offlineMixes.isNotEmpty()) {
-            item(key = "frostsoul_daily_mix_header") {
-                FSSectionHeader(title = "Daily Mix", actionLabel = stringResource(R.string.see_all), onAction = { navController.navigate(Screens.Library.route) })
-            }
-            item(key = "frostsoul_daily_mix") {
-                FrostSoulOfflineMixShelf(
-                    mixes = uiState.offlineMixes,
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                )
-            }
-        }
-
-        if (uiState.forgottenFavorites.isNotEmpty()) {
-            item(key = "frostsoul_recently_added_header") {
-                FSSectionHeader(title = "Rediscover",
-                    actionLabel = stringResource(R.string.see_all), onAction = { navController.navigate(Screens.Library.route) })
-            }
-            item(key = "frostsoul_recently_added") {
-                FrostSoulSongShelf(
-                    songs = uiState.forgottenFavorites,
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                    badge = "NEW",
-                    spotlight = false,
-                )
-            }
-        }
-
-        if (recentItems.isNotEmpty()) {
-            item(key = "frostsoul_recently_played_header") {
-                FSSectionHeader(
-                    title = "Recently Played",
-                    eyebrow = "YOUR HISTORY",
-                    actionLabel = stringResource(R.string.see_all),
-                    onAction = { navController.navigate("history") },
-                )
-            }
-            item(key = "frostsoul_recently_played") {
-                PremiumCard(
-                    modifier = Modifier.padding(horizontal = FrostSoulTheme.spacing.page),
-                    contentPadding = PaddingValues(vertical = FrostSoulTheme.spacing.small),
-                ) {
-                    recentItems.forEach { item ->
-                        PremiumListRow(
-                            title = item.title,
-                            subtitle = item.frostSoulSubtitle(),
-                            artworkUrl = item.frostSoulArtwork(),
-                            isActive = item is Song && item.id == mediaMetadata?.id && isPlaying,
-                            onClick = { item.openFromFrostSoul(playerConnection, navController) },
-                        )
-                    }
-                }
-            }
-        }
-
-        if (albums.isNotEmpty()) {
-            item(key = "frostsoul_albums_header") {
-                FSSectionHeader(title = "Albums", eyebrow = "COLLECTION")
-            }
-            item(key = "frostsoul_albums") {
-                FrostSoulLocalShelf(
-                    items = albums,
-                    mediaMetadata = mediaMetadata,
-                    playerConnection = playerConnection,
-                    navController = navController,
-                )
-            }
-        }
-
-        if (artists.isNotEmpty()) {
-            item(key = "frostsoul_artists_header") {
-                FSSectionHeader(title = "Artists", eyebrow = "FOLLOW THE VOICE")
-            }
-            item(key = "frostsoul_artists") {
-                LazyRow(
-                    contentPadding = FrostSoulShelfItemPadding,
-                    horizontalArrangement = Arrangement.spacedBy(FrostSoulShelfSpacing),
-                ) {
-                    items(artists, key = { it.id }) { artist ->
-                        FSArtistCard(
-                            name = artist.title,
-                            artworkUrl = artist.artist.thumbnailUrl,
-                            subtitle = "Artist",
-                            onClick = { navController.navigate("artist/${artist.id}") },
-                        )
-                    }
-                }
-            }
-        }
-
-        uiState.similarRecommendations.forEachIndexed { index, recommendation ->
-            item(key = "frostsoul_recommendation_header_${recommendation.title.id}") {
-                FSSectionHeader(
-                    title = if (index == 0) "Recommended For You" else recommendation.title.title,
-                    eyebrow = if (index == 0) "DISCOVER" else "BASED ON ${recommendation.title.title}",
-                )
-            }
-            item(key = "frostsoul_recommendation_${recommendation.title.id}") {
-                PremiumCard(
-                    modifier = Modifier.padding(horizontal = FrostSoulTheme.spacing.page),
-                    contentPadding = PaddingValues(vertical = FrostSoulTheme.spacing.small),
-                ) {
-                    SimilarRecommendationsSection(
-                        recommendation = recommendation,
+            if (uiState.featuredForYou.isNotEmpty()) {
+                item(key = "frostsoul_featured_for_you_top") {
+                    FrostSoulBannerCarousel(
+                        songs = uiState.featuredForYou.take(5),
                         mediaMetadata = mediaMetadata,
-                        isPlaying = isPlaying,
-                        navController = navController,
                         playerConnection = playerConnection,
-                        menuState = menuState,
-                        haptic = haptic,
-                        scope = scope,
+                        isPlaying = isPlaying,
                     )
                 }
             }
-        }
 
-        if (uiState.quickPicks.isNotEmpty()) {
-            item(key = "frostsoul_quick_picks_header", contentType = "header") {
-                FSSectionHeader(title = stringResource(R.string.quick_picks))
+            if (uiState.keepListening.isNotEmpty()) {
+                item(key = "frostsoul_continue_listening_header") {
+                    FSSectionHeader(
+                        title = stringResource(R.string.home_continue_listening),
+                        actionLabel = stringResource(R.string.see_all),
+                        onAction = { navController.navigate("home_collection/continue") },
+                    )
+                }
+                item(key = "frostsoul_continue_listening") {
+                    FrostSoulLocalShelf(
+                        items = uiState.keepListening,
+                        mediaMetadata = mediaMetadata,
+                        playerConnection = playerConnection,
+                        navController = navController,
+                    )
+                }
             }
-            item(key = "frostsoul_quick_picks", contentType = "shelf") {
-                FrostSoulRecommendationList(uiState.quickPicks, mediaMetadata, playerConnection)
+
+            if (uiState.forThisMoment.isNotEmpty()) {
+                item(key = "frostsoul_for_this_moment_header") {
+                    FSSectionHeader(title = stringResource(R.string.home_for_this_moment), actionLabel = stringResource(R.string.see_all), onAction = { navController.navigate("home_collection/moment") })
+                }
+                item(key = "frostsoul_for_this_moment") {
+                    FrostSoulSongShelf(
+                        songs = uiState.forThisMoment,
+                        mediaMetadata = mediaMetadata,
+                        playerConnection = playerConnection,
+                        badge = "PLAY",
+                        spotlight = false,
+                    )
+                }
+
             }
-        }
+
+            if (uiState.offlineMixes.isNotEmpty()) {
+                item(key = "frostsoul_daily_mix_header") {
+                    FSSectionHeader(title = "Daily Mix", actionLabel = stringResource(R.string.see_all), onAction = { navController.navigate(Screens.Library.route) })
+                }
+                item(key = "frostsoul_daily_mix") {
+                    FrostSoulOfflineMixShelf(
+                        mixes = uiState.offlineMixes,
+                        mediaMetadata = mediaMetadata,
+                        playerConnection = playerConnection,
+                    )
+                }
+            }
+
+            if (uiState.forgottenFavorites.isNotEmpty()) {
+                item(key = "frostsoul_recently_added_header") {
+                    FSSectionHeader(title = "Rediscover",
+                        actionLabel = stringResource(R.string.see_all), onAction = { navController.navigate(Screens.Library.route) })
+                }
+                item(key = "frostsoul_recently_added") {
+                    FrostSoulSongShelf(
+                        songs = uiState.forgottenFavorites,
+                        mediaMetadata = mediaMetadata,
+                        playerConnection = playerConnection,
+                        badge = "NEW",
+                        spotlight = false,
+                    )
+                }
+            }
+
+            if (recentItems.isNotEmpty()) {
+                item(key = "frostsoul_recently_played_header") {
+                    FSSectionHeader(
+                        title = "Recently Played",
+                        eyebrow = "YOUR HISTORY",
+                        actionLabel = stringResource(R.string.see_all),
+                        onAction = { navController.navigate("history") },
+                    )
+                }
+                item(key = "frostsoul_recently_played") {
+                    PremiumCard(
+                        modifier = Modifier.padding(horizontal = FrostSoulTheme.spacing.page),
+                        contentPadding = PaddingValues(vertical = FrostSoulTheme.spacing.small),
+                    ) {
+                        recentItems.forEach { item ->
+                            PremiumListRow(
+                                title = item.title,
+                                subtitle = item.frostSoulSubtitle(),
+                                artworkUrl = item.frostSoulArtwork(),
+                                isActive = item is Song && item.id == mediaMetadata?.id && isPlaying,
+                                onClick = { item.openFromFrostSoul(playerConnection, navController) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (albums.isNotEmpty()) {
+                item(key = "frostsoul_albums_header") {
+                    FSSectionHeader(title = "Albums", eyebrow = "COLLECTION")
+                }
+                item(key = "frostsoul_albums") {
+                    FrostSoulLocalShelf(
+                        items = albums,
+                        mediaMetadata = mediaMetadata,
+                        playerConnection = playerConnection,
+                        navController = navController,
+                    )
+                }
+            }
+
+            if (artists.isNotEmpty()) {
+                item(key = "frostsoul_artists_header") {
+                    FSSectionHeader(title = "Artists", eyebrow = "FOLLOW THE VOICE")
+                }
+                item(key = "frostsoul_artists") {
+                    LazyRow(
+                        contentPadding = FrostSoulShelfItemPadding,
+                        horizontalArrangement = Arrangement.spacedBy(FrostSoulShelfSpacing),
+                    ) {
+                        items(artists, key = { it.id }) { artist ->
+                            FSArtistCard(
+                                name = artist.title,
+                                artworkUrl = artist.artist.thumbnailUrl,
+                                subtitle = "Artist",
+                                onClick = { navController.navigate("artist/${artist.id}") },
+                            )
+                        }
+                    }
+                }
+            }
+
+            uiState.similarRecommendations.forEachIndexed { index, recommendation ->
+                item(key = "frostsoul_recommendation_header_${recommendation.title.id}") {
+                    FSSectionHeader(
+                        title = if (index == 0) "Recommended For You" else recommendation.title.title,
+                        eyebrow = if (index == 0) "DISCOVER" else "BASED ON ${recommendation.title.title}",
+                    )
+                }
+                item(key = "frostsoul_recommendation_${recommendation.title.id}") {
+                    PremiumCard(
+                        modifier = Modifier.padding(horizontal = FrostSoulTheme.spacing.page),
+                        contentPadding = PaddingValues(vertical = FrostSoulTheme.spacing.small),
+                    ) {
+                        SimilarRecommendationsSection(
+                            recommendation = recommendation,
+                            mediaMetadata = mediaMetadata,
+                            isPlaying = isPlaying,
+                            navController = navController,
+                            playerConnection = playerConnection,
+                            menuState = menuState,
+                            haptic = haptic,
+                            scope = scope,
+                        )
+                    }
+                }
+            }
+
+            if (uiState.quickPicks.isNotEmpty()) {
+                item(key = "frostsoul_quick_picks_header", contentType = "header") {
+                    FSSectionHeader(title = stringResource(R.string.quick_picks))
+                }
+                item(key = "frostsoul_quick_picks", contentType = "shelf") {
+                    FrostSoulRecommendationList(uiState.quickPicks, mediaMetadata, playerConnection)
+                }
+            }
         }
 
         pageSections.forEachIndexed { index, section ->
@@ -381,8 +376,6 @@ internal fun FrostSoulHomeFeed(
                 )
             }
         }
-    }
-
     }
 }
 

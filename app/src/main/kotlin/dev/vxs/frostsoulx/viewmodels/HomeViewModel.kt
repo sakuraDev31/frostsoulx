@@ -19,6 +19,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
@@ -397,9 +399,10 @@ class HomeViewModel
         private var pageGeneration = 0
 
         private fun filterHomeChips(chips: List<HomePage.Chip>?): List<HomePage.Chip>? =
-            chips?.filterNot {
-                it.title.contains("podcasts", ignoreCase = true)
-            }
+            chips?.filter {
+                !it.endpoint?.params.isNullOrBlank() &&
+                    !it.title.contains("podcasts", ignoreCase = true)
+            }?.distinctBy { it.endpoint }
 
         private enum class HomeCandidateSource {
             HISTORY,
@@ -677,16 +680,12 @@ class HomeViewModel
         }
 
         private suspend fun load() {
-            if (isLoading.value) return
-            isLoading.value = true
+            if (!isLoading.compareAndSet(expect = false, update = true)) return
             loadError.value = null
 
             try {
                 recommendationJob?.cancel()
-                supervisorScope {
-                    val hideExplicit = context.dataStore.get(HideExplicitKey, false)
-                    val hideVideo = context.dataStore.get(HideVideoKey, false)
-                    val blockedArtistIds = database.getBlockedArtistIds().toSet()
+                coroutineScope {
                     // Cached/local ranking must not wait for filter downloads or YouTube.
                     launch { loadHistoryRecommendations(includeRemote = false) }
                     launch {
@@ -700,31 +699,16 @@ class HomeViewModel
                     }
 
                     launch {
-                        val aiContentFilterPolicy = loadAiContentFilterPolicy()
-                        val page = withTimeoutOrNull(10_000L) { YouTube.home().getOrNull() }
-                        currentCoroutineContext().ensureActive()
-                        if (page != null) {
-                            val filteredPage =
-                                    page.copy(
-                                        chips = filterHomeChips(page.chips),
-                                        sections =
-                                            page.sections.map { section ->
-                                                section.copy(
-                                                    items =
-                                                        filterAiContent(
-                                                            section.items
-                                                                .filterExplicit(hideExplicit)
-                                                                .filterVideo(hideVideo)
-                                                                .filterBlockedArtists(blockedArtistIds),
-                                                            aiContentFilterPolicy,
-                                                        ),
-                                                )
-                                            },
-                                    )
-                            if (selectedChip.value == null) homePage.value = filteredPage
-                            else previousHomePage.value = filteredPage
-                        } else {
-                            loadError.value = R.string.error_unknown
+                        val page = withTimeoutOrNull(10_000L) {
+                            YouTube.home().getOrNull()?.let { filteredHomePage(it, it.chips) }
+                        }
+                        withContext(Dispatchers.Main.immediate) {
+                            if (page != null) {
+                                if (selectedChip.value == null) homePage.value = page
+                                else previousHomePage.value = page
+                            } else {
+                                loadError.value = R.string.error_unknown
+                            }
                         }
                     }
                 }
@@ -786,9 +770,9 @@ class HomeViewModel
             // the same four all-time/download-heavy tracks on every visit.
             val seeds = history.filterNot { it.song.isLocal }
                 .distinctBy { it.artists.firstOrNull()?.name ?: it.id }.take(6)
-            val related = seeds.flatMap { database.homeRelatedSongs(it.id) }
+            val related = seeds.take(3).flatMap { database.homeRelatedSongs(it.id) }
                 .filter(::eligible).distinctBy { it.id }.take(120)
-            val library = database.homeRecommendationCandidates().filter(::eligible)
+            val library = database.homeRecommendationCandidates(limit = 120).filter(::eligible)
             val liveRelated = if (includeRemote) loadLiveRelatedSongs(seeds) else emptyList()
             val discoveryPage = if (selectedChip.value == null) homePage.value else previousHomePage.value
             val remoteItems = if (!includeRemote) emptyList() else filterAiContent(
@@ -800,6 +784,8 @@ class HomeViewModel
                     .filterBlockedArtists(blockedArtistIds),
                 loadAiContentFilterPolicy(),
             ).filterIsInstance<SongItem>().take(96)
+            // A failed/offline enrichment must not shuffle the already-visible cached picks.
+            if (includeRemote && remoteItems.isEmpty()) return
             // Metadata only: these tracks are playable discoveries, not downloads. Reapply
             // current filters to cached network results before saving or showing them.
             if (remoteItems.isNotEmpty()) {
@@ -818,8 +804,9 @@ class HomeViewModel
                     HomeCandidate(song, if (song.artists.any { it.id in historyArtistIds })
                         HomeCandidateSource.SAME_ARTIST else HomeCandidateSource.LIBRARY)
                 }
+            val recentShelfIds = recent.take(20).mapTo(HashSet()) { it.id }
             val (featured, moment) = rankHomeCandidates(
-                candidates = candidates.filterNot { it.song.id in recent.take(20).map { song -> song.id } },
+                candidates = candidates.filterNot { it.song.id in recentShelfIds },
                 historyIds = historyIds,
                 recentIds = recent.take(12).mapTo(HashSet()) { it.id },
                 statsBySong = database.mostPlayedSongsStats(fromTimeStamp, limit = 200).first().associateBy { it.id },
@@ -1049,13 +1036,15 @@ class HomeViewModel
         private fun loadMoreYouTubeItems(continuation: String?) {
             val page = homePage.value ?: return
             if (continuation == null || continuation != page.continuation ||
-                isLoadingMore.value || isChipLoading.value || chipLoadFailed.value || isLoading.value) return
+                isLoadingMore.value || isChipLoading.value || chipLoadFailed.value || isRefreshing.value) return
             val generation = pageGeneration
             isLoadingMore.value = true
-            loadMoreJob = viewModelScope.launch(Dispatchers.IO) {
+            loadMoreJob = viewModelScope.launch {
                 try {
-                    val nextPage = withTimeoutOrNull(10_000L) {
-                        YouTube.home(continuation).getOrNull()?.let { filteredHomePage(it, page.chips) }
+                    val nextPage = withContext(Dispatchers.IO) {
+                        withTimeoutOrNull(10_000L) {
+                            YouTube.home(continuation).getOrNull()?.let { filteredHomePage(it, page.chips) }
+                        }
                     } ?: return@launch
                     currentCoroutineContext().ensureActive()
                     if (generation != pageGeneration || homePage.value !== page) return@launch
@@ -1077,6 +1066,7 @@ class HomeViewModel
         }
 
         private fun toggleChip(chip: HomePage.Chip?, force: Boolean = false) {
+            if (chip != null && chip.endpoint?.params.isNullOrBlank()) return
             if (!force && chip?.endpoint == selectedChip.value?.endpoint && !chipLoadFailed.value) return
             val generation = ++pageGeneration
             chipLoadJob?.cancel()
@@ -1095,11 +1085,14 @@ class HomeViewModel
             // Highlight immediately; the UI keeps the chip row mounted while loading.
             isChipLoading.value = true
             selectedChip.value = chip
-            chipLoadJob = viewModelScope.launch(Dispatchers.IO) {
+            val chips = previousHomePage.value?.chips ?: homePage.value?.chips
+            chipLoadJob = viewModelScope.launch {
                 try {
-                    val page = withTimeoutOrNull(10_000L) {
-                        YouTube.home(params = chip.endpoint.params).getOrNull()?.let {
-                            filteredHomePage(it, previousHomePage.value?.chips ?: homePage.value?.chips)
+                    val page = withContext(Dispatchers.IO) {
+                        withTimeoutOrNull(10_000L) {
+                            YouTube.home(params = chip.endpoint?.params).getOrNull()?.let {
+                                filteredHomePage(it, chips)
+                            }
                         }
                     }
                     currentCoroutineContext().ensureActive()
