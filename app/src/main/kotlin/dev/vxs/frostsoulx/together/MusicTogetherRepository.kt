@@ -58,6 +58,14 @@ class MusicTogetherRepository
         @ApplicationContext private val context: Context,
     ) {
         private val serviceFlow = MutableStateFlow<MusicService?>(null)
+        private var pendingStartRequest: StartSessionRequest? = null
+
+        private data class StartSessionRequest(
+            val mode: MusicTogetherConnectionMode,
+            val displayName: String,
+            val port: Int,
+            val settings: TogetherRoomSettings,
+        )
 
         val preferences: Flow<MusicTogetherPreferences> =
             context.dataStore.data
@@ -84,6 +92,33 @@ class MusicTogetherRepository
 
         fun attachService(service: MusicService?) {
             serviceFlow.value = service
+            if (service != null) {
+                pendingStartRequest?.also { request ->
+                    pendingStartRequest = null
+                    dispatchStartSession(service, request)
+                }
+            }
+        }
+
+        private fun dispatchStartSession(
+            service: MusicService,
+            request: StartSessionRequest,
+        ) {
+            when (request.mode) {
+                MusicTogetherConnectionMode.LAN -> {
+                    service.startTogetherHost(
+                        port = request.port,
+                        displayName = request.displayName,
+                        settings = request.settings,
+                    )
+                }
+                MusicTogetherConnectionMode.ONLINE -> {
+                    service.startTogetherOnlineHost(
+                        displayName = request.displayName,
+                        settings = request.settings,
+                    )
+                }
+            }
         }
 
         suspend fun setDisplayName(displayName: String) {
@@ -134,23 +169,21 @@ class MusicTogetherRepository
             port: Int,
             settings: TogetherRoomSettings,
         ) {
-            val service = serviceFlow.value ?: return
-            when (mode) {
-                MusicTogetherConnectionMode.LAN -> {
-                    service.startTogetherHost(
-                        port = port,
-                        displayName = displayName,
-                        settings = settings,
-                    )
-                }
-
-                MusicTogetherConnectionMode.ONLINE -> {
-                    service.startTogetherOnlineHost(
-                        displayName = displayName,
-                        settings = settings,
-                    )
-                }
+            val request =
+                StartSessionRequest(
+                    mode = mode,
+                    displayName = displayName,
+                    port = port,
+                    settings = settings,
+                )
+            val service = serviceFlow.value
+            if (service == null) {
+                // The settings screen can render before the player service binding completes.
+                // Do not silently drop the user's click; replay it as soon as the service attaches.
+                pendingStartRequest = request
+                return
             }
+            dispatchStartSession(service, request)
         }
 
         fun joinSession(

@@ -7,7 +7,9 @@
 
 package dev.vxs.frostsoulx.recommendation
 
+import android.content.Context
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.vxs.frostsoulx.db.MusicDatabase
 import dev.vxs.frostsoulx.db.entities.RecommendationSignalEntity
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +25,7 @@ import javax.inject.Singleton
 
 @Singleton
 class RecommendationBehaviorTracker @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val database: MusicDatabase,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -32,6 +35,7 @@ class RecommendationBehaviorTracker @Inject constructor(
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
     private val sessionId = AtomicLong(System.currentTimeMillis())
+    private val meaningfulPlaySignals = AtomicLong(0L)
     private val budget = RecommendationBudget()
 
     init {
@@ -72,6 +76,15 @@ class RecommendationBehaviorTracker @Inject constructor(
                 contextFlags = context.flags(),
             ),
         )
+        if (type == RecommendationSignalType.Play ||
+            type == RecommendationSignalType.Complete ||
+            type == RecommendationSignalType.Replay
+        ) {
+            val count = meaningfulPlaySignals.incrementAndGet()
+            if (count % MixRefreshPlayThreshold == 0L) {
+                OfflineRecommendationScheduler.enqueue(this@RecommendationBehaviorTracker.context)
+            }
+        }
     }
 
     fun beginNewSession() {
@@ -106,6 +119,7 @@ class RecommendationBehaviorTracker @Inject constructor(
         const val LogTag = "RecommendationTracker"
         const val BufferCapacity = 512
         const val BatchSize = 32
+        const val MixRefreshPlayThreshold = 20L
         val DefaultContext =
             RecommendationContext(
                 hourOfDay = 12,

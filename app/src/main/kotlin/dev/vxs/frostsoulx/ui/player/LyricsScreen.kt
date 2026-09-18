@@ -13,10 +13,16 @@ import android.content.res.Configuration
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -59,10 +65,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -558,13 +564,13 @@ private fun AppleMusicBackground(
     modifier: Modifier = Modifier,
 ) {
     val colors = if (gradientColors.isNotEmpty()) gradientColors else AppleMusicFallbackGradient
-    val backgroundBrush =
-        remember(colors) {
+    val neutralBackgroundBrush =
+        remember {
             Brush.verticalGradient(
                 listOf(
-                    colors.getOrElse(0) { AppleMusicFallbackGradient[0] }.copy(alpha = 0.88f),
-                    colors.getOrElse(1) { AppleMusicFallbackGradient[1] }.copy(alpha = 0.76f),
-                    colors.getOrElse(2) { AppleMusicFallbackGradient[2] }.copy(alpha = 0.96f),
+                    Color(0xFF1B1B1B),
+                    Color(0xFF151515),
+                    Color.Black,
                 ),
             )
         }
@@ -597,8 +603,7 @@ private fun AppleMusicBackground(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .blur(46.dp)
-                            .alpha(0.62f),
+                            .alpha(0.08f),
                 )
             }
         }
@@ -606,13 +611,17 @@ private fun AppleMusicBackground(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .background(backgroundBrush),
+                    .background(neutralBackgroundBrush),
         )
         Box(
             modifier =
                 Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.18f)),
+        )
+        SharedColorWash(
+            colors = colors.take(2),
+            modifier = Modifier.fillMaxSize(),
         )
         Box(
             modifier =

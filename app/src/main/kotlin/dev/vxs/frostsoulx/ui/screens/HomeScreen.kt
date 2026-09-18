@@ -8,6 +8,7 @@
 package dev.vxs.frostsoulx.ui.screens
 
 import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +34,8 @@ import dev.vxs.frostsoulx.home.HomeScreenState
 import dev.vxs.frostsoulx.ui.component.ExpressivePullToRefreshBox
 import dev.vxs.frostsoulx.ui.component.LocalMenuState
 import dev.vxs.frostsoulx.ui.frostsoul.FSEmptyState
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
 import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
 import dev.vxs.frostsoulx.viewmodels.HomeViewModel
 
@@ -48,7 +51,8 @@ fun HomeScreen(
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
-    val lazyListState = rememberLazyListState()
+    val forYouListState = rememberLazyListState()
+    val moodListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val scrollToTop =
@@ -57,6 +61,11 @@ fun HomeScreen(
             ?.getStateFlow("scrollToTop", false)
             ?.collectAsStateWithLifecycle()
     val uiState = (screenState as? HomeScreenState.Success)?.uiState
+    val lazyListState = if (uiState?.selectedChip == null) forYouListState else moodListState
+
+    LaunchedEffect(uiState?.selectedChip?.endpoint) {
+        if (uiState?.selectedChip != null) moodListState.scrollToItem(0)
+    }
 
     LaunchedEffect(scrollToTop?.value) {
         if (scrollToTop?.value == true) {
@@ -65,7 +74,8 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(uiState?.homePage?.continuation) {
+    LaunchedEffect(uiState?.homePage?.continuation, uiState?.selectedChip, uiState?.isChipLoading, uiState?.chipLoadFailed, uiState?.isRefreshing) {
+        if (uiState?.isChipLoading == true || uiState?.chipLoadFailed == true || uiState?.isRefreshing == true) return@LaunchedEffect
         val continuation = uiState?.homePage?.continuation ?: return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = lazyListState.layoutInfo
@@ -86,36 +96,39 @@ fun HomeScreen(
         }
     }
 
-    Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .then(
-                    if (headerScrollConnection != null) Modifier.nestedScroll(headerScrollConnection) else Modifier,
-                ),
-    ) {
-        when (val state = screenState) {
-            HomeScreenState.Loading -> FrostSoulHomeLoading()
-            HomeScreenState.Empty -> FrostSoulHomeEmpty(onRetry = { viewModel.onAction(HomeAction.Refresh) })
-            is HomeScreenState.Error -> FrostSoulHomeError(onRetry = { viewModel.onAction(HomeAction.Refresh) })
-            is HomeScreenState.Success -> {
-                ExpressivePullToRefreshBox(
-                    isRefreshing = state.uiState.isRefreshing,
-                    onRefresh = { viewModel.onAction(HomeAction.Refresh) },
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    FrostSoulHomeFeed(
-                        uiState = state.uiState,
-                        mediaMetadata = mediaMetadata,
-                        isPlaying = isPlaying,
-                        navController = navController,
-                        playerConnection = playerConnection,
-                        menuState = menuState,
-                        haptic = haptic,
-                        scope = scope,
-                        lazyListState = lazyListState,
-                        onAction = viewModel::onAction,
-                    )
+    FrostSoulCalmTheme {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .frostSoulCalmScreenBackground()
+                    .then(
+                        if (headerScrollConnection != null) Modifier.nestedScroll(headerScrollConnection) else Modifier,
+                    ),
+        ) {
+            when (val state = screenState) {
+                HomeScreenState.Loading -> FrostSoulHomeLoading()
+                HomeScreenState.Empty -> FrostSoulHomeEmpty(onRetry = { viewModel.onAction(HomeAction.Refresh) })
+                is HomeScreenState.Error -> FrostSoulHomeError(onRetry = { viewModel.onAction(HomeAction.Refresh) })
+                is HomeScreenState.Success -> {
+                    ExpressivePullToRefreshBox(
+                        isRefreshing = state.uiState.isRefreshing,
+                        onRefresh = { viewModel.onAction(HomeAction.Refresh) },
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        FrostSoulHomeFeed(
+                            uiState = state.uiState,
+                            mediaMetadata = mediaMetadata,
+                            isPlaying = isPlaying,
+                            navController = navController,
+                            playerConnection = playerConnection,
+                            menuState = menuState,
+                            haptic = haptic,
+                            scope = scope,
+                            lazyListState = lazyListState,
+                            onAction = viewModel::onAction,
+                        )
+                    }
                 }
             }
         }

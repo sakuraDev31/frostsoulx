@@ -1,6 +1,16 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="home">Home</string>
+    <string name="home_for_you">For you</string>
+    <string name="home_continue_listening">Continue Listening</string>
+    <string name="home_for_this_moment">For This Moment</string>
+    <string name="home_mood_error">Could not load this mood</string>
+    <string name="home_mood_retry">Try refreshing or choose another mood.</string>
+    <string name="home_moment_description">Discoveries inspired by your recent listening.</string>
+    <string name="home_continue_description">Your recent songs, in the order you last played them.</string>
+    <string name="home_collection_empty">Play some music to build your listening home.</string>
+    <string name="home_navigate_back">Go back</string>
+    <string name="home_pause_track">Pause</string>
     <string name="songs">Songs</string>
     <string name="artists">Artists</string>
     <string name="albums">Albums</string>
@@ -542,6 +552,9 @@
     <string name="low_data_mode_title">Low Data Mode</string>
     <string name="low_data_mode_description">Reduces mobile data usage by using low-quality streams and disabling playback cache, canvas, and background lyrics preloading on metered networks</string>
     <string name="queue">Queue</string>
+    <string name="queue_tab_playing">Playing %1$d</string>
+    <string name="queue_tab_played_tracks">Played tracks %1$d</string>
+    <string name="queue_tab_played_playlists">Played playlists %1$d</string>
     <string name="persistent_queue">Persistent queue</string>
     <string name="persistent_queue_desc">Restore your last queue when the app starts</string>
     <string name="permanent_shuffle">Permanent shuffle mode</string>

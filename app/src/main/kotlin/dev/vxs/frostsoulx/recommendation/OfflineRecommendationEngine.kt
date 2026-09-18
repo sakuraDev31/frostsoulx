@@ -49,6 +49,9 @@ class OfflineRecommendationEngine @Inject constructor(
                     if (candidates.isEmpty()) return@withContext RecommendationRefreshState.Empty
 
                     val tracks = candidates.map { it.toMediaMetadata() }
+                    // MediaMetadata.duration is seconds; signal timing (listenedMs/positionMs) is
+                    // milliseconds, so this map normalizes the unit once for every consumer below.
+                    val durationById = tracks.associate { it.id to it.duration.toLong() * 1_000L }
                     val indexedFeatures = ensureFeatures(tracks)
                     val signals = database.recentRecommendationSignals(budget.maximumSignalsPerRefresh)
                     val signalsBySong = signals.groupBy { it.songId }
@@ -57,8 +60,9 @@ class OfflineRecommendationEngine @Inject constructor(
                             .asSequence()
                             .filter { signal -> signal.contextFlags == context.flags() }
                             .groupBy { it.songId }
-                    val features = updateBehaviorScores(indexedFeatures, signalsBySong)
-                    val profiles = updateTasteProfiles(features, signals)
+                    val features = updateBehaviorScores(indexedFeatures, signalsBySong, durationById)
+                    val profiles = updateTasteProfiles(features, signals, durationById)
+                    val sequenceAffinity = buildSequenceAffinity(signals)
                     val narrowedTracks = narrowCandidates(tracks, features, profiles)
                     val recommendations =
                         rank(
@@ -67,6 +71,7 @@ class OfflineRecommendationEngine @Inject constructor(
                             signalsBySong,
                             contextSignalsBySong,
                             profiles,
+                            sequenceAffinity,
                         )
                     val mixes = buildMixes(recommendations)
                     topMixRepository.replaceTopMixes(mixes)
@@ -117,16 +122,18 @@ class OfflineRecommendationEngine @Inject constructor(
     private suspend fun updateBehaviorScores(
         features: Map<String, RecommendationFeatureEntity>,
         signalsBySong: Map<String, List<RecommendationSignalEntity>>,
+        durationById: Map<String, Long>,
     ): Map<String, RecommendationFeatureEntity> {
         val updatedAtMs = System.currentTimeMillis()
         val updated =
             features.mapValues { (songId, feature) ->
                 val history = signalsBySong[songId].orEmpty()
-                val positives = history.count { it.isPositive() }
-                val negatives = history.count { it.isNegative() }
+                val duration = durationById[songId]
+                val positiveWeight = history.sumOf { it.positiveWeight(duration).toDouble() }.toFloat()
+                val negativeWeight = history.sumOf { it.negativeWeight(duration).toDouble() }.toFloat()
                 feature.copy(
-                    replayScore = RecommendationScoreMath.boundedProbability(positives, negatives),
-                    skipScore = RecommendationScoreMath.boundedProbability(negatives, positives),
+                    replayScore = RecommendationScoreMath.boundedProbabilityWeighted(positiveWeight, negativeWeight),
+                    skipScore = RecommendationScoreMath.boundedProbabilityWeighted(negativeWeight, positiveWeight),
                     updatedAtMs = updatedAtMs,
                 )
             }
@@ -137,6 +144,7 @@ class OfflineRecommendationEngine @Inject constructor(
     private suspend fun updateTasteProfiles(
         features: Map<String, RecommendationFeatureEntity>,
         signals: List<RecommendationSignalEntity>,
+        durationById: Map<String, Long>,
     ): Map<TasteProfileKind, QuantizedVector> {
         val nowMs = System.currentTimeMillis()
         val profileSignals =
@@ -154,7 +162,9 @@ class OfflineRecommendationEngine @Inject constructor(
                     QuantizedVectorCodec.weightedAverage(
                         vectors =
                             source.mapNotNull { signal ->
-                                features[signal.songId]?.toQuantizedVector()?.let { vector -> vector to signal.weight() }
+                                features[signal.songId]?.toQuantizedVector()?.let { vector ->
+                                    vector to signal.positiveWeight(durationById[signal.songId])
+                                }
                             },
                         dimension = budget.embeddingDimension,
                     )
@@ -197,12 +207,64 @@ class OfflineRecommendationEngine @Inject constructor(
         return tracks.filter { it.id in retrievalIds }
     }
 
+    /**
+     * Personal, session-derived sequential affinity: "after playing X, this listener usually
+     * plays Y next". This is the sequential-listening signal the research notes cite as a core
+     * recommendation input but that the ranking formula never actually consumed — no server or
+     * other-user data is required, since a single listener's own session history is enough to
+     * build it.
+     *
+     * Anchors on the most recently played distinct tracks (most-recent weighted highest), then
+     * scores every candidate by how often it has historically followed one of those anchors
+     * within the same listening session, normalized to [0, 1].
+     */
+    private fun buildSequenceAffinity(signals: List<RecommendationSignalEntity>): Map<String, Float> {
+        val bySession = signals.groupBy { it.sessionId }
+        val transitionCounts = mutableMapOf<Pair<String, String>, Int>()
+        bySession.values.forEach { sessionSignals ->
+            val ordered = sessionSignals.filter { it.isPositive() }.sortedBy { it.occurredAtMs }
+            for (index in 1 until ordered.size) {
+                val from = ordered[index - 1].songId
+                val to = ordered[index].songId
+                if (from == to) continue
+                val key = from to to
+                transitionCounts[key] = (transitionCounts[key] ?: 0) + 1
+            }
+        }
+        if (transitionCounts.isEmpty()) return emptyMap()
+
+        val recentAnchors =
+            signals
+                .asSequence()
+                .filter { it.isPositive() }
+                .sortedByDescending { it.occurredAtMs }
+                .map { it.songId }
+                .distinct()
+                .take(RecentAnchorCount)
+                .toList()
+        if (recentAnchors.isEmpty()) return emptyMap()
+
+        val raw = mutableMapOf<String, Float>()
+        recentAnchors.forEachIndexed { index, anchor ->
+            val anchorWeight = 1f / (index + 1f)
+            transitionCounts.forEach { (pair, count) ->
+                if (pair.first == anchor) {
+                    raw[pair.second] = (raw[pair.second] ?: 0f) + count * anchorWeight
+                }
+            }
+        }
+        val maxValue = raw.values.maxOrNull() ?: return emptyMap()
+        if (maxValue <= 0f) return emptyMap()
+        return raw.mapValues { (_, value) -> (value / maxValue).coerceIn(0f, 1f) }
+    }
+
     private fun rank(
         tracks: List<MediaMetadata>,
         features: Map<String, RecommendationFeatureEntity>,
         signalsBySong: Map<String, List<RecommendationSignalEntity>>,
         contextSignalsBySong: Map<String, List<RecommendationSignalEntity>>,
         profiles: Map<TasteProfileKind, QuantizedVector>,
+        sequenceAffinity: Map<String, Float>,
     ): List<OfflineRecommendation> {
         val profile = profiles[TasteProfileKind.Session] ?: profiles[TasteProfileKind.Weekly] ?: profiles[TasteProfileKind.LongTerm]
             ?: return emptyList()
@@ -211,24 +273,31 @@ class OfflineRecommendationEngine @Inject constructor(
                 val feature = features[track.id] ?: return@mapNotNull null
                 val history = signalsBySong[track.id].orEmpty()
                 val contextHistory = contextSignalsBySong[track.id].orEmpty()
-                val positives = history.count { it.isPositive() }
-                val negatives = history.count { it.isNegative() }
+                val durationMs = track.duration.toLong() * 1_000L
+                val positiveWeight = history.sumOf { it.positiveWeight(durationMs).toDouble() }.toFloat()
+                val negativeWeight = history.sumOf { it.negativeWeight(durationMs).toDouble() }.toFloat()
                 val replayProbability =
-                    (RecommendationScoreMath.boundedProbability(positives, negatives) + feature.replayScore) / 2f
+                    (RecommendationScoreMath.boundedProbabilityWeighted(positiveWeight, negativeWeight) + feature.replayScore) / 2f
                 val skipProbability =
-                    (RecommendationScoreMath.boundedProbability(negatives, positives) + feature.skipScore) / 2f
+                    (RecommendationScoreMath.boundedProbabilityWeighted(negativeWeight, positiveWeight) + feature.skipScore) / 2f
                 val similarity = QuantizedVectorCodec.cosine(profile, feature.toQuantizedVector()).coerceAtLeast(0f)
                 val novelty = (1f / (1f + history.size / 3f)).coerceIn(0f, 1f)
                 val contextScore = (0.45f + contextHistory.count { it.isPositive() } * 0.11f).coerceAtMost(1f)
+                // "People who just played this also played that" — a personal, session-derived
+                // sequential signal (see buildSequenceAffinity) that previously had no path into
+                // the score at all.
+                val sequence = sequenceAffinity[track.id] ?: 0f
                 val score =
-                    (similarity * 0.45f) +
-                        (novelty * 0.18f) +
-                        (contextScore * 0.12f) +
-                        (replayProbability * 0.22f) -
-                        (skipProbability * 0.28f)
+                    (similarity * 0.38f) +
+                        (novelty * 0.14f) +
+                        (contextScore * 0.10f) +
+                        (replayProbability * 0.18f) +
+                        (sequence * 0.20f) -
+                        (skipProbability * 0.26f)
                 val shelf =
                     when {
                         track.liked && history.size <= 2 -> RecommendationShelfType.ForgottenGems
+                        sequence >= 0.55f -> RecommendationShelfType.ContinueListening
                         novelty >= 0.68f && similarity >= 0.38f -> RecommendationShelfType.DeepCuts
                         similarity >= 0.52f -> RecommendationShelfType.BecauseYouLike
                         else -> RecommendationShelfType.RandomDiscovery
@@ -245,6 +314,7 @@ class OfflineRecommendationEngine @Inject constructor(
                             replayProbability = replayProbability,
                             skipProbability = skipProbability,
                             reason = shelf.description,
+                            sequenceAffinity = sequence,
                         ),
                 )
             }.sortedByDescending { it.explanation.score }
@@ -270,6 +340,7 @@ class OfflineRecommendationEngine @Inject constructor(
         val orderedShelves =
             listOf(
                 RecommendationShelfType.DailyMix,
+                RecommendationShelfType.ContinueListening,
                 RecommendationShelfType.BecauseYouLike,
                 RecommendationShelfType.ForgottenGems,
                 RecommendationShelfType.DeepCuts,
@@ -296,27 +367,52 @@ class OfflineRecommendationEngine @Inject constructor(
     private fun RecommendationFeatureEntity.toQuantizedVector(): QuantizedVector =
         QuantizedVector(dimension, quantizedEmbedding, scale, norm)
 
-    private fun RecommendationSignalEntity.weight(): Float =
-        when (type) {
+    /** Fraction of the track actually heard for this signal, or 0 when duration is unknown. */
+    private fun RecommendationSignalEntity.listenFraction(durationMs: Long?): Float {
+        if (durationMs == null || durationMs <= 0L) return 0f
+        return (listenedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    }
+
+    /**
+     * Continuous positive contribution, used both for taste-profile construction and for the
+     * replay-probability blend in ranking. A Skip is no longer a flat constant: skipping after
+     * most of the track had already played reads as a near-complete listen, not a rejection —
+     * the same distinction Spotify's own published skip-prediction research treats as essential,
+     * and one this app already has the data (listenedMs) to make but wasn't using.
+     */
+    private fun RecommendationSignalEntity.positiveWeight(durationMs: Long?): Float {
+        val fraction = listenFraction(durationMs)
+        return when (type) {
             RecommendationSignalType.Favorite.name -> 2.2f
             RecommendationSignalType.Complete.name -> 1.4f
             RecommendationSignalType.Replay.name -> 1.25f
             RecommendationSignalType.Play.name,
             RecommendationSignalType.Resume.name,
             -> 1f
-            RecommendationSignalType.Skip.name -> 0.15f
+            RecommendationSignalType.Skip.name -> ((fraction - 0.4f) * 2f).coerceAtLeast(0f)
             RecommendationSignalType.Unlike.name -> 0.05f
-            else -> 0.4f
+            else -> 0f
         }
+    }
+
+    /** Continuous negative contribution, mirroring [positiveWeight] for the skip-probability side. */
+    private fun RecommendationSignalEntity.negativeWeight(durationMs: Long?): Float {
+        val fraction = listenFraction(durationMs)
+        return when (type) {
+            RecommendationSignalType.Dislike.name -> 3.0f
+            RecommendationSignalType.Unlike.name -> 0.4f
+            RecommendationSignalType.Skip.name -> ((0.5f - fraction) * 2.2f).coerceAtLeast(0f)
+            else -> 0f
+        }
+    }
 
     private fun RecommendationSignalEntity.isPositive(): Boolean = type in PositiveSignalTypes
-
-    private fun RecommendationSignalEntity.isNegative(): Boolean = type in NegativeSignalTypes
 
     private companion object {
         const val EmbeddingVersion = 1
         const val MinimumShelfSize = 5
         const val MaxTracksPerArtist = 2
+        const val RecentAnchorCount = 5
         const val DayMs = 24L * 60L * 60L * 1000L
         const val WeekMs = 7L * DayMs
         val PositiveSignalTypes =
@@ -326,11 +422,6 @@ class OfflineRecommendationEngine @Inject constructor(
                 RecommendationSignalType.Complete.name,
                 RecommendationSignalType.Replay.name,
                 RecommendationSignalType.Favorite.name,
-            )
-        val NegativeSignalTypes =
-            setOf(
-                RecommendationSignalType.Skip.name,
-                RecommendationSignalType.Unlike.name,
             )
     }
 }
