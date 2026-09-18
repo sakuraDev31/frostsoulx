@@ -38,6 +38,7 @@ import dev.vxs.frostsoulx.constants.HideExplicitKey
 import dev.vxs.frostsoulx.constants.HideVideoKey
 import dev.vxs.frostsoulx.constants.InnerTubeCookieKey
 import dev.vxs.frostsoulx.constants.QuickPicks
+import dev.vxs.frostsoulx.constants.QuickPicksDisplayMode
 import dev.vxs.frostsoulx.constants.QuickPicksKey
 import dev.vxs.frostsoulx.constants.SpeedDialSongIdsKey
 import dev.vxs.frostsoulx.constants.YtmSyncKey
@@ -137,10 +138,14 @@ private data class HomeContent(
     val local: HomeLocalContent,
     val remote: HomeRemoteContent,
     val selectedChip: HomePage.Chip?,
+    val isChipLoading: Boolean,
+    val chipLoadFailed: Boolean,
 ) {
     val hasContent: Boolean
         get() =
-                            local.quickPicks.isNotEmpty() ||
+                selectedChip != null ||
+                remote.homePage?.chips?.isNotEmpty() == true ||
+                local.quickPicks.isNotEmpty() ||
                 local.featuredForYou.isNotEmpty() ||
                 local.forThisMoment.isNotEmpty() ||
                 local.recentlyPlayed.isNotEmpty() ||
@@ -174,18 +179,18 @@ private data class HomeStateInputs(
             return HomeScreenState.Empty
         }
 
-        // Reserve IDs in visual priority order so one local song/item cannot occupy
-        // multiple Home shelves in the same emission.
-        val usedLocalIds = HashSet<String>()
+        // History and pins are navigation anchors, not recommendation slots. Never let
+        // discovery remove or reorder the user's recent listening history.
+        val recentlyPlayed = content.local.recentlyPlayed.distinctBy { it.id }
+        val keepListening = content.local.keepListening.distinctBy { it.id }
+        val speedDialItems = content.local.speedDialItems.distinctBy { it.id }
+        val usedLocalIds = (recentlyPlayed + keepListening + speedDialItems).mapTo(HashSet()) { it.id }
         fun <T : LocalItem> dedupe(items: List<T>): List<T> =
             items.filter { usedLocalIds.add(it.id) }
         val featured = dedupe(content.local.featuredForYou)
         val moment = dedupe(content.local.forThisMoment)
-        val recentlyPlayed = dedupe(content.local.recentlyPlayed)
-        val keepListening = dedupe(content.local.keepListening)
         val quickPicks = dedupe(content.local.quickPicks)
         val forgottenFavorites = dedupe(content.local.forgottenFavorites)
-        val speedDialItems = dedupe(content.local.speedDialItems)
         val similarRecommendations =
             content.remote.similarRecommendations
                 .map { recommendation ->
@@ -215,6 +220,8 @@ private data class HomeStateInputs(
                 showTonalBackdrop = preferences.showTonalBackdrop,
                 isRefreshing = isRefreshing,
                 isLoadingMore = isLoadingMore,
+                isChipLoading = content.isChipLoading,
+                chipLoadFailed = content.chipLoadFailed,
             ),
         )
     }
@@ -257,6 +264,8 @@ class HomeViewModel
         private val accountPlaylists = MutableStateFlow<List<PlaylistItem>?>(null)
         private val homePage = MutableStateFlow<HomePage?>(null)
         private val selectedChip = MutableStateFlow<HomePage.Chip?>(null)
+        private val isChipLoading = MutableStateFlow(false)
+        private val chipLoadFailed = MutableStateFlow(false)
         private val previousHomePage = MutableStateFlow<HomePage?>(null)
 
         private val _allLocalItems = MutableStateFlow<List<LocalItem>>(emptyList())
@@ -272,6 +281,7 @@ class HomeViewModel
         val accountChannelsState: StateFlow<AccountChannelsState> = _accountChannelsState.asStateFlow()
 
         private val presentationPreferences = observeHomePresentationPreferences()
+            .onStart { emit(HomePresentationPreferences(true, QuickPicksDisplayMode.CARD, true)) }
         private val aiContentFilterSettings =
             observeAiContentFilter()
                 .map { (settings, _) -> settings }
@@ -294,7 +304,9 @@ class HomeViewModel
                         speedDialItems = speedDialItems,
                     )
                 },
-                combine(forgottenFavorites, keepListening, offlineMixRepository.observePersistedTopMixes()) {
+                combine(forgottenFavorites, keepListening, offlineMixRepository.observePersistedTopMixes()
+                    .onStart { emit(emptyList()) }
+                    .catch { reportException(it); emit(emptyList()) }) {
                         forgottenFavorites: List<Song>?,
                         keepListening: List<LocalItem>?,
                         offlineMixes: List<dev.vxs.frostsoulx.library.LibraryTopMix>,
@@ -335,12 +347,16 @@ class HomeViewModel
             combine(
                 localContent,
                 remoteContent,
-                selectedChip,
-            ) { localContent, remoteContent, selectedChip ->
+                combine(selectedChip, isChipLoading, chipLoadFailed) { chip, loading, failed ->
+                    Triple(chip, loading, failed)
+                },
+            ) { localContent, remoteContent, chipState ->
                 HomeContent(
                     local = localContent,
                     remote = remoteContent,
-                    selectedChip = selectedChip,
+                    selectedChip = chipState.first,
+                    isChipLoading = chipState.second,
+                    chipLoadFailed = chipState.third,
                 )
             }
 
@@ -368,7 +384,7 @@ class HomeViewModel
                     isRefreshing = loadingState.first,
                     isLoadingMore = loadingState.second,
                 )
-            }.stateIn(
+            }.flowOn(Dispatchers.Default).stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = HomeScreenState.Loading,
@@ -376,6 +392,9 @@ class HomeViewModel
 
         private var wasLoggedIn = false
         private var chipLoadJob: Job? = null
+        private var loadMoreJob: Job? = null
+        private var recommendationJob: Job? = null
+        private var pageGeneration = 0
 
         private fun filterHomeChips(chips: List<HomePage.Chip>?): List<HomePage.Chip>? =
             chips?.filterNot {
@@ -416,7 +435,10 @@ class HomeViewModel
         ): Pair<List<Song>, List<Song>> {
             val dislikedIds =
                 signalsBySong
-                    .filterValues { signals -> signals.firstOrNull()?.type == RecommendationSignalType.Dislike.name }
+                    .filterValues { signals -> signals.firstOrNull {
+                        it.type == RecommendationSignalType.Dislike.name ||
+                            it.type == RecommendationSignalType.Favorite.name
+                    }?.type == RecommendationSignalType.Dislike.name }
                     .keys
             val maxPlayCount = statsBySong.values.maxOfOrNull { it.songCountListened }?.coerceAtLeast(1) ?: 1
             val round = recommendationRound++
@@ -431,8 +453,8 @@ class HomeViewModel
                         val exposurePenalty = if (candidate.song.id in lastRecommendedIds) 0.30f else 0f
                         val similarity =
                             when (candidate.source) {
-                                HomeCandidateSource.DISCOVERY -> 1f
-                                HomeCandidateSource.RELATED -> 0.9f
+                                HomeCandidateSource.DISCOVERY -> 0.78f
+                                HomeCandidateSource.RELATED -> 1f
                                 HomeCandidateSource.SAME_ARTIST -> 0.72f
                                 HomeCandidateSource.HISTORY -> 0.58f
                                 HomeCandidateSource.LIBRARY -> 0.25f
@@ -638,20 +660,35 @@ class HomeViewModel
                     }
         }
 
+        private fun observeRecentListening() {
+            viewModelScope.launch(Dispatchers.IO) {
+                combine(database.recentSongs(limit = 40), context.dataStore.data) { songs, preferences ->
+                    songs.filter { song ->
+                        song.artists.none { it.blockedAt != null } &&
+                            (preferences[HideExplicitKey] != true || !song.song.explicit) &&
+                            (preferences[HideVideoKey] != true || !song.song.isMusicVideo)
+                    }.take(20)
+                }.distinctUntilChanged().catch { reportException(it) }.collect { songs ->
+                    recentlyPlayed.value = songs
+                    keepListening.value = songs
+                    updateAllLocalItems()
+                }
+            }
+        }
+
         private suspend fun load() {
             if (isLoading.value) return
             isLoading.value = true
             loadError.value = null
 
             try {
-                val aiContentFilterPolicy = loadAiContentFilterPolicy()
+                recommendationJob?.cancel()
                 supervisorScope {
                     val hideExplicit = context.dataStore.get(HideExplicitKey, false)
                     val hideVideo = context.dataStore.get(HideVideoKey, false)
                     val blockedArtistIds = database.getBlockedArtistIds().toSet()
-                    val fromTimeStamp = System.currentTimeMillis() - 86400000 * 7 * 2
-
-                    launch { loadSpeedDialItems() }
+                    // Cached/local ranking must not wait for filter downloads or YouTube.
+                    launch { loadHistoryRecommendations(includeRemote = false) }
                     launch {
                         forgottenFavorites.value =
                             database
@@ -663,47 +700,11 @@ class HomeViewModel
                     }
 
                     launch {
-                        recentlyPlayed.value =
-                            database
-                                .recentSongs(limit = 20)
-                                .first()
-                                .filter { song -> song.artists.none { it.blockedAt != null } }
-                                .take(20)
-                    }
-
-                    launch {
-                        val keepListeningSongs =
-                            database
-                                .mostPlayedSongs(fromTimeStamp, limit = 15, offset = 5)
-                                .first()
-                                .filter { song -> song.artists.none { it.blockedAt != null } }
-                                .shuffled()
-                                .take(10)
-                        val keepListeningAlbums =
-                            database
-                                .mostPlayedAlbums(fromTimeStamp, limit = 8, offset = 2)
-                                .first()
-                                .filter { it.album.thumbnailUrl != null && it.artists.none { artist -> artist.blockedAt != null } }
-                                .shuffled()
-                                .take(5)
-                        val keepListeningArtists =
-                            database
-                                .mostPlayedArtists(fromTimeStamp)
-                                .first()
-                                .filter {
-                                    it.artist.blockedAt == null &&
-                                        it.artist.isYouTubeArtist &&
-                                        it.artist.thumbnailUrl != null
-                                }.shuffled()
-                                .take(5)
-                        keepListening.value = (keepListeningSongs + keepListeningAlbums + keepListeningArtists).shuffled()
-                    }
-
-                    launch {
-                        YouTube
-                            .home()
-                            .onSuccess { page ->
-                                homePage.value =
+                        val aiContentFilterPolicy = loadAiContentFilterPolicy()
+                        val page = withTimeoutOrNull(10_000L) { YouTube.home().getOrNull() }
+                        currentCoroutineContext().ensureActive()
+                        if (page != null) {
+                            val filteredPage =
                                     page.copy(
                                         chips = filterHomeChips(page.chips),
                                         sections =
@@ -720,18 +721,24 @@ class HomeViewModel
                                                 )
                                             },
                                     )
-                            }.onFailure {
-                                reportException(it)
-                                loadError.value = R.string.error_unknown
-                            }
+                            if (selectedChip.value == null) homePage.value = filteredPage
+                            else previousHomePage.value = filteredPage
+                        } else {
+                            loadError.value = R.string.error_unknown
+                        }
                     }
                 }
 
                 updateAllLocalItems()
-                loadHistoryRecommendations()
-
-                viewModelScope.launch(Dispatchers.IO) {
-                    loadSimilarRecommendations()
+                recommendationJob = viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        loadHistoryRecommendations(includeRemote = true)
+                        withTimeoutOrNull(8_000L) { loadSimilarRecommendations() }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        reportException(e)
+                    }
                 }
 
                 _allYtItems.value = similarRecommendations.value?.flatMap { it.items }.orEmpty() +
@@ -753,14 +760,17 @@ class HomeViewModel
         }
 
         /** Mix fresh network discovery with bounded cached candidates, not download totals. */
-        private suspend fun loadHistoryRecommendations() {
+        private suspend fun loadHistoryRecommendations(includeRemote: Boolean) {
             val fromTimeStamp = System.currentTimeMillis() - 86400000L * 30
             val hideExplicit = context.dataStore.get(HideExplicitKey, false)
             val hideVideo = context.dataStore.get(HideVideoKey, false)
             val blockedArtistIds = database.getBlockedArtistIds().toSet()
             val signalsBySong = database.recentRecommendationSignals(limit = 2_000).groupBy { it.songId }
             val dislikedIds = signalsBySong.filterValues {
-                it.firstOrNull()?.type == RecommendationSignalType.Dislike.name
+                it.firstOrNull { signal ->
+                    signal.type == RecommendationSignalType.Dislike.name ||
+                        signal.type == RecommendationSignalType.Favorite.name
+                }?.type == RecommendationSignalType.Dislike.name
             }.keys
             fun eligible(song: Song): Boolean =
                 song.id !in dislikedIds && (!hideExplicit || !song.song.explicit) &&
@@ -775,13 +785,14 @@ class HomeViewModel
             // Recent tastes and different artists get a chance to seed discovery, not just
             // the same four all-time/download-heavy tracks on every visit.
             val seeds = history.filterNot { it.song.isLocal }
-                .shuffled().distinctBy { it.artists.firstOrNull()?.name ?: it.id }.take(6)
+                .distinctBy { it.artists.firstOrNull()?.name ?: it.id }.take(6)
             val related = seeds.flatMap { database.homeRelatedSongs(it.id) }
                 .filter(::eligible).distinctBy { it.id }.take(120)
             val library = database.homeRecommendationCandidates().filter(::eligible)
-            val liveRelated = loadLiveRelatedSongs(seeds)
-            val remoteItems = filterAiContent(
-                (liveRelated + homePage.value?.sections.orEmpty().flatMap { it.items }.filterIsInstance<SongItem>())
+            val liveRelated = if (includeRemote) loadLiveRelatedSongs(seeds) else emptyList()
+            val discoveryPage = if (selectedChip.value == null) homePage.value else previousHomePage.value
+            val remoteItems = if (!includeRemote) emptyList() else filterAiContent(
+                (liveRelated + discoveryPage?.sections.orEmpty().flatMap { it.items }.filterIsInstance<SongItem>())
                     .distinctBy { it.id }
                     .filterNot { it.id in dislikedIds }
                     .filterExplicit(hideExplicit)
@@ -798,19 +809,23 @@ class HomeViewModel
             }
             val discovery = if (remoteItems.isEmpty()) emptyList() else
                 database.getSongsByIds(remoteItems.map { it.id }).filter(::eligible)
-            val candidates = discovery.map { HomeCandidate(it, HomeCandidateSource.DISCOVERY) } +
-                related.map { HomeCandidate(it, HomeCandidateSource.RELATED) } +
+            val relatedIds = (related.map { it.id } + liveRelated.map { it.id }).toHashSet()
+            val candidates = discovery.map {
+                HomeCandidate(it, if (it.id in relatedIds) HomeCandidateSource.RELATED else HomeCandidateSource.DISCOVERY)
+            } + related.map { HomeCandidate(it, HomeCandidateSource.RELATED) } +
+                history.map { HomeCandidate(it, HomeCandidateSource.HISTORY) } +
                 library.map { song ->
                     HomeCandidate(song, if (song.artists.any { it.id in historyArtistIds })
                         HomeCandidateSource.SAME_ARTIST else HomeCandidateSource.LIBRARY)
-                } + history.map { HomeCandidate(it, HomeCandidateSource.HISTORY) }
+                }
             val (featured, moment) = rankHomeCandidates(
-                candidates = candidates,
+                candidates = candidates.filterNot { it.song.id in recent.take(20).map { song -> song.id } },
                 historyIds = historyIds,
                 recentIds = recent.take(12).mapTo(HashSet()) { it.id },
                 statsBySong = database.mostPlayedSongsStats(fromTimeStamp, limit = 200).first().associateBy { it.id },
                 signalsBySong = signalsBySong,
             )
+            currentCoroutineContext().ensureActive()
             featuredForYou.value = featured
             forThisMoment.value = moment
             updateAllLocalItems()
@@ -1015,80 +1030,94 @@ class HomeViewModel
             }
         }
 
-        private fun loadMoreYouTubeItems(continuation: String?) {
-            if (continuation == null || isLoadingMore.value) return
+        private suspend fun filteredHomePage(page: HomePage, chips: List<HomePage.Chip>?): HomePage {
             val hideExplicit = context.dataStore.get(HideExplicitKey, false)
             val hideVideo = context.dataStore.get(HideVideoKey, false)
+            val blockedArtistIds = database.getBlockedArtistIds().toSet()
+            val policy = loadAiContentFilterPolicy()
+            return page.copy(
+                chips = filterHomeChips(chips),
+                sections = page.sections.map { section ->
+                    section.copy(items = filterAiContent(
+                        section.items.filterExplicit(hideExplicit).filterVideo(hideVideo)
+                            .filterBlockedArtists(blockedArtistIds), policy,
+                    ))
+                }.filter { it.items.isNotEmpty() },
+            )
+        }
 
-            viewModelScope.launch(Dispatchers.IO) {
-                isLoadingMore.value = true
+        private fun loadMoreYouTubeItems(continuation: String?) {
+            val page = homePage.value ?: return
+            if (continuation == null || continuation != page.continuation ||
+                isLoadingMore.value || isChipLoading.value || chipLoadFailed.value || isLoading.value) return
+            val generation = pageGeneration
+            isLoadingMore.value = true
+            loadMoreJob = viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    val blockedArtistIds = database.getBlockedArtistIds().toSet()
-                    val aiContentFilterPolicy = loadAiContentFilterPolicy()
-                    val nextSections = YouTube.home(continuation).getOrNull() ?: return@launch
-                    homePage.value =
-                        nextSections.copy(
-                            chips = homePage.value?.chips,
-                            sections =
-                                (homePage.value?.sections.orEmpty() + nextSections.sections).map { section ->
-                                    section.copy(
-                                        items =
-                                            filterAiContent(
-                                                section.items
-                                                    .filterExplicit(hideExplicit)
-                                                    .filterVideo(hideVideo)
-                                                    .filterBlockedArtists(blockedArtistIds),
-                                                aiContentFilterPolicy,
-                                            ),
-                                    )
-                                },
-                        )
+                    val nextPage = withTimeoutOrNull(10_000L) {
+                        YouTube.home(continuation).getOrNull()?.let { filteredHomePage(it, page.chips) }
+                    } ?: return@launch
+                    currentCoroutineContext().ensureActive()
+                    if (generation != pageGeneration || homePage.value !== page) return@launch
+                    homePage.value = nextPage.copy(sections = page.sections + nextPage.sections)
+                    updateAllYtItems()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    reportException(e)
                 } finally {
-                    isLoadingMore.value = false
+                    if (generation == pageGeneration) isLoadingMore.value = false
                 }
             }
         }
 
-        private fun toggleChip(chip: HomePage.Chip?) {
+        private fun updateAllYtItems() {
+            _allYtItems.value = (similarRecommendations.value.orEmpty().flatMap { it.items } +
+                homePage.value?.sections.orEmpty().flatMap { it.items }).distinctBy { it.id }
+        }
+
+        private fun toggleChip(chip: HomePage.Chip?, force: Boolean = false) {
+            if (!force && chip?.endpoint == selectedChip.value?.endpoint && !chipLoadFailed.value) return
+            val generation = ++pageGeneration
             chipLoadJob?.cancel()
-            if (chip == null || chip == selectedChip.value && previousHomePage.value != null) {
-                homePage.value = previousHomePage.value
+            loadMoreJob?.cancel()
+            isLoadingMore.value = false
+            chipLoadFailed.value = false
+            if (chip == null) {
+                previousHomePage.value?.let { homePage.value = it }
                 previousHomePage.value = null
                 selectedChip.value = null
+                isChipLoading.value = false
+                updateAllYtItems()
                 return
             }
-
-            if (selectedChip.value == null) {
-                previousHomePage.value = homePage.value
-            }
-
-            chipLoadJob =
-                viewModelScope.launch(Dispatchers.IO) {
-                    val hideExplicit = context.dataStore.get(HideExplicitKey, false)
-                    val hideVideo = context.dataStore.get(HideVideoKey, false)
-                    val blockedArtistIds = database.getBlockedArtistIds().toSet()
-                    val aiContentFilterPolicy = loadAiContentFilterPolicy()
-                    val nextSections = YouTube.home(params = chip?.endpoint?.params).getOrNull() ?: return@launch
-
-                    homePage.value =
-                        nextSections.copy(
-                            chips = homePage.value?.chips,
-                            sections =
-                                nextSections.sections.map { section ->
-                                    section.copy(
-                                        items =
-                                            filterAiContent(
-                                                section.items
-                                                    .filterExplicit(hideExplicit)
-                                                    .filterVideo(hideVideo)
-                                                    .filterBlockedArtists(blockedArtistIds),
-                                                aiContentFilterPolicy,
-                                            ),
-                                    )
-                                },
-                        )
-                    selectedChip.value = chip
+            if (selectedChip.value == null) previousHomePage.value = homePage.value
+            // Highlight immediately; the UI keeps the chip row mounted while loading.
+            isChipLoading.value = true
+            selectedChip.value = chip
+            chipLoadJob = viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val page = withTimeoutOrNull(10_000L) {
+                        YouTube.home(params = chip.endpoint.params).getOrNull()?.let {
+                            filteredHomePage(it, previousHomePage.value?.chips ?: homePage.value?.chips)
+                        }
+                    }
+                    currentCoroutineContext().ensureActive()
+                    if (generation != pageGeneration) return@launch
+                    if (page == null) chipLoadFailed.value = true
+                    else {
+                        homePage.value = page
+                        updateAllYtItems()
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (generation == pageGeneration) chipLoadFailed.value = true
+                    reportException(e)
+                } finally {
+                    if (generation == pageGeneration) isChipLoading.value = false
                 }
+            }
         }
 
         fun onAction(action: HomeAction) {
@@ -1100,9 +1129,13 @@ class HomeViewModel
         }
 
         private fun refresh() {
-            if (isRefreshing.value) return
+            selectedChip.value?.let { toggleChip(it, force = true); return }
+            if (isRefreshing.value || isLoading.value) return
+            ++pageGeneration
+            loadMoreJob?.cancel()
+            isLoadingMore.value = false
+            isRefreshing.value = true
             viewModelScope.launch(Dispatchers.IO) {
-                isRefreshing.value = true
                 try {
                     supervisorScope {
                         launch { load() }
@@ -1180,6 +1213,7 @@ class HomeViewModel
         }
 
         init {
+            observeRecentListening()
             observeQuickPicks()
 
             viewModelScope.launch(Dispatchers.IO) {
