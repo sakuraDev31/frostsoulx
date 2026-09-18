@@ -539,7 +539,10 @@ internal fun FSMiniPlayer(
     val backgroundColor = FrostSoulTheme.colors.surface
     val primaryTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurface else FrostSoulOnSurface
     val mutedTextColor = FrostSoulTheme.colors.onSurfaceMuted
-    val progressColor = FrostSoulTheme.colors.accent
+    // Keep the mini player grounded in the app theme while letting the current artwork
+    // provide the visual accent. The palette is extracted off the main thread and cached.
+    val progressColor = palette.artworkPrimary.copy(alpha = 0.94f)
+    val progressTrackColor = palette.artworkSecondary.copy(alpha = 0.42f)
 
     Box(
         modifier =
@@ -554,8 +557,12 @@ internal fun FSMiniPlayer(
                 .clip(shape)
                 .background(backgroundColor)
                 .background(
-                    Brush.horizontalGradient(
-                        listOf(palette.accent.copy(alpha = 0.12f), Color.Transparent),
+                    Brush.linearGradient(
+                        colors = listOf(
+                            palette.artworkPrimary.copy(alpha = 0.26f),
+                            palette.artworkSecondary.copy(alpha = 0.18f),
+                            Color.Transparent,
+                        ),
                     ),
                 )
                 .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.65f), shape)
@@ -631,7 +638,7 @@ internal fun FSMiniPlayer(
                     )
                     drawPath(
                         path = perimeterPath,
-                        color = timelineColor.copy(alpha = 0.22f),
+                        color = progressTrackColor,
                         style = stroke,
                     )
                     if (progress > 0f) {
