@@ -1003,6 +1003,7 @@ fun BottomSheetPlayer(
         onDismiss = {
             playerConnection.service.stopAndClearPlayback(clearPersistentState = true)
         },
+        sharedArtworkKey = mediaMetadata?.id.takeUnless { aodModeEnabled },
         collapsedContentHeight = MiniPlayerHeight,
         collapsedContent = {
             MiniPlayer(

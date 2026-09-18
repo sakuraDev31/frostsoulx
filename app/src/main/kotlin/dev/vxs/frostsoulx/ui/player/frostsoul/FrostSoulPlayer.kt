@@ -76,6 +76,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import dev.vxs.frostsoulx.ui.frostsoul.FSIcon as Icon
 import dev.vxs.frostsoulx.ui.frostsoul.FSText as Text
+import dev.vxs.frostsoulx.ui.component.LocalPlayerArtworkTransition
+import dev.vxs.frostsoulx.ui.component.playerArtwork
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -207,13 +210,12 @@ internal fun FrostSoulPlayer(
     // drag is the reliable fix (plain pointerInput consumption on the seekbar alone doesn't
     // reliably win against the pager's own scrollable gesture detection).
     var isSeekbarDragging by remember { mutableStateOf(false) }
-    var downwardDragDistance by remember { mutableFloatStateOf(0f) }
-    val settledDragOffset by animateFloatAsState(
-        targetValue = downwardDragDistance,
-        animationSpec = spring(dampingRatio = 0.82f, stiffness = 520f),
-        label = "frostsoul-player-dismiss-drag",
-    )
-    val collapseFraction = (settledDragOffset / 280f).coerceIn(0f, 1f)
+    val artworkTransition = LocalPlayerArtworkTransition.current
+    SideEffect {
+        artworkTransition?.enabled = pagerState.currentPage == 1 && !pagerState.isScrollInProgress
+    }
+    // The enclosing sheet owns vertical drag, fling, and collapse progress. A second
+    // drag offset here would snap back on release and detach artwork from its destination.
     // On the ARTWORK_BLUR ("Immersive") style, the main player page wants its artwork to
     // reach the true top of the screen (behind the already-hidden status bar), with the
     // collapse chevron + pager dots floating over the artwork instead of sitting in their
@@ -234,27 +236,7 @@ internal fun FrostSoulPlayer(
             modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .graphicsLayer {
-                    translationY = settledDragOffset
-                    scaleX = 1f - collapseFraction * 0.035f
-                    scaleY = 1f - collapseFraction * 0.035f
-                    alpha = 1f - collapseFraction * 0.18f
-                    transformOrigin = TransformOrigin(0.5f, 0f)
-                }
-                .pointerInput(actions.onDismiss, queueVisible) {
-                    detectVerticalDragGestures(
-                        onVerticalDrag = { _, dragAmount ->
-                            if (!queueVisible) {
-                                downwardDragDistance = (downwardDragDistance + dragAmount).coerceAtLeast(0f)
-                            }
-                        },
-                        onDragEnd = {
-                            if (downwardDragDistance >= 112f) actions.onDismiss()
-                            downwardDragDistance = 0f
-                        },
-                        onDragCancel = { downwardDragDistance = 0f },
-                    )
-                },
+,
         ) {
             FrostSoulDynamicBackground(
                 artworkUrl = uiState.track.artworkUrl,
@@ -669,7 +651,9 @@ internal fun FSMiniPlayer(
                 }
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(artworkSize).clip(RoundedCornerShape(8.dp)).background(FrostSoulSurface),
+                    modifier = Modifier.size(artworkSize)
+                        .playerArtwork(expanded = false)
+                        .clip(RoundedCornerShape(8.dp)).background(FrostSoulSurface),
                 ) {
                     AsyncImage(
                         model = track.artworkUrl,
@@ -1476,6 +1460,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxSize()
+                            .playerArtwork(expanded = true)
                             // FS-BUG-IMMERSIVE-BORDER: BlendMode.DstIn only combines correctly
                             // with what's *already inside this composable's own layer*. Without
                             // an explicit offscreen layer here, this image shares the pager

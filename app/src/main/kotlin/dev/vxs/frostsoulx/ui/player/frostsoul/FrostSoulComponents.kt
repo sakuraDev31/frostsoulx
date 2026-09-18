@@ -72,6 +72,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import dev.vxs.frostsoulx.ui.component.playerArtwork
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.ui.frostsoul.FSIcon
@@ -408,7 +409,8 @@ internal fun FSAlbumArt(
                         model = artworkUrl,
                         contentDescription = "Album artwork for $title",
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize()
+                            .playerArtwork(expanded = true, round = true, rotation = { rotation.value }),
                     )
                     if (artworkUrl.isNullOrBlank()) {
                         FSIcon(
