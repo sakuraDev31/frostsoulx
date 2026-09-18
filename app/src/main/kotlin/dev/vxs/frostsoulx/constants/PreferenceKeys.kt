@@ -938,3 +938,4 @@ val StereoSurroundReverbTimeKey = floatPreferencesKey("stereoSurroundReverbTime"
 val StereoSurroundRoomSizeKey = floatPreferencesKey("stereoSurroundRoomSize")
 val StereoSurroundDampeningKey = floatPreferencesKey("stereoSurroundDampening")
 val StereoSurroundStereoWidthKey = floatPreferencesKey("stereoSurroundStereoWidth")
+val ImmersiveDevelopmentWarningShownKey = booleanPreferencesKey("immersiveDevelopmentWarningShown")

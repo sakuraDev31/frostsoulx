@@ -64,6 +64,7 @@ import dev.vxs.frostsoulx.constants.StereoSurroundReverbTimeKey
 import dev.vxs.frostsoulx.constants.StereoSurroundRoomSizeKey
 import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
 import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
+import dev.vxs.frostsoulx.constants.ImmersiveDevelopmentWarningShownKey
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.playback.ImmersiveRoomPreset
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
@@ -88,6 +89,7 @@ fun StereoSurroundScreen(navController: NavController) {
     val roomSizePreference = rememberPreference(StereoSurroundRoomSizeKey, defaultValue = 0.5f)
     val dampeningPreference = rememberPreference(StereoSurroundDampeningKey, defaultValue = 0.5f)
     val stereoWidthPreference = rememberPreference(StereoSurroundStereoWidthKey, defaultValue = 0.5f)
+    val developmentWarningPreference = rememberPreference(ImmersiveDevelopmentWarningShownKey, defaultValue = false)
     val persistedRoomPreset by roomPresetPreference
     val persistedRoomMix by roomMixPreference
     val persistedReflectionAmount by reflectionPreference
@@ -95,6 +97,7 @@ fun StereoSurroundScreen(navController: NavController) {
     val persistedRoomSize by roomSizePreference
     val persistedDampening by dampeningPreference
     val persistedStereoWidth by stereoWidthPreference
+    val developmentWarningShown by developmentWarningPreference
 
     var selectedPage by remember { mutableStateOf(ImmersiveSettingsPage.Default) }
     var draftIntensity by remember { mutableFloatStateOf(persistedIntensity.coerceIn(0f, 1f)) }
@@ -105,7 +108,6 @@ fun StereoSurroundScreen(navController: NavController) {
     var draftDampening by remember { mutableFloatStateOf(persistedDampening.coerceIn(0f, 1f)) }
     var draftStereoWidth by remember { mutableFloatStateOf(persistedStereoWidth.coerceIn(0f, 1f)) }
     var isDragging by remember { mutableStateOf(false) }
-    var showDevelopmentWarning by remember { mutableStateOf(true) }
     var diagnostics by remember { mutableStateOf(ImmersiveAudioDiagnostics()) }
 
     LaunchedEffect(persistedIntensity) {
@@ -242,9 +244,9 @@ fun StereoSurroundScreen(navController: NavController) {
         }
     }
 
-    if (showDevelopmentWarning) {
+    if (!developmentWarningShown) {
         AlertDialog(
-            onDismissRequest = { showDevelopmentWarning = false },
+            onDismissRequest = { developmentWarningPreference.value = true },
             icon = {
                 Icon(
                     painter = painterResource(R.drawable.error),
@@ -261,7 +263,7 @@ fun StereoSurroundScreen(navController: NavController) {
                 )
             },
             confirmButton = {
-                Button(onClick = { showDevelopmentWarning = false }) {
+                Button(onClick = { developmentWarningPreference.value = true }) {
                     Text("Continue")
                 }
             },

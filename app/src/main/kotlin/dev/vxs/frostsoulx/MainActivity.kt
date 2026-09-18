@@ -241,6 +241,7 @@ import dev.vxs.frostsoulx.playback.queues.Queue
 import dev.vxs.frostsoulx.playback.queues.YouTubeAlbumRadio
 import dev.vxs.frostsoulx.playback.queues.YouTubeQueue
 import dev.vxs.frostsoulx.ui.component.BottomSheetMenu
+import dev.vxs.frostsoulx.ui.screens.onboarding.OnboardingRoute
 import dev.vxs.frostsoulx.ui.component.BottomSheetPage
 import dev.vxs.frostsoulx.ui.component.COLLAPSED_ANCHOR
 import dev.vxs.frostsoulx.ui.component.DISMISSED_ANCHOR
@@ -624,7 +625,7 @@ class MainActivity : ComponentActivity() {
 
                 val onboardingViewModel: OnboardingViewModel = hiltViewModel()
                 val onboardingState by onboardingViewModel.screenState.collectAsStateWithLifecycle()
-                                if (onboardingState is OnboardingScreenState.Loading) {
+                if (onboardingState is OnboardingScreenState.Loading) {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier =
@@ -637,6 +638,12 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.size(48.dp),
                         )
                     }
+                    return@ArchiveTuneTheme
+                }
+
+                val onboardingSuccess = onboardingState as? OnboardingScreenState.Success
+                if (onboardingSuccess?.uiState?.shouldShowOnboarding == true) {
+                    OnboardingRoute(viewModel = onboardingViewModel)
                     return@ArchiveTuneTheme
                 }
 
