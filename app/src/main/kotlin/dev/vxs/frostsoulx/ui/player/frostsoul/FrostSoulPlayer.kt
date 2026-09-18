@@ -539,10 +539,9 @@ internal fun FSMiniPlayer(
     val backgroundColor = FrostSoulTheme.colors.surface
     val primaryTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurface else FrostSoulOnSurface
     val mutedTextColor = FrostSoulTheme.colors.onSurfaceMuted
-    // Keep the mini player grounded in the app theme while letting the current artwork
-    // provide the visual accent. The palette is extracted off the main thread and cached.
-    val progressColor = palette.artworkPrimary.copy(alpha = 0.94f)
-    val progressTrackColor = palette.artworkSecondary.copy(alpha = 0.42f)
+    // Keep the arc contrast stable; artwork-derived colors remain on the mini-player surface.
+    val progressColor = if (isLightTheme) Color.Black else Color.White
+    val progressTrackColor = progressColor.copy(alpha = 0.22f)
 
     Box(
         modifier =
