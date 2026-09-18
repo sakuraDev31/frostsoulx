@@ -360,15 +360,15 @@ struct ImmersiveAudioEngine::Impl {
     }
 
     void applyRoomModel(float& left, float& right) noexcept {
-        if (roomPreset == RoomSimulationPreset::Off || roomMix <= 0.0f) {
-            left = softClipSample(left);
-            right = softClipSample(right);
+        // Room processing must be transparent when disabled or when spatial intensity is
+        // effectively zero. Applying softClipSample here used to distort ordinary loud
+        // samples continuously, even though the room stage was visually set to Off.
+        const float effectiveRoomMix = roomMix * spatialBlend;
+        if (roomPreset == RoomSimulationPreset::Off || effectiveRoomMix <= kZeroEpsilon) {
             return;
         }
 
         if (reflectionDelayLeft.empty() || reverbDelayLeft.empty()) {
-            left = softClipSample(left);
-            right = softClipSample(right);
             return;
         }
 
@@ -409,12 +409,9 @@ struct ImmersiveAudioEngine::Impl {
         const float wetL = reflectionL + (0.70f * reverbLowpassL);
         const float wetR = reflectionR + (0.70f * reverbLowpassR);
 
-        const float dryMix = 1.0f - roomMix;
-        left = dryMix * left + roomMix * wetL;
-        right = dryMix * right + roomMix * wetR;
-
-        left = softClipSample(left);
-        right = softClipSample(right);
+        const float dryMix = 1.0f - effectiveRoomMix;
+        left = dryMix * left + effectiveRoomMix * wetL;
+        right = dryMix * right + effectiveRoomMix * wetR;
 
         if (std::fabs(left) < kZeroEpsilon) left = 0.0f;
         if (std::fabs(right) < kZeroEpsilon) right = 0.0f;
