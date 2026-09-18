@@ -8,6 +8,7 @@
 package dev.vxs.frostsoulx.viewmodels
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.compose.runtime.Immutable
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModel
@@ -18,6 +19,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -66,6 +70,7 @@ import dev.vxs.frostsoulx.utils.SpeedDialPinType
 import dev.vxs.frostsoulx.utils.SyncUtils
 import dev.vxs.frostsoulx.utils.dataStore
 import dev.vxs.frostsoulx.utils.get
+import dev.vxs.frostsoulx.utils.isLowDataModeActive
 import dev.vxs.frostsoulx.utils.parseSpeedDialPins
 import dev.vxs.frostsoulx.utils.reportException
 import dev.vxs.frostsoulx.utils.toPlaybackAuthState
@@ -379,10 +384,17 @@ class HomeViewModel
 
         private enum class HomeCandidateSource {
             HISTORY,
+            DISCOVERY,
             RELATED,
             SAME_ARTIST,
             LIBRARY,
         }
+
+        private var discoveryAccount = ""
+        private var discoveryFetchedAt = 0L
+        private var discoveryCache = emptyList<SongItem>()
+        private var recommendationRound = 0
+        private var lastRecommendedIds = emptySet<String>()
 
         private data class HomeCandidate(
             val song: Song,
@@ -407,6 +419,7 @@ class HomeViewModel
                     .filterValues { signals -> signals.firstOrNull()?.type == RecommendationSignalType.Dislike.name }
                     .keys
             val maxPlayCount = statsBySong.values.maxOfOrNull { it.songCountListened }?.coerceAtLeast(1) ?: 1
+            val round = recommendationRound++
             val ranked =
                 candidates
                     .distinctBy { it.song.id }
@@ -414,17 +427,19 @@ class HomeViewModel
                     .map { candidate ->
                         val stats = statsBySong[candidate.song.id]
                         val frequency = ((stats?.songCountListened ?: 0).toFloat() / maxPlayCount).coerceIn(0f, 1f)
-                        val recency = if (candidate.song.id in recentIds) 1f else 0.2f
+                        val recentPenalty = if (candidate.song.id in recentIds) 0.45f else 0f
+                        val exposurePenalty = if (candidate.song.id in lastRecommendedIds) 0.30f else 0f
                         val similarity =
                             when (candidate.source) {
-                                HomeCandidateSource.RELATED -> 1f
+                                HomeCandidateSource.DISCOVERY -> 1f
+                                HomeCandidateSource.RELATED -> 0.9f
                                 HomeCandidateSource.SAME_ARTIST -> 0.72f
                                 HomeCandidateSource.HISTORY -> 0.58f
                                 HomeCandidateSource.LIBRARY -> 0.25f
                             }
-                        val novelty = (1f - frequency).coerceIn(0f, 1f)
+                        val novelty = if (candidate.song.id !in historyIds && stats == null) 1f else 0.25f * (1f - frequency)
                         val feedback =
-                            signalsBySong[candidate.song.id].orEmpty().sumOf { signal ->
+                            signalsBySong[candidate.song.id].orEmpty().take(20).sumOf { signal ->
                                 when (signal.type) {
                                     RecommendationSignalType.Favorite.name -> 0.25
                                     RecommendationSignalType.Complete.name,
@@ -439,13 +454,11 @@ class HomeViewModel
                             }.toFloat().coerceIn(-0.5f, 0.5f)
                         val contextBoost =
                             if (signalsBySong[candidate.song.id].orEmpty().any { it.contextFlags != 0 }) 0.08f else 0f
-                        val score =
-                            (recency * 0.28f) +
-                                (frequency * 0.22f) +
-                                (similarity * 0.25f) +
-                                (novelty * 0.15f) +
-                                (feedback * 0.08f) +
-                                contextBoost
+                        // Small per-refresh exploration term; never reshuffle during UI recomposition.
+                        val exploration = ((candidate.song.id.hashCode() xor (round * 0x45d9f3b)).ushr(1) % 1000) / 1000f
+                        val score = (frequency * 0.08f) + (similarity * 0.38f) +
+                            (novelty * 0.28f) + (feedback * 0.18f) + contextBoost +
+                            exploration * 0.10f - recentPenalty - exposurePenalty
                         candidate to score
                     }.sortedByDescending { it.second }
 
@@ -453,8 +466,8 @@ class HomeViewModel
                 val artistCounts = HashMap<String, Int>()
                 return buildList {
                     items.forEach { candidate ->
-                        val artistKey = candidate.song.artists.firstOrNull()?.id
-                            ?: candidate.song.artists.firstOrNull()?.name.orEmpty()
+                        val artistKey = candidate.song.artists.firstOrNull()?.name
+                            ?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
                         val count = artistCounts[artistKey] ?: 0
                         if (artistKey.isNotBlank() && count >= 2) return@forEach
                         artistCounts[artistKey] = count + 1
@@ -463,20 +476,19 @@ class HomeViewModel
                 }
             }
 
-            val featured =
-                diversify(
-                    ranked
-                        .filter { it.first.song.id in historyIds }
-                        .map { it.first },
-                ).take(8)
-            val moment =
-                diversify(
-                    ranked
-                        .filter { it.first.song.id !in historyIds }
-                        .sortedByDescending { (candidate, score) ->
-                            score + if (candidate.source == HomeCandidateSource.RELATED) 0.18f else 0f
-                        }.map { it.first },
-                ).take(12)
+            val fresh = ranked.filter { it.first.song.id !in historyIds }.map { it.first }
+            val discoveryPicks = diversify(fresh).take(6).mapTo(HashSet()) { it.id }
+            // Reserve most of the banner for discovery, but keep familiar/offline fallbacks.
+            val featured = diversify(
+                ranked.filter { it.first.song.id in discoveryPicks }.map { it.first } +
+                    ranked.filterNot { it.first.song.id in discoveryPicks }.map { it.first },
+            ).take(8)
+            val featuredIds = featured.mapTo(HashSet()) { it.id }
+            val moment = diversify(
+                (fresh + ranked.map { it.first }).distinctBy { it.song.id }
+                    .filterNot { it.song.id in featuredIds },
+            ).take(12)
+            lastRecommendedIds = (featured + moment).mapTo(HashSet()) { it.id }
             return featured to moment
         }
 
@@ -515,7 +527,7 @@ class HomeViewModel
             val recentPicks = database.recentSongs(limit = 60).first().toQuickPickSample()
             if (recentPicks.isNotEmpty()) return recentPicks
 
-            return database.allSongs().first().toQuickPickSample()
+            return database.homeRecommendationCandidates(limit = 60).toQuickPickSample()
         }
 
         private fun lastListenQuickPicksFlow(): Flow<List<Song>> =
@@ -740,123 +752,100 @@ class HomeViewModel
             }
         }
 
-        /**
-         * Builds the two prominent Home shelves from actual listening history first.
-         * Related songs are only used when they are linked to a listened song; the
-         * same-artist fallback prevents an empty shelf when related mappings have not
-         * been cached yet. Every shelf is deduplicated by song id.
-         */
+        /** Mix fresh network discovery with bounded cached candidates, not download totals. */
         private suspend fun loadHistoryRecommendations() {
             val fromTimeStamp = System.currentTimeMillis() - 86400000L * 30
-            val history =
-                (
-                    database.mostPlayedSongs(fromTimeStamp, limit = 40).first() +
-                        database.recentSongs(limit = 40).first()
-                ).distinctBy { it.id }
-            if (history.isEmpty()) {
-                featuredForYou.value = emptyList()
-                forThisMoment.value = emptyList()
-                return
-            }
+            val hideExplicit = context.dataStore.get(HideExplicitKey, false)
+            val hideVideo = context.dataStore.get(HideVideoKey, false)
+            val blockedArtistIds = database.getBlockedArtistIds().toSet()
+            val signalsBySong = database.recentRecommendationSignals(limit = 2_000).groupBy { it.songId }
+            val dislikedIds = signalsBySong.filterValues {
+                it.firstOrNull()?.type == RecommendationSignalType.Dislike.name
+            }.keys
+            fun eligible(song: Song): Boolean =
+                song.id !in dislikedIds && (!hideExplicit || !song.song.explicit) &&
+                    (!hideVideo || !song.song.isMusicVideo) &&
+                    song.artists.none { it.blockedAt != null || it.id in blockedArtistIds }
 
+            val recent = database.recentSongs(limit = 40).first().filter(::eligible)
+            val history = (recent + database.mostPlayedSongs(fromTimeStamp, limit = 40).first())
+                .filter(::eligible).distinctBy { it.id }
             val historyIds = history.mapTo(HashSet()) { it.id }
             val historyArtistIds = history.flatMapTo(HashSet()) { song -> song.artists.map { it.id } }
-            val related =
-                history
-                    .asSequence()
-                    .flatMap { database.relatedSongs(it.id).asSequence() }
-                    .filterNot { it.id in historyIds }
+            // Recent tastes and different artists get a chance to seed discovery, not just
+            // the same four all-time/download-heavy tracks on every visit.
+            val seeds = history.filterNot { it.song.isLocal }
+                .shuffled().distinctBy { it.artists.firstOrNull()?.name ?: it.id }.take(6)
+            val related = seeds.flatMap { database.homeRelatedSongs(it.id) }
+                .filter(::eligible).distinctBy { it.id }.take(120)
+            val library = database.homeRecommendationCandidates().filter(::eligible)
+            val liveRelated = loadLiveRelatedSongs(seeds)
+            val remoteItems = filterAiContent(
+                (liveRelated + homePage.value?.sections.orEmpty().flatMap { it.items }.filterIsInstance<SongItem>())
                     .distinctBy { it.id }
-                    .toList()
-            val sameArtistFallback =
-                database
-                    .allSongs()
-                    .first()
-                    .asSequence()
-                    .filter { song -> song.artists.any { it.id in historyArtistIds } }
-                    .filterNot { it.id in historyIds }
-                    .filterNot { song -> related.any { it.id == song.id } }
-                    .distinctBy { it.id }
-                    .toList()
-
-            val liveRelated =
-                if (related.size < 8) {
-                    loadLiveRelatedSongs(history, historyIds)
-                } else {
-                    emptyList()
+                    .filterNot { it.id in dislikedIds }
+                    .filterExplicit(hideExplicit)
+                    .filterVideo(hideVideo)
+                    .filterBlockedArtists(blockedArtistIds),
+                loadAiContentFilterPolicy(),
+            ).filterIsInstance<SongItem>().take(96)
+            // Metadata only: these tracks are playable discoveries, not downloads. Reapply
+            // current filters to cached network results before saving or showing them.
+            if (remoteItems.isNotEmpty()) {
+                database.withTransaction {
+                    remoteItems.forEach { insert(it.toMediaMetadata()) }
                 }
-
-            val libraryCandidates =
-                database
-                    .allSongs()
-                    .first()
-                    .filterNot { it.id in historyIds }
-                    .filterNot { song -> related.any { it.id == song.id } }
-                    .filterNot { song -> liveRelated.any { it.id == song.id } }
-                    .take(200)
-            val candidates =
-                history.map { HomeCandidate(it, HomeCandidateSource.HISTORY) } +
-                    related.map { HomeCandidate(it, HomeCandidateSource.RELATED) } +
-                    liveRelated.map { HomeCandidate(it, HomeCandidateSource.RELATED) } +
-                    sameArtistFallback.map { HomeCandidate(it, HomeCandidateSource.SAME_ARTIST) } +
-                    libraryCandidates.map { HomeCandidate(it, HomeCandidateSource.LIBRARY) }
-            val statsBySong =
-                database
-                    .mostPlayedSongsStats(fromTimeStamp, limit = 200)
-                    .first()
-                    .associateBy { it.id }
-            val signalsBySong =
-                database
-                    .recentRecommendationSignals(limit = 2_000)
-                    .groupBy { it.songId }
-            val (rankedFeatured, rankedMoment) =
-                rankHomeCandidates(
-                    candidates = candidates,
-                    historyIds = historyIds,
-                    recentIds = recentlyPlayed.value.mapTo(HashSet()) { it.id },
-                    statsBySong = statsBySong,
-                    signalsBySong = signalsBySong,
-                )
-            featuredForYou.value = rankedFeatured
-            forThisMoment.value = rankedMoment
+            }
+            val discovery = if (remoteItems.isEmpty()) emptyList() else
+                database.getSongsByIds(remoteItems.map { it.id }).filter(::eligible)
+            val candidates = discovery.map { HomeCandidate(it, HomeCandidateSource.DISCOVERY) } +
+                related.map { HomeCandidate(it, HomeCandidateSource.RELATED) } +
+                library.map { song ->
+                    HomeCandidate(song, if (song.artists.any { it.id in historyArtistIds })
+                        HomeCandidateSource.SAME_ARTIST else HomeCandidateSource.LIBRARY)
+                } + history.map { HomeCandidate(it, HomeCandidateSource.HISTORY) }
+            val (featured, moment) = rankHomeCandidates(
+                candidates = candidates,
+                historyIds = historyIds,
+                recentIds = recent.take(12).mapTo(HashSet()) { it.id },
+                statsBySong = database.mostPlayedSongsStats(fromTimeStamp, limit = 200).first().associateBy { it.id },
+                signalsBySong = signalsBySong,
+            )
+            featuredForYou.value = featured
+            forThisMoment.value = moment
+            updateAllLocalItems()
         }
 
-        private suspend fun loadLiveRelatedSongs(
-            history: List<Song>,
-            historyIds: Set<String>,
-        ): List<Song> {
-            val remoteItems = ArrayList<SongItem>(24)
-            for (historySong in history.take(4)) {
-                val endpoint =
-                    YouTube
-                        .next(WatchEndpoint(videoId = historySong.id))
-                        .getOrNull()
-                        ?.relatedEndpoint
+        private suspend fun loadLiveRelatedSongs(seeds: List<Song>): List<SongItem> {
+            val account = context.dataStore.get(DataSyncIdKey, "") + ":" +
+                context.dataStore.get(AccountChannelHandleKey, "")
+            if (discoveryAccount != account) {
+                discoveryAccount = account
+                discoveryCache = emptyList()
+                discoveryFetchedAt = 0L
+                lastRecommendedIds = emptySet()
+            }
+            val now = SystemClock.elapsedRealtime()
+            val ttl = if (discoveryCache.isEmpty()) 120_000L else 1_200_000L
+            if (discoveryFetchedAt > 0L && now - discoveryFetchedAt < ttl) return discoveryCache
+            if (seeds.isEmpty() || context.isLowDataModeActive()) return discoveryCache
+
+            val items = ArrayList<SongItem>(72)
+            // At most three seed requests (six HTTP calls), sequential and time-bounded.
+            // Cached related rows no longer permanently disable fresh discovery.
+            withTimeoutOrNull(8_000L) {
+                for (seed in seeds.take(3)) {
+                    currentCoroutineContext().ensureActive()
+                    val endpoint = YouTube.next(WatchEndpoint(videoId = seed.id)).getOrNull()?.relatedEndpoint
                         ?: continue
-                val page = YouTube.related(endpoint).getOrNull() ?: continue
-                remoteItems += page.songs
-                if (remoteItems.size >= 24) break
+                    val page = YouTube.related(endpoint).getOrNull() ?: continue
+                    items += page.songs.take(24)
+                }
             }
-
-            val uniqueItems =
-                remoteItems
-                    .asSequence()
-                    .filterNot { it.id in historyIds }
-                    .filter { item -> item.artists.any { artist -> artist.name.isNotBlank() } }
-                    .distinctBy { it.id }
-                    .take(24)
-                    .toList()
-            if (uniqueItems.isEmpty()) return emptyList()
-
-            // Reuse the existing metadata insertion path so live results become normal
-            // local Song objects and remain available when the device goes offline.
-            database.withTransaction {
-                uniqueItems.forEach { insert(it.toMediaMetadata()) }
-            }
-            return database
-                .getSongsByIds(uniqueItems.map { it.id })
-                .filterNot { it.id in historyIds }
-                .distinctBy { it.id }
+            currentCoroutineContext().ensureActive()
+            discoveryFetchedAt = now
+            if (items.isNotEmpty()) discoveryCache = items.distinctBy { it.id }.take(72)
+            return discoveryCache
         }
 
         private suspend fun loadSimilarRecommendations() {
@@ -1118,7 +1107,6 @@ class HomeViewModel
                     supervisorScope {
                         launch { load() }
                         launch { refreshQuickPicks() }
-                        launch { loadHistoryRecommendations() }
                     }
                 } catch (e: CancellationException) {
                     throw e
