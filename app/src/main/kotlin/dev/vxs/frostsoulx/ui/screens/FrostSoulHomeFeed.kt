@@ -7,10 +7,7 @@
 
 package dev.vxs.frostsoulx.ui.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
@@ -18,7 +15,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,43 +22,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedback
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.launch
-import kotlin.math.abs
 import dev.vxs.frostsoulx.LocalPlayerAwareWindowInsets
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.db.entities.Album
@@ -86,11 +68,8 @@ import dev.vxs.frostsoulx.ui.frostsoul.FSText
 import dev.vxs.frostsoulx.ui.frostsoul.FSText as Text
 import dev.vxs.frostsoulx.ui.frostsoul.FSArtistCard
 import dev.vxs.frostsoulx.ui.frostsoul.FSButton
-import dev.vxs.frostsoulx.ui.frostsoul.FSChip
 import dev.vxs.frostsoulx.ui.frostsoul.FSEmptyState
 import dev.vxs.frostsoulx.ui.frostsoul.FSIconButton
-import dev.vxs.frostsoulx.ui.frostsoul.FSGlassCard
-import dev.vxs.frostsoulx.ui.frostsoul.FSTextField
 import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
 import dev.vxs.frostsoulx.ui.frostsoul.FSSectionHeader
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
@@ -101,11 +80,8 @@ import dev.vxs.frostsoulx.ui.premium.PremiumListRow
 import dev.vxs.frostsoulx.ui.premium.PremiumSearchBar
 import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
-import dev.vxs.frostsoulx.ui.player.frostsoul.asFrostSoulTime
-import dev.vxs.frostsoulx.utils.UserGreetingPreferences
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
-import java.util.Calendar
 
 private val FrostSoulShelfItemPadding = PaddingValues(horizontal = 16.dp)
 private val FrostSoulShelfSpacing = 16.dp
@@ -124,13 +100,6 @@ internal fun FrostSoulHomeFeed(
     onAction: (HomeAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val canSkipNext by playerConnection.canSkipNext.collectAsStateWithLifecycle()
-    var greetingName by remember(context) { mutableStateOf(UserGreetingPreferences.getName(context)) }
-    var showGreetingNameDialog by remember(context) {
-        mutableStateOf(!UserGreetingPreferences.hasPrompted(context))
-    }
-    var greetingNameDraft by rememberSaveable { mutableStateOf("") }
     val albums = remember(uiState.speedDialItems) { uiState.speedDialItems.filterIsInstance<Album>() }
     val artists = remember(uiState.speedDialItems) { uiState.speedDialItems.filterIsInstance<Artist>() }
     val recentItems = remember(uiState.recentlyPlayed) { uiState.recentlyPlayed.take(6) }
@@ -144,21 +113,12 @@ internal fun FrostSoulHomeFeed(
             state = lazyListState,
         contentPadding =
             PaddingValues(
-                top = 8.dp,
+                top = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateTopPadding() + 4.dp,
                 bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 24.dp,
             ),
         verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.section),
             modifier = modifier.fillMaxSize().frostSoulCalmScreenBackground(),
         ) {
-        item(key = "frostsoul_home_header") {
-            FrostSoulHomeHeader(
-                userName = greetingName,
-                onOpenRecent = { navController.navigate("history") },
-                onOpenNewReleases = { navController.navigate("new_release") },
-                onOpenSettings = { navController.navigate("settings") },
-            )
-        }
-
         uiState.homePage?.chips.orEmpty().takeIf { it.isNotEmpty() }?.let { sourceChips ->
             // Preserve server chip titles so the selected label matches its destination.
             val displayChips = sourceChips
@@ -391,64 +351,6 @@ internal fun FrostSoulHomeFeed(
         }
     }
 
-    if (showGreetingNameDialog) {
-        Dialog(
-            onDismissRequest = {
-                UserGreetingPreferences.skip(context)
-                showGreetingNameDialog = false
-            },
-        ) {
-            FSGlassCard(
-                modifier = Modifier.widthIn(max = 420.dp),
-                shape = FrostSoulTheme.shapes.extraLarge,
-            ) {
-                FSText(
-                    text = "Make FrostSoul yours",
-                    style = FrostSoulTheme.typography.title,
-                    color = FrostSoulTheme.colors.onSurface,
-                )
-                Spacer(Modifier.height(FrostSoulTheme.spacing.small))
-                FSText(
-                    text = "What should we call you on the home screen?",
-                    style = FrostSoulTheme.typography.body,
-                    color = FrostSoulTheme.colors.onSurfaceMuted,
-                )
-                Spacer(Modifier.height(FrostSoulTheme.spacing.medium))
-                FSTextField(
-                    value = greetingNameDraft,
-                    onValueChange = { greetingNameDraft = it.take(40) },
-                    placeholder = "Your name",
-                )
-                Spacer(Modifier.height(FrostSoulTheme.spacing.medium))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.small),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    FSButton(
-                        label = "Not now",
-                        onClick = {
-                            UserGreetingPreferences.skip(context)
-                            showGreetingNameDialog = false
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                    FSButton(
-                        label = "Save",
-                        onClick = {
-                            val name = greetingNameDraft.trim()
-                            if (name.isNotBlank()) {
-                                UserGreetingPreferences.save(context, name)
-                                greetingName = name
-                                showGreetingNameDialog = false
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        emphasized = true,
-                    )
-                }
-            }
-            }
-        }
     }
 }
 
@@ -748,111 +650,6 @@ private fun FrostSoulQuickSearch(onOpenSearch: () -> Unit) {
         onClick = onOpenSearch,
         modifier = Modifier.padding(horizontal = FrostSoulTheme.spacing.page),
     )
-}
-
-@Composable
-private fun FrostSoulHomeHeader(
-    userName: String?,
-    onOpenRecent: () -> Unit,
-    onOpenNewReleases: () -> Unit,
-    onOpenSettings: () -> Unit,
-) {
-    val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
-    val greeting = when (hour) {
-        in 5..11 -> "Good Morning"
-        in 12..16 -> "Good Afternoon"
-        in 17..21 -> "Good Evening"
-        else -> "Good Night"
-    }
-    // Brand row + action icons live in their own Row, centered against EACH OTHER only
-    // (not the whole greeting stack) so the icon row lands at the exact same height and
-    // scale as the Library/Settings shell header. Greeting/username sit below as their
-    // own lines, same as before.
-    Column(
-        modifier = Modifier
-            .statusBarsPadding()
-            .fillMaxWidth()
-            .padding(horizontal = FrostSoulTheme.spacing.page, vertical = FrostSoulTheme.spacing.large),
-        verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.micro),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.medium),
-        ) {
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Image(
-                    painter = painterResource(R.mipmap.ic_launcher_foreground),
-                    contentDescription = "FrostSoulX",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(35.dp),
-                )
-                FSText(
-                    text = "FROSTSOULX",
-                    color = FrostSoulTheme.colors.onBackground,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                FSIconButton(
-                    onClick = onOpenRecent,
-                    contentDescription = "Recently played",
-                ) {
-                    FSIcon(
-                        painter = painterResource(R.drawable.history),
-                        contentDescription = "Recently played",
-                        tint = FrostSoulTheme.colors.onSurface,
-                    )
-                }
-                FSIconButton(
-                    onClick = onOpenNewReleases,
-                    contentDescription = "New releases",
-                ) {
-                    FSIcon(
-                        painter = painterResource(R.drawable.new_release),
-                        contentDescription = "New releases",
-                        tint = FrostSoulTheme.colors.onSurface,
-                    )
-                }
-                FSIconButton(
-                    onClick = onOpenSettings,
-                    contentDescription = "Settings",
-                ) {
-                    FSIcon(
-                        painter = painterResource(R.drawable.settings),
-                        contentDescription = "Settings",
-                        tint = FrostSoulTheme.colors.onSurface,
-                    )
-                }
-            }
-        }
-        FSText(
-            text = greeting,
-            style = FrostSoulTheme.typography.title,
-            color = FrostSoulTheme.colors.onBackground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        userName?.takeIf { it.isNotBlank() }?.let {
-            FSText(
-                text = it,
-                style = FrostSoulTheme.typography.body,
-                color = FrostSoulTheme.colors.onSurfaceMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
 }
 
 @Composable
