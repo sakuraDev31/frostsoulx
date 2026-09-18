@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import dev.vxs.frostsoulx.LocalPlayerAwareWindowInsets
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.AppBarHeight
 import dev.vxs.frostsoulx.db.entities.Album
 import dev.vxs.frostsoulx.db.entities.Artist
 import dev.vxs.frostsoulx.db.entities.LocalItem
@@ -113,7 +114,7 @@ internal fun FrostSoulHomeFeed(
             state = lazyListState,
         contentPadding =
             PaddingValues(
-                top = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateTopPadding() + 4.dp,
+                top = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateTopPadding() + AppBarHeight + 4.dp,
                 bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 24.dp,
             ),
         verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.section),
