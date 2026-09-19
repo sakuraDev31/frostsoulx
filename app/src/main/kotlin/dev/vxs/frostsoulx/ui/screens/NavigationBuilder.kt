@@ -58,6 +58,7 @@ import dev.vxs.frostsoulx.ui.screens.settings.AppearanceSettings
 import dev.vxs.frostsoulx.ui.screens.settings.BackupAndRestore
 import dev.vxs.frostsoulx.ui.screens.settings.ChangelogScreen
 import dev.vxs.frostsoulx.ui.screens.settings.ChiperSettings
+import dev.vxs.frostsoulx.ui.screens.settings.TasteProfileScreen
 import dev.vxs.frostsoulx.ui.screens.settings.ContentSettings
 import dev.vxs.frostsoulx.ui.screens.settings.CustomizeBackground
 import dev.vxs.frostsoulx.ui.screens.settings.DebugSettings
@@ -438,6 +439,9 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("settings/lastfm") {
         FrostSoulSettingsPage { LastFMSettings(navController) }
+    }
+    composable("settings/taste_profile") {
+        FrostSoulSettingsPage { TasteProfileScreen(navController) }
     }
     composable("settings/discord/experimental") {
         FrostSoulSettingsPage {
