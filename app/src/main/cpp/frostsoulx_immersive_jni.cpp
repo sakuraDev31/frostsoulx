@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -9,10 +10,12 @@
 #include "frostsoulx/ImmersiveAudioEngine.h"
 
 namespace {
-// Align the JNI quantum with the Steam Audio effect frame size.
-// At 48 kHz, 384 frames is about 8 ms and keeps enabled-path latency low.
-constexpr int kMaxFrames = 384;
-constexpr int kStereoSamples = kMaxFrames * 2;
+// 384 frames is the low-latency default. The engine internally subdivides larger
+// host quanta into Steam Audio's fixed 384-frame effect blocks.
+constexpr int kDefaultQuantumFrames = 384;
+constexpr int kMinQuantumFrames = 96;
+constexpr int kMaxQuantumFrames = 2048;
+constexpr int kStereoSamples = kMaxQuantumFrames * 2;
 
 struct Diagnostics {
     float inputRms = 0.0f;
@@ -31,6 +34,7 @@ struct Diagnostics {
 struct Handle {
     frostsoulx::ImmersiveAudioEngine engine;
     bool enabled = false;
+    std::atomic<int> quantumFrames{kDefaultQuantumFrames};
     std::array<float, kStereoSamples> scratch{};
     std::array<float, kStereoSamples> inputSnapshot{};
     Diagnostics diagnostics{};
@@ -111,11 +115,21 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeCreate(
     JNIEnv*, jclass, jint sampleRate, jint) {
     auto handle = std::make_unique<Handle>();
-    if (!handle->engine.prepare(sampleRate, kMaxFrames)) return 0L;
+    if (!handle->engine.prepare(sampleRate, kMaxQuantumFrames)) return 0L;
     handle->engine.setEnabled(false);
     handle->engine.setSpatialBlend(0.0f);
     handle->diagnostics.nativeStatus = resultCode(handle->engine.lastProcessResult());
     return reinterpret_cast<jlong>(handle.release());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetQuantumFrames(
+    JNIEnv*, jclass, jlong address, jint quantumFrames) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        handle->quantumFrames.store(
+            std::clamp(static_cast<int>(quantumFrames), kMinQuantumFrames, kMaxQuantumFrames),
+            std::memory_order_relaxed);
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -244,8 +258,9 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
 
     const int totalFrames = frames;
     int frameOffset = 0;
+    const int quantumFrames = handle->quantumFrames.load(std::memory_order_relaxed);
     while (frameOffset < totalFrames) {
-        const int chunkFrames = std::min(kMaxFrames, totalFrames - frameOffset);
+        const int chunkFrames = std::min(quantumFrames, totalFrames - frameOffset);
         const int samples = chunkFrames * 2;
         const int sampleOffset = frameOffset * 2;
 

@@ -69,6 +69,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
     @Volatile private var roomSize = 0.5f
     @Volatile private var dampening = 0.5f
     @Volatile private var stereoWidth = 0.5f
+    @Volatile private var quantumFrames = DEFAULT_QUANTUM_FRAMES
 
     override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         val supportedEncoding =
@@ -91,6 +92,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
             setRoomSize(roomSize)
             setDampening(dampening)
             setStereoWidth(stereoWidth)
+            setQuantumFrames(quantumFrames)
             setEnabled(enabled)
         }
         outputAudioFormat = inputAudioFormat
@@ -191,6 +193,13 @@ class ImmersiveAudioProcessor : AudioProcessor {
         if (nativeHandle != 0L) nativeSetStereoWidth(nativeHandle, stereoWidth)
     }
 
+    fun setQuantumFrames(value: Int) {
+        quantumFrames = value.coerceIn(MIN_QUANTUM_FRAMES, MAX_QUANTUM_FRAMES)
+        if (nativeHandle != 0L) nativeSetQuantumFrames(nativeHandle, quantumFrames)
+    }
+
+    fun quantumFrames(): Int = quantumFrames
+
     fun readDiagnostics(): ImmersiveAudioDiagnostics =
         if (nativeHandle == 0L) ImmersiveAudioDiagnostics() else ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
 
@@ -202,6 +211,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
     }
 
     companion object {
+        const val DEFAULT_QUANTUM_FRAMES = 384
+        const val MIN_QUANTUM_FRAMES = 96
+        const val MAX_QUANTUM_FRAMES = 2048
         private val EMPTY_BUFFER = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
 
         init {
@@ -220,6 +232,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeSetRoomSize(handle: Long, size: Float)
         @JvmStatic private external fun nativeSetDampening(handle: Long, dampening: Float)
         @JvmStatic private external fun nativeSetStereoWidth(handle: Long, width: Float)
+        @JvmStatic private external fun nativeSetQuantumFrames(handle: Long, quantumFrames: Int)
         @JvmStatic private external fun nativeReadDiagnostics(handle: Long): DoubleArray?
         @JvmStatic private external fun nativeProcess(handle: Long, pcmBuffer: ByteBuffer, frames: Int, encoding: Int)
     }
@@ -237,6 +250,7 @@ object ImmersiveAudioRuntime {
     @Volatile private var roomSize = 0.5f
     @Volatile private var dampening = 0.5f
     @Volatile private var stereoWidth = 0.5f
+    @Volatile private var quantumFrames = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES
 
     fun attach(value: ImmersiveAudioProcessor) {
         processor = value
@@ -248,6 +262,7 @@ object ImmersiveAudioRuntime {
         value.setRoomSize(roomSize)
         value.setDampening(dampening)
         value.setStereoWidth(stereoWidth)
+        value.setQuantumFrames(quantumFrames)
         value.setEnabled(enabled)
     }
 
@@ -310,6 +325,10 @@ object ImmersiveAudioRuntime {
         stereoWidth = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
         processor?.setStereoWidth(stereoWidth)
     }
+    fun setQuantumFrames(value: Int) {
+        quantumFrames = value.coerceIn(ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES, ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES)
+        processor?.setQuantumFrames(quantumFrames)
+    }
 
     fun readDiagnostics(): ImmersiveAudioDiagnostics = processor?.readDiagnostics() ?: ImmersiveAudioDiagnostics()
 
@@ -322,4 +341,5 @@ object ImmersiveAudioRuntime {
     fun roomSize(): Float = roomSize
     fun dampening(): Float = dampening
     fun stereoWidth(): Float = stereoWidth
+    fun quantumFrames(): Int = quantumFrames
 }

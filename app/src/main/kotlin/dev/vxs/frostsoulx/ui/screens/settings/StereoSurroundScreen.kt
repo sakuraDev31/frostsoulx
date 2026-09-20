@@ -27,6 +27,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -64,9 +65,13 @@ import dev.vxs.frostsoulx.constants.StereoSurroundReverbTimeKey
 import dev.vxs.frostsoulx.constants.StereoSurroundRoomSizeKey
 import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
 import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
+import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
+import dev.vxs.frostsoulx.constants.StereoSurroundSavedPresetsKey
 import dev.vxs.frostsoulx.constants.ImmersiveDevelopmentWarningShownKey
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.playback.ImmersiveRoomPreset
+import dev.vxs.frostsoulx.playback.ImmersiveAudioPreset
+import dev.vxs.frostsoulx.playback.ImmersiveAudioProcessor
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.utils.rememberPreference
 import kotlinx.coroutines.delay
@@ -89,6 +94,8 @@ fun StereoSurroundScreen(navController: NavController) {
     val roomSizePreference = rememberPreference(StereoSurroundRoomSizeKey, defaultValue = 0.5f)
     val dampeningPreference = rememberPreference(StereoSurroundDampeningKey, defaultValue = 0.5f)
     val stereoWidthPreference = rememberPreference(StereoSurroundStereoWidthKey, defaultValue = 0.5f)
+    val quantumPreference = rememberPreference(StereoSurroundQuantumFramesKey, defaultValue = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES)
+    val savedPresetsPreference = rememberPreference(StereoSurroundSavedPresetsKey, defaultValue = "")
     val developmentWarningPreference = rememberPreference(ImmersiveDevelopmentWarningShownKey, defaultValue = false)
     val persistedRoomPreset by roomPresetPreference
     val persistedRoomMix by roomMixPreference
@@ -97,6 +104,8 @@ fun StereoSurroundScreen(navController: NavController) {
     val persistedRoomSize by roomSizePreference
     val persistedDampening by dampeningPreference
     val persistedStereoWidth by stereoWidthPreference
+    val persistedQuantum by quantumPreference
+    val savedPresetsRaw by savedPresetsPreference
     val developmentWarningShown by developmentWarningPreference
 
     var selectedPage by remember { mutableStateOf(ImmersiveSettingsPage.Default) }
@@ -107,8 +116,12 @@ fun StereoSurroundScreen(navController: NavController) {
     var draftRoomSize by remember { mutableFloatStateOf(persistedRoomSize.coerceIn(0f, 1f)) }
     var draftDampening by remember { mutableFloatStateOf(persistedDampening.coerceIn(0f, 1f)) }
     var draftStereoWidth by remember { mutableFloatStateOf(persistedStereoWidth.coerceIn(0f, 1f)) }
+    var draftQuantum by remember { mutableStateOf(persistedQuantum.coerceIn(96, 2048)) }
     var isDragging by remember { mutableStateOf(false) }
     var diagnostics by remember { mutableStateOf(ImmersiveAudioDiagnostics()) }
+    var showSavePreset by remember { mutableStateOf(false) }
+    var presetName by remember { mutableStateOf("") }
+    val savedPresets = remember(savedPresetsRaw) { ImmersiveAudioPreset.decodeAll(savedPresetsRaw) }
 
     LaunchedEffect(persistedIntensity) {
         if (!isDragging) {
@@ -117,7 +130,7 @@ fun StereoSurroundScreen(navController: NavController) {
         }
     }
 
-    LaunchedEffect(persistedRoomPreset, persistedRoomMix, persistedReflectionAmount, persistedReverbTime, persistedRoomSize, persistedDampening, persistedStereoWidth) {
+    LaunchedEffect(persistedRoomPreset, persistedRoomMix, persistedReflectionAmount, persistedReverbTime, persistedRoomSize, persistedDampening, persistedStereoWidth, persistedQuantum) {
         ImmersiveAudioRuntime.setRoomPreset(ImmersiveRoomPreset.fromNative(persistedRoomPreset))
         draftRoomMix = persistedRoomMix.coerceIn(0f, 1f)
         draftReflectionAmount = persistedReflectionAmount.coerceIn(0f, 1f)
@@ -131,6 +144,8 @@ fun StereoSurroundScreen(navController: NavController) {
         ImmersiveAudioRuntime.setRoomSize(draftRoomSize)
         ImmersiveAudioRuntime.setDampening(draftDampening)
         ImmersiveAudioRuntime.setStereoWidth(draftStereoWidth)
+        draftQuantum = persistedQuantum.coerceIn(96, 2048)
+        ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
     }
 
     LaunchedEffect(enabled) {
@@ -221,6 +236,8 @@ fun StereoSurroundScreen(navController: NavController) {
                     roomSize = draftRoomSize,
                     dampening = draftDampening,
                     stereoWidth = draftStereoWidth,
+                    quantumFrames = draftQuantum,
+                    savedPresets = savedPresets,
                     onRoomPresetChange = { roomPresetPreference.value = it.nativeValue },
                     onRoomMixChange = { draftRoomMix = it; roomMixPreference.value = it; ImmersiveAudioRuntime.setRoomMix(it) },
                     onReflectionChange = { draftReflectionAmount = it; reflectionPreference.value = it; ImmersiveAudioRuntime.setReflectionAmount(it) },
@@ -228,6 +245,24 @@ fun StereoSurroundScreen(navController: NavController) {
                     onRoomSizeChange = { draftRoomSize = it; roomSizePreference.value = it; ImmersiveAudioRuntime.setRoomSize(it) },
                     onDampeningChange = { draftDampening = it; dampeningPreference.value = it; ImmersiveAudioRuntime.setDampening(it) },
                     onStereoWidthChange = { draftStereoWidth = it; stereoWidthPreference.value = it; ImmersiveAudioRuntime.setStereoWidth(it) },
+                    onQuantumChange = { value ->
+                        draftQuantum = value.coerceIn(96, 2048)
+                        quantumPreference.value = draftQuantum
+                        ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
+                    },
+                    onPresetSelected = { preset ->
+                        enabledPreference.value = preset.enabled
+                        intensityPreference.value = preset.intensity
+                        roomPresetPreference.value = preset.roomPreset.nativeValue
+                        roomMixPreference.value = preset.roomMix
+                        reflectionPreference.value = preset.reflectionAmount
+                        reverbTimePreference.value = preset.reverbTimeSeconds
+                        roomSizePreference.value = preset.roomSize
+                        dampeningPreference.value = preset.dampening
+                        stereoWidthPreference.value = preset.stereoWidth
+                        quantumPreference.value = preset.quantumFrames
+                    },
+                    onSavePreset = { showSavePreset = true },
                     onResetRoom = {
                         roomPresetPreference.value = ImmersiveRoomPreset.STUDIO.nativeValue
                         roomMixPreference.value = 0.18f
@@ -236,6 +271,7 @@ fun StereoSurroundScreen(navController: NavController) {
                         roomSizePreference.value = 0.5f
                         dampeningPreference.value = 0.5f
                         stereoWidthPreference.value = 0.5f
+                        quantumPreference.value = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES
                     },
                     diagnostics = diagnostics,
                 )
@@ -266,6 +302,47 @@ fun StereoSurroundScreen(navController: NavController) {
                 Button(onClick = { developmentWarningPreference.value = true }) {
                     Text("Continue")
                 }
+            },
+        )
+    }
+    if (showSavePreset) {
+        AlertDialog(
+            onDismissRequest = { showSavePreset = false },
+            title = { Text("Save engine preset") },
+            text = {
+                TextField(
+                    value = presetName,
+                    onValueChange = { presetName = it.take(64) },
+                    singleLine = true,
+                    label = { Text("Preset name") },
+                )
+            },
+            dismissButton = {
+                Button(onClick = { showSavePreset = false }) { Text("Cancel") }
+            },
+            confirmButton = {
+                Button(
+                    enabled = presetName.trim().isNotEmpty(),
+                    onClick = {
+                        val snapshot = ImmersiveAudioPreset(
+                            name = presetName.trim(),
+                            enabled = enabled,
+                            intensity = draftIntensity,
+                            roomPreset = ImmersiveRoomPreset.fromNative(persistedRoomPreset),
+                            roomMix = draftRoomMix,
+                            reflectionAmount = draftReflectionAmount,
+                            reverbTimeSeconds = draftReverbTime,
+                            roomSize = draftRoomSize,
+                            dampening = draftDampening,
+                            stereoWidth = draftStereoWidth,
+                            quantumFrames = draftQuantum,
+                        )
+                        val updated = savedPresets.filterNot { it.name.equals(snapshot.name, ignoreCase = true) } + snapshot
+                        savedPresetsPreference.value = ImmersiveAudioPreset.encodeAll(updated)
+                        presetName = ""
+                        showSavePreset = false
+                    },
+                ) { Text("Save") }
             },
         )
     }
@@ -385,6 +462,8 @@ private fun AdvancedImmersivePage(
     roomSize: Float,
     dampening: Float,
     stereoWidth: Float,
+    quantumFrames: Int,
+    savedPresets: List<ImmersiveAudioPreset>,
     diagnostics: ImmersiveAudioDiagnostics,
     onEnabledChange: (Boolean) -> Unit,
     onIntensityChange: (Float) -> Unit,
@@ -396,6 +475,9 @@ private fun AdvancedImmersivePage(
     onRoomSizeChange: (Float) -> Unit,
     onDampeningChange: (Float) -> Unit,
     onStereoWidthChange: (Float) -> Unit,
+    onQuantumChange: (Int) -> Unit,
+    onPresetSelected: (ImmersiveAudioPreset) -> Unit,
+    onSavePreset: () -> Unit,
     onResetRoom: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -431,6 +513,8 @@ private fun AdvancedImmersivePage(
         RoomParameterSlider("Room size", roomSize, 0f..1f, "${(roomSize * 100).roundToInt()}%", onRoomSizeChange)
         RoomParameterSlider("Dampening", dampening, 0f..1f, "${(dampening * 100).roundToInt()}%", onDampeningChange)
         RoomParameterSlider("Stereo width", stereoWidth, 0f..1f, "${(stereoWidth * 100).roundToInt()}%", onStereoWidthChange)
+        QuantumSlider(quantumFrames, onQuantumChange)
+        SavedPresetSection(savedPresets, onPresetSelected, onSavePreset)
         StatusLine("Space design", "Room size scales delay/reverb; dampening shapes decay; width controls decorrelation.")
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -482,6 +566,89 @@ private fun RoomParameterSlider(
             valueRange = range,
             label = label,
         )
+    }
+}
+
+@Composable
+private fun QuantumSlider(
+    quantumFrames: Int,
+    onQuantumChange: (Int) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(FrostSoulTheme.colors.surface).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column {
+                Text("Processing quantum", color = FrostSoulTheme.colors.onSurface, fontSize = 13.sp)
+                Text("Host chunk size; Steam Audio remains internally 384-frame", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+            }
+            Text(
+                "$quantumFrames frames",
+                color = FrostSoulTheme.colors.accent,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        Slider(
+            value = quantumFrames.toFloat(),
+            onValueChange = { onQuantumChange((it / 32f).roundToInt() * 32) },
+            valueRange = 96f..2048f,
+            steps = 60,
+            colors = SliderDefaults.colors(
+                thumbColor = FrostSoulTheme.colors.accent,
+                activeTrackColor = FrostSoulTheme.colors.accent,
+                inactiveTrackColor = FrostSoulTheme.colors.onSurface.copy(alpha = 0.14f),
+            ),
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("96 · lower latency", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+            Text("2048 · larger blocks", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun SavedPresetSection(
+    presets: List<ImmersiveAudioPreset>,
+    onSelected: (ImmersiveAudioPreset) -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(FrostSoulTheme.colors.surface).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Saved engine presets", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("Restore every mapped control and quantum", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+            }
+            Button(onClick = onSave) { Text("Save current") }
+        }
+        if (presets.isEmpty()) {
+            Text("No saved presets yet", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                presets.forEach { preset ->
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(FrostSoulTheme.colors.accent.copy(alpha = 0.12f))
+                            .border(1.dp, FrostSoulTheme.colors.outline, RoundedCornerShape(12.dp))
+                            .clickable { onSelected(preset) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
+                        Text(preset.name, color = FrostSoulTheme.colors.onSurface, fontSize = 12.sp, maxLines = 1)
+                    }
+                }
+            }
+        }
     }
 }
 
