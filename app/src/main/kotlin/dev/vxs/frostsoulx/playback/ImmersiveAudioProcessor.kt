@@ -6,6 +6,26 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 data class ImmersiveAudioDiagnostics(
+    val inputRmsL: Float = 0f,
+    val inputRmsR: Float = 0f,
+    val outputRmsL: Float = 0f,
+    val outputRmsR: Float = 0f,
+    val inputPeakL: Float = 0f,
+    val inputPeakR: Float = 0f,
+    val outputPeakL: Float = 0f,
+    val outputPeakR: Float = 0f,
+    val inputTruePeakL: Float = 0f,
+    val inputTruePeakR: Float = 0f,
+    val outputTruePeakL: Float = 0f,
+    val outputTruePeakR: Float = 0f,
+    val inputMinL: Float = 0f,
+    val inputMinR: Float = 0f,
+    val inputMaxL: Float = 0f,
+    val inputMaxR: Float = 0f,
+    val outputMinL: Float = 0f,
+    val outputMinR: Float = 0f,
+    val outputMaxL: Float = 0f,
+    val outputMaxR: Float = 0f,
     val inputRms: Float = 0f,
     val outputRms: Float = 0f,
     val inputPeak: Float = 0f,
@@ -17,22 +37,44 @@ data class ImmersiveAudioDiagnostics(
     val processCallCount: Long = 0L,
     val processedFrames: Long = 0L,
     val nativeStatus: Int = 0,
+    val averageAbsDifference: Float = 0f,
+    val clippedInput: Long = 0L,
+    val clippedOutput: Long = 0L,
+    val totalBlocks: Long = 0L,
+    val processingTimeMs: Double = 0.0,
+    val averageProcessingTimeMs: Double = 0.0,
+    val maxProcessingTimeMs: Double = 0.0,
+    val deadlineMisses: Long = 0L,
+    val nativeProcessFailures: Long = 0L,
+    val sampleRate: Int = 0,
+    val hostCallbackFrames: Int = 0,
+    val quantumFrames: Int = 384,
+    val processorEnabled: Boolean = false,
+    val pcmEncoding: Int = 0,
 ) {
     companion object {
         fun fromNative(values: DoubleArray?): ImmersiveAudioDiagnostics {
-            if (values == null || values.size < 9) return ImmersiveAudioDiagnostics()
+            if (values == null || values.size < 41) return ImmersiveAudioDiagnostics()
+            fun f(index: Int): Float = values[index].toFloat().takeIf(Float::isFinite) ?: 0f
+            fun l(index: Int): Long = values[index].toLong().coerceAtLeast(0L)
             return ImmersiveAudioDiagnostics(
-                inputRms = values[0].toFloat().takeIf(Float::isFinite) ?: 0f,
-                outputRms = values[1].toFloat().takeIf(Float::isFinite) ?: 0f,
-                inputPeak = values[2].toFloat().takeIf(Float::isFinite) ?: 0f,
-                outputPeak = values[3].toFloat().takeIf(Float::isFinite) ?: 0f,
-                maxAbsDifference = values[4].toFloat().takeIf(Float::isFinite) ?: 0f,
-                changedPercentage = values[5].toFloat().takeIf(Float::isFinite) ?: 0f,
-                nanCount = values[6].toLong().coerceAtLeast(0L),
-                infCount = values[7].toLong().coerceAtLeast(0L),
-                processCallCount = values[8].toLong().coerceAtLeast(0L),
-                processedFrames = values.getOrNull(9)?.toLong()?.coerceAtLeast(0L) ?: 0L,
-                nativeStatus = values.getOrNull(10)?.toInt() ?: 0,
+                inputRmsL = f(0), inputRmsR = f(1), outputRmsL = f(2), outputRmsR = f(3),
+                inputPeakL = f(4), inputPeakR = f(5), outputPeakL = f(6), outputPeakR = f(7),
+                inputTruePeakL = f(8), inputTruePeakR = f(9), outputTruePeakL = f(10), outputTruePeakR = f(11),
+                inputMinL = f(12), inputMinR = f(13), inputMaxL = f(14), inputMaxR = f(15),
+                outputMinL = f(16), outputMinR = f(17), outputMaxL = f(18), outputMaxR = f(19),
+                inputRms = (f(0) + f(1)) / 2f, outputRms = (f(2) + f(3)) / 2f,
+                inputPeak = maxOf(f(4), f(5)), outputPeak = maxOf(f(6), f(7)),
+                maxAbsDifference = f(20), changedPercentage = f(22),
+                nanCount = l(23), infCount = l(24), processCallCount = l(27), processedFrames = l(28), nativeStatus = values[29].toInt(),
+                averageAbsDifference = f(21), clippedInput = l(25), clippedOutput = l(26), totalBlocks = l(30),
+                processingTimeMs = values[31].takeIf(Double::isFinite) ?: 0.0,
+                averageProcessingTimeMs = values[32].takeIf(Double::isFinite) ?: 0.0,
+                maxProcessingTimeMs = values[33].takeIf(Double::isFinite) ?: 0.0,
+                deadlineMisses = l(34), nativeProcessFailures = l(35), sampleRate = values[36].toInt().coerceAtLeast(0),
+                hostCallbackFrames = values[37].toInt().coerceAtLeast(0), quantumFrames = values[38].toInt().coerceIn(96, 2048),
+                processorEnabled = values[39] > 0.5,
+                pcmEncoding = values[40].toInt(),
             )
         }
     }
@@ -107,8 +149,6 @@ class ImmersiveAudioProcessor : AudioProcessor {
         val readableBuffer = prepareOutputBuffer(inputBytes)
         readableBuffer.put(inputBuffer)
         readableBuffer.flip()
-        if (!enabled) return
-
         val bytesPerSample = if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) 4 else 2
         val frameBytes = bytesPerSample * 2
         val frames = readableBuffer.remaining() / frameBytes
@@ -203,6 +243,10 @@ class ImmersiveAudioProcessor : AudioProcessor {
     fun readDiagnostics(): ImmersiveAudioDiagnostics =
         if (nativeHandle == 0L) ImmersiveAudioDiagnostics() else ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
 
+    fun resetDiagnostics() {
+        if (nativeHandle != 0L) nativeResetDiagnostics(nativeHandle)
+    }
+
     private fun releaseNative() {
         if (nativeHandle != 0L) {
             nativeRelease(nativeHandle)
@@ -223,6 +267,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeCreate(sampleRate: Int, encoding: Int): Long
         @JvmStatic private external fun nativeRelease(handle: Long)
         @JvmStatic private external fun nativeReset(handle: Long)
+        @JvmStatic private external fun nativeResetDiagnostics(handle: Long)
         @JvmStatic private external fun nativeSetEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetSpatialBlend(handle: Long, blend: Float)
         @JvmStatic private external fun nativeSetRoomPreset(handle: Long, preset: Int)
@@ -331,6 +376,7 @@ object ImmersiveAudioRuntime {
     }
 
     fun readDiagnostics(): ImmersiveAudioDiagnostics = processor?.readDiagnostics() ?: ImmersiveAudioDiagnostics()
+    fun resetDiagnostics() { processor?.resetDiagnostics() }
 
     fun isEnabled(): Boolean = enabled
     fun intensity(): Float = intensity

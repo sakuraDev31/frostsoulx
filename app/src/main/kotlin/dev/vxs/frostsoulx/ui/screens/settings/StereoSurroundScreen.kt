@@ -1,5 +1,8 @@
 package dev.vxs.frostsoulx.ui.screens.settings
 
+import android.media.AudioManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
@@ -36,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +51,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -70,16 +75,23 @@ import dev.vxs.frostsoulx.constants.StereoSurroundSavedPresetsKey
 import dev.vxs.frostsoulx.constants.ImmersiveDevelopmentWarningShownKey
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.playback.ImmersiveRoomPreset
-import dev.vxs.frostsoulx.playback.ImmersiveAudioPreset
 import dev.vxs.frostsoulx.playback.ImmersiveAudioProcessor
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.utils.rememberPreference
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import java.util.Locale
 import dev.vxs.frostsoulx.playback.ImmersiveAudioDiagnostics
+import dev.vxs.frostsoulx.playback.ImmersiveAudioPreset
+import dev.vxs.frostsoulx.playback.ImmersiveActiveCapture
+import dev.vxs.frostsoulx.playback.ImmersiveDiagnosticCapture
+import dev.vxs.frostsoulx.playback.ImmersiveDiagnosticSample
+import dev.vxs.frostsoulx.playback.defaultAndroidDescription
+import dev.vxs.frostsoulx.playback.defaultDeviceDescription
 
-private enum class ImmersiveSettingsPage { Default, Advanced }
+private enum class ImmersiveSettingsPage { Default, Advanced, Diagnostic }
 
 @Composable
 fun StereoSurroundScreen(navController: NavController) {
@@ -122,6 +134,74 @@ fun StereoSurroundScreen(navController: NavController) {
     var showSavePreset by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
     val savedPresets = remember(savedPresetsRaw) { ImmersiveAudioPreset.decodeAll(savedPresetsRaw) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var activeCapture by remember { mutableStateOf<ImmersiveActiveCapture?>(null) }
+    var latestCapture by remember { mutableStateOf<ImmersiveDiagnosticCapture?>(null) }
+    var captureJob by remember { mutableStateOf<Job?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        val report = latestCapture
+        if (uri != null && report != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
+                    writer.write(
+                        report.toText(
+                            device = defaultDeviceDescription(),
+                            androidVersion = defaultAndroidDescription(),
+                            audioRoute = "AudioManager output",
+                            hostBufferFrames = context.getSystemService(AudioManager::class.java)?.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)?.toIntOrNull() ?: 0,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun startCapture(durationSeconds: Int) {
+        captureJob?.cancel()
+        val processorOn = ImmersiveAudioRuntime.isEnabled()
+        val startedAt = System.currentTimeMillis()
+        ImmersiveAudioRuntime.resetDiagnostics()
+        latestCapture = null
+        activeCapture = ImmersiveActiveCapture(processorOn, durationSeconds, startedAt)
+        captureJob = coroutineScope.launch {
+            val deadline = startedAt + durationSeconds * 1_000L
+            while (System.currentTimeMillis() < deadline) {
+                delay(200)
+                val current = ImmersiveAudioRuntime.readDiagnostics()
+                if (ImmersiveAudioRuntime.isEnabled() != processorOn) {
+                    activeCapture = null
+                    return@launch
+                }
+                val elapsed = ((System.currentTimeMillis() - startedAt) / 1000f).coerceAtMost(durationSeconds.toFloat())
+                val sample = ImmersiveDiagnosticSample(
+                    elapsedSeconds = elapsed,
+                    inputPeakL = current.inputPeakL,
+                    inputPeakR = current.inputPeakR,
+                    outputPeakL = current.outputPeakL,
+                    outputPeakR = current.outputPeakR,
+                    inputRmsL = current.inputRmsL,
+                    inputRmsR = current.inputRmsR,
+                    outputRmsL = current.outputRmsL,
+                    outputRmsR = current.outputRmsR,
+                )
+                val capture = activeCapture ?: return@launch
+                activeCapture = capture.copy(elapsedSeconds = elapsed, samples = capture.samples + sample)
+            }
+            val finalDiagnostics = ImmersiveAudioRuntime.readDiagnostics()
+            val completed = activeCapture
+            if (completed != null) {
+                latestCapture = ImmersiveDiagnosticCapture(
+                    processorOn = completed.processorOn,
+                    durationSeconds = completed.durationSeconds,
+                    startedAtMillis = completed.startedAtMillis,
+                    samples = completed.samples,
+                    finalDiagnostics = finalDiagnostics,
+                )
+            }
+            activeCapture = null
+        }
+    }
 
     LaunchedEffect(persistedIntensity) {
         if (!isDragging) {
@@ -150,9 +230,12 @@ fun StereoSurroundScreen(navController: NavController) {
 
     LaunchedEffect(enabled) {
         ImmersiveAudioRuntime.setEnabled(enabled)
-        while (enabled) {
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
             diagnostics = ImmersiveAudioRuntime.readDiagnostics()
-            delay(250)
+            delay(500)
         }
     }
 
@@ -275,6 +358,20 @@ fun StereoSurroundScreen(navController: NavController) {
                     },
                     diagnostics = diagnostics,
                 )
+                ImmersiveSettingsPage.Diagnostic -> DiagnosticImmersivePage(
+                    diagnostics = diagnostics,
+                    activeCapture = activeCapture,
+                    latestCapture = latestCapture,
+                    onCapture = ::startCapture,
+                    onExport = { latestCapture?.let { exportLauncher.launch(it.fileName()) } },
+                    onReset = {
+                        captureJob?.cancel()
+                        activeCapture = null
+                        latestCapture = null
+                        ImmersiveAudioRuntime.resetDiagnostics()
+                        diagnostics = ImmersiveAudioRuntime.readDiagnostics()
+                    },
+                )
             }
             Spacer(Modifier.height(dev.vxs.frostsoulx.constants.MiniPlayerHeight + 40.dp))
         }
@@ -373,6 +470,12 @@ private fun ImmersivePageTabs(
             selected = selectedPage == ImmersiveSettingsPage.Advanced,
             onClick = { onPageSelected(ImmersiveSettingsPage.Advanced) },
         )
+        ImmersivePageTab(
+            label = "Diagnostic",
+            modifier = Modifier.weight(1f),
+            selected = selectedPage == ImmersiveSettingsPage.Diagnostic,
+            onClick = { onPageSelected(ImmersiveSettingsPage.Diagnostic) },
+        )
     }
 }
 
@@ -450,6 +553,112 @@ private fun DefaultImmersivePage(
         )
     }
 }
+
+@Composable
+private fun DiagnosticImmersivePage(
+    diagnostics: ImmersiveAudioDiagnostics,
+    activeCapture: ImmersiveActiveCapture?,
+    latestCapture: ImmersiveDiagnosticCapture?,
+    onCapture: (Int) -> Unit,
+    onExport: () -> Unit,
+    onReset: () -> Unit,
+) {
+    val stateOn = diagnostics.processorEnabled
+    val truePeakWarning = maxOf(
+        diagnostics.inputTruePeakL,
+        diagnostics.inputTruePeakR,
+        diagnostics.outputTruePeakL,
+        diagnostics.outputTruePeakR,
+    ) > 0.988553f
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                .background(if (stateOn) FrostSoulTheme.colors.accent.copy(alpha = 0.16f) else FrostSoulTheme.colors.surface)
+                .border(1.dp, if (stateOn) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.outline, RoundedCornerShape(18.dp))
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("PROCESSOR ${if (stateOn) "ON" else "OFF"}", color = FrostSoulTheme.colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Input → ${if (stateOn) "Native DSP" else "Bypass"} → Output", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
+            }
+            Text(if (diagnostics.processCallCount > 0) "Receiving PCM" else "Waiting for audio", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                .background(FrostSoulTheme.colors.surface).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("SIGNAL MONITOR", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("", modifier = Modifier.weight(1.2f))
+                Text("INPUT", modifier = Modifier.weight(1f), color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("OUTPUT", modifier = Modifier.weight(1f), color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+            DiagnosticRow("L RMS", formatDb(diagnostics.inputRmsL), formatDb(diagnostics.outputRmsL))
+            DiagnosticRow("R RMS", formatDb(diagnostics.inputRmsR), formatDb(diagnostics.outputRmsR))
+            DiagnosticRow("L Peak", formatDb(diagnostics.inputPeakL), formatDb(diagnostics.outputPeakL))
+            DiagnosticRow("R Peak", formatDb(diagnostics.inputPeakR), formatDb(diagnostics.outputPeakR))
+            DiagnosticRow("L True peak", formatDb(diagnostics.inputTruePeakL) + "TP", formatDb(diagnostics.outputTruePeakL) + "TP")
+            DiagnosticRow("R True peak", formatDb(diagnostics.inputTruePeakR) + "TP", formatDb(diagnostics.outputTruePeakR) + "TP")
+            DiagnosticRow("NaN", diagnostics.nanCount.toString(), diagnostics.nanCount.toString())
+            DiagnosticRow("Inf", diagnostics.infCount.toString(), diagnostics.infCount.toString())
+            DiagnosticRow("Clipped", diagnostics.clippedInput.toString(), diagnostics.clippedOutput.toString())
+            HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.14f))
+            StatusLine("Difference", "max ${formatRaw(diagnostics.maxAbsDifference)} · average ${formatRaw(diagnostics.averageAbsDifference)} · changed ${String.format(Locale.US, "%.2f", diagnostics.changedPercentage)}%")
+            if (truePeakWarning) {
+                Text("True peak above -0.1 dBTP · ${if (stateOn) "ON" else "OFF"} capture", color = Color(0xFFFFB4AB), fontSize = 12.sp)
+            }
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                .background(FrostSoulTheme.colors.surface).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("CAPTURE", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
+            if (activeCapture != null) {
+                Text("CAPTURING ${String.format(Locale.US, "%.1f", activeCapture.elapsedSeconds)} / ${activeCapture.durationSeconds}.0s", color = FrostSoulTheme.colors.onSurface, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                Text("Playback continues; compact samples are collected every 200 ms.", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { onCapture(10) }) { Text("Capture 10s") }
+                    Button(onClick = { onCapture(20) }) { Text("Capture 20s") }
+                }
+            }
+            if (latestCapture != null) {
+                Text("Last capture: ${if (latestCapture.processorOn) "PROCESSOR ON" else "PROCESSOR OFF"} · ${latestCapture.samples.size} time-series samples", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
+                Button(onClick = onExport) { Text("Export TXT") }
+            }
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                .background(FrostSoulTheme.colors.surface).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("ENGINE TELEMETRY", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
+            StatusLine("Format", "${diagnostics.sampleRate} Hz · stereo · ${if (diagnostics.pcmEncoding == 4) "PCM float" else if (diagnostics.pcmEncoding == 2) "PCM 16-bit" else "unknown PCM"}")
+            StatusLine("Quantum / callback", "${diagnostics.quantumFrames} / ${diagnostics.hostCallbackFrames} frames")
+            StatusLine("Processing", "${diagnostics.totalBlocks} blocks · ${diagnostics.processedFrames} frames · ${String.format(Locale.US, "%.2f", diagnostics.averageProcessingTimeMs)} ms average")
+            StatusLine("Realtime safety", "${diagnostics.deadlineMisses} deadline misses · ${diagnostics.nativeProcessFailures} native failures")
+            Button(onClick = onReset) { Text("Reset diagnostics") }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticRow(label: String, input: String, output: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, modifier = Modifier.weight(1.2f), color = FrostSoulTheme.colors.onSurface, fontSize = 12.sp)
+        Text(input, modifier = Modifier.weight(1f), color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Text(output, modifier = Modifier.weight(1f), color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+    }
+}
+
+private fun formatDb(value: Float): String = if (!value.isFinite() || value <= 1.0e-9f) "-inf dB" else String.format(Locale.US, "%.2f dB", 20.0 * kotlin.math.log10(value.toDouble()))
+private fun formatRaw(value: Float): String = String.format(Locale.US, "%.6f", value)
 
 @Composable
 private fun AdvancedImmersivePage(
