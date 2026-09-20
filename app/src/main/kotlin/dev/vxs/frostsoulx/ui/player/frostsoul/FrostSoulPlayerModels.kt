@@ -166,3 +166,9 @@ internal fun Long.asFrostSoulTime(): String {
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }
+
+/** Zero-padded clock used by the Immersive player timeline, e.g. 00:03 / 01:01. */
+internal fun Long.asFrostSoulClockTime(): String {
+    val totalSeconds = (coerceAtLeast(0L) / 1_000L).toInt()
+    return "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+}

@@ -752,6 +752,9 @@ internal fun FSSeekbar(
     accent: Color = Color.White,
     isEnabled: Boolean = durationMs > 0L,
     onDraggingChanged: (Boolean) -> Unit = {},
+    showThumb: Boolean = true,
+    trackThickness: androidx.compose.ui.unit.Dp = 5.dp,
+    inactiveAlpha: Float = 0.16f,
 ) {
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var dragProgress by remember { mutableFloatStateOf(progress) }
@@ -798,13 +801,13 @@ internal fun FSSeekbar(
         contentAlignment = Alignment.CenterStart,
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val trackHeight = 5.dp.toPx()
+            val trackHeight = trackThickness.toPx()
             val y = this.size.height / 2f
             val trackStart = Offset(0f, y)
             val trackEnd = Offset(this.size.width, y)
             val activeEnd = Offset(this.size.width * visibleProgress, y)
             drawLine(
-                color = Color.White.copy(alpha = 0.16f),
+                color = Color.White.copy(alpha = inactiveAlpha),
                 start = trackStart,
                 end = trackEnd,
                 strokeWidth = trackHeight,
@@ -817,11 +820,14 @@ internal fun FSSeekbar(
                 strokeWidth = trackHeight,
                 cap = StrokeCap.Round,
             )
-            drawCircle(
-                color = Color.White,
-                radius = if (isDragging) 7.dp.toPx() else 5.dp.toPx(),
-                center = activeEnd,
-            )
+            // The Immersive player hides the thumb at rest and only shows it while scrubbing.
+            if (showThumb || isDragging) {
+                drawCircle(
+                    color = Color.White,
+                    radius = if (isDragging) 7.dp.toPx() else 5.dp.toPx(),
+                    center = activeEnd,
+                )
+            }
         }
     }
 }

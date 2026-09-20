@@ -976,6 +976,8 @@ private fun FSPlayButton(
     isPlaying: Boolean,
     isBuffering: Boolean,
     onClick: () -> Unit,
+    // Flat = borderless, larger glyph (Immersive player); default keeps the ringed button.
+    flat: Boolean = false,
 ) {
     val scale by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.94f,
@@ -986,13 +988,13 @@ private fun FSPlayButton(
         contentAlignment = Alignment.Center,
         modifier =
             Modifier
-                .size(64.dp)
+                .size(if (flat) 72.dp else 64.dp)
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                 }
                 .clip(CircleShape)
-                .border(1.5.dp, Color.White.copy(alpha = 0.72f), CircleShape)
+                .then(if (flat) Modifier else Modifier.border(1.5.dp, Color.White.copy(alpha = 0.72f), CircleShape))
                 .clickable(role = Role.Button, onClick = onClick)
                 .semantics { contentDescription = if (isPlaying) "Pause" else "Play" },
     ) {
@@ -1003,7 +1005,7 @@ private fun FSPlayButton(
                 painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(if (flat) 48.dp else 32.dp),
             )
         }
     }
@@ -1179,6 +1181,14 @@ private fun FrostSoulMainLyricPreview(
     // The vinyl page pulls the lyric up under the artist name and centers it, QQ Music-style,
     // instead of leaving it start-aligned at the bottom of the page.
     centered: Boolean = false,
+    // Optional typography overrides; defaults keep the existing look for every other page.
+    currentWeight: FontWeight = FontWeight.Bold,
+    currentFontSize: androidx.compose.ui.unit.TextUnit? = null,
+    currentLineHeight: androidx.compose.ui.unit.TextUnit? = null,
+    nextFontSize: androidx.compose.ui.unit.TextUnit = 14.sp,
+    nextLineHeight: androidx.compose.ui.unit.TextUnit = 19.sp,
+    nextAlpha: Float = 0.58f,
+    lineSpacing: Dp = 6.dp,
     modifier: Modifier = Modifier,
 ) {
     val currentLine = uiState.currentLyricModel
@@ -1187,7 +1197,7 @@ private fun FrostSoulMainLyricPreview(
 
     Column(
         horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(lineSpacing),
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding),
@@ -1200,9 +1210,9 @@ private fun FrostSoulMainLyricPreview(
                     lineProgress = uiState.currentLineProgress,
                 ),
                 color = FrostSoulOnSurface.copy(alpha = 0.96f),
-                fontSize = if (onlyCurrentLine) 19.sp else 21.sp,
-                lineHeight = if (onlyCurrentLine) 25.sp else 28.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = currentFontSize ?: if (onlyCurrentLine) 19.sp else 21.sp,
+                lineHeight = currentLineHeight ?: if (onlyCurrentLine) 25.sp else 28.sp,
+                fontWeight = currentWeight,
                 maxLines = if (onlyCurrentLine) 1 else maxLinesPerLyric,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = lyricTextAlign,
@@ -1212,9 +1222,9 @@ private fun FrostSoulMainLyricPreview(
             Text(
                 text = line,
                 color = FrostSoulOnSurface.copy(alpha = 0.96f),
-                fontSize = if (onlyCurrentLine) 19.sp else 21.sp,
-                lineHeight = if (onlyCurrentLine) 25.sp else 28.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = currentFontSize ?: if (onlyCurrentLine) 19.sp else 21.sp,
+                lineHeight = currentLineHeight ?: if (onlyCurrentLine) 25.sp else 28.sp,
+                fontWeight = currentWeight,
                 maxLines = if (onlyCurrentLine) 1 else maxLinesPerLyric,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = lyricTextAlign,
@@ -1225,9 +1235,9 @@ private fun FrostSoulMainLyricPreview(
             uiState.lyricPreviewLines.drop(1).take(1).forEach { line ->
                 Text(
                     text = line,
-                    color = FrostSoulOnSurfaceMuted.copy(alpha = 0.58f),
-                    fontSize = 14.sp,
-                    lineHeight = 19.sp,
+                    color = FrostSoulOnSurfaceMuted.copy(alpha = nextAlpha),
+                    fontSize = nextFontSize,
+                    lineHeight = nextLineHeight,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = lyricTextAlign,
@@ -1527,10 +1537,10 @@ private fun FrostSoulArtworkBlurAlbumPage(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(
-                        start = PlayerLayoutTokens.MasterHorizontalPadding,
-                        end = PlayerLayoutTokens.MasterHorizontalPadding,
-                        top = 20.dp,
-                        bottom = 14.dp,
+                        start = PlayerLayoutTokens.ImmersiveHorizontalPadding,
+                        end = PlayerLayoutTokens.ImmersiveHorizontalPadding,
+                        top = 24.dp,
+                        bottom = 18.dp,
                     ),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -1563,36 +1573,61 @@ private fun FrostSoulArtworkBlurAlbumPage(
                     FrostSoulFullPlayerDislikeButton(
                         videoId = uiState.track.id,
                         onClick = actions.onToggleDislike,
+                        flat = true,
                     )
                     FrostSoulFullPlayerLikeButton(
                         videoId = uiState.track.id,
                         isLiked = uiState.track.isLiked,
                         onClick = actions.onToggleLike,
+                        flatCount = true,
                     )
                 }
             }
 
+            // Two even, regular-weight lines: current line bright, next line dimmed.
             FrostSoulMainLyricPreview(
                 uiState = uiState,
                 showExtraPreviewLines = true,
                 maxLinesPerLyric = 1,
-                modifier = Modifier.heightIn(min = 60.dp),
+                horizontalPadding = PlayerLayoutTokens.ImmersiveHorizontalPadding,
+                currentWeight = FontWeight.Medium,
+                currentFontSize = 18.sp,
+                currentLineHeight = 25.sp,
+                nextFontSize = 18.sp,
+                nextLineHeight = 25.sp,
+                nextAlpha = 0.52f,
+                lineSpacing = 12.dp,
+                modifier = Modifier.heightIn(min = 68.dp),
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         FrostSoulImmersiveControls(
             state = uiState,
             actions = actions,
             accent = uiState.palette.accent,
             onOpenQueue = onOpenQueue,
-            onOpenOptions = onOpenOptions,
             onSeekDraggingChanged = onSeekDraggingChanged,
             modifier = Modifier
-                .padding(horizontal = PlayerLayoutTokens.MasterHorizontalPadding)
+                .padding(horizontal = PlayerLayoutTokens.ImmersiveHorizontalPadding)
                 .padding(top = 6.dp),
         )
+        }
+        // Top-right overflow menu, level with the collapse chevron / pager dots header.
+        androidx.compose.material3.IconButton(
+            onClick = onOpenOptions,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 8.dp, end = 14.dp)
+                .size(48.dp),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.more_vert),
+                contentDescription = "More options",
+                tint = Color.White.copy(alpha = 0.90f),
+                modifier = Modifier.size(24.dp),
+            )
         }
     }
 }
@@ -1603,97 +1638,41 @@ private fun FrostSoulImmersiveControls(
     actions: FrostSoulPlayerActions,
     accent: Color,
     onOpenQueue: () -> Unit,
-    onOpenOptions: () -> Unit,
     onSeekDraggingChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val timeStyle = PlayerLayoutTokens.TimelineTimeStyle.copy(fontSize = 13.sp)
     Column(modifier = modifier.fillMaxWidth()) {
+        // Thin rounded bar, no resting thumb; the thumb only appears while scrubbing.
         FSSeekbar(
             progress = state.progress,
             durationMs = state.safeDurationMs,
             onSeek = actions.onSeek,
             accent = accent,
             onDraggingChanged = onSeekDraggingChanged,
+            showThumb = false,
+            trackThickness = 5.dp,
+            inactiveAlpha = 0.24f,
             modifier = Modifier.fillMaxWidth(),
         )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(state.positionMs.asFrostSoulTime(), style = PlayerLayoutTokens.TimelineTimeStyle)
-            Text(state.safeDurationMs.asFrostSoulTime(), style = PlayerLayoutTokens.TimelineTimeStyle)
+            Text(state.positionMs.asFrostSoulClockTime(), style = timeStyle)
+            Text(state.safeDurationMs.asFrostSoulClockTime(), style = timeStyle)
         }
+        // Minimal transport row: repeat | previous | play/pause | next | queue.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FSDownloadButton(progress = state.downloadProgress, onClick = actions.onDownload)
-            FSSleepTimerButton(
-                active = state.sleepTimerActive,
-                remainingMs = state.sleepTimerRemainingMs,
-                onClick = actions.onOpenSleepTimer,
-                immersive = true,
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(accent.copy(alpha = 0.18f))
-                    .clickable(role = Role.Button, onClick = actions.onOpenAudioOutput)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            ) {
-                androidx.compose.material3.Icon(
-                    imageVector = state.outputDevice.type.imageVector,
-                    contentDescription = "Audio output",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp),
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = state.outputDevice.name,
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "Immersive · Spatial",
-                        color = Color.White.copy(alpha = 0.56f),
-                        fontSize = 10.5.sp,
-                        maxLines = 1,
-                    )
-                }
-            }
-            FSTwoDotButton(onClick = onOpenOptions, immersive = true)
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            androidx.compose.material3.IconButton(onClick = onOpenQueue, modifier = Modifier.size(44.dp)) {
-                Icon(painterResource(R.drawable.queue_music), "Open queue", tint = Color.White.copy(alpha = 0.72f), modifier = Modifier.size(22.dp))
-            }
-            androidx.compose.material3.IconButton(onClick = actions.onSkipPrevious, enabled = state.canSkipPrevious, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.skip_previous), "Previous track", tint = Color.White.copy(alpha = if (state.canSkipPrevious) 1f else 0.3f), modifier = Modifier.size(32.dp))
-            }
-            FSPlayButton(
-                isPlaying = state.isPlaying,
-                isBuffering = state.isBuffering,
-                onClick = actions.onTogglePlayPause,
-            )
-            androidx.compose.material3.IconButton(onClick = actions.onSkipNext, enabled = state.canSkipNext, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.skip_next), "Next track", tint = Color.White.copy(alpha = if (state.canSkipNext) 1f else 0.3f), modifier = Modifier.size(32.dp))
-            }
             val repeatActive = state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF
             val shuffleActive = state.shuffleModeEnabled
             androidx.compose.material3.IconButton(
                 onClick = if (shuffleActive) actions.onToggleShuffle else actions.onToggleRepeat,
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier.size(48.dp),
             ) {
                 Icon(
                     painterResource(
@@ -1704,8 +1683,46 @@ private fun FrostSoulImmersiveControls(
                         },
                     ),
                     if (shuffleActive) "Shuffle is on" else "Toggle repeat mode",
-                    tint = if (shuffleActive || repeatActive) accent else Color.White.copy(alpha = 0.72f),
-                    modifier = Modifier.size(22.dp),
+                    tint = if (shuffleActive || repeatActive) accent else Color.White.copy(alpha = 0.78f),
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+            androidx.compose.material3.IconButton(
+                onClick = actions.onSkipPrevious,
+                enabled = state.canSkipPrevious,
+                modifier = Modifier.size(60.dp),
+            ) {
+                Icon(
+                    painterResource(R.drawable.skip_previous),
+                    "Previous track",
+                    tint = Color.White.copy(alpha = if (state.canSkipPrevious) 1f else 0.3f),
+                    modifier = Modifier.size(42.dp),
+                )
+            }
+            FSPlayButton(
+                isPlaying = state.isPlaying,
+                isBuffering = state.isBuffering,
+                onClick = actions.onTogglePlayPause,
+                flat = true,
+            )
+            androidx.compose.material3.IconButton(
+                onClick = actions.onSkipNext,
+                enabled = state.canSkipNext,
+                modifier = Modifier.size(60.dp),
+            ) {
+                Icon(
+                    painterResource(R.drawable.skip_next),
+                    "Next track",
+                    tint = Color.White.copy(alpha = if (state.canSkipNext) 1f else 0.3f),
+                    modifier = Modifier.size(42.dp),
+                )
+            }
+            androidx.compose.material3.IconButton(onClick = onOpenQueue, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    painterResource(R.drawable.list),
+                    "Open queue",
+                    tint = Color.White.copy(alpha = 0.78f),
+                    modifier = Modifier.size(26.dp),
                 )
             }
         }
@@ -1718,12 +1735,14 @@ private fun FrostSoulFullPlayerLikeButton(
     isLiked: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    // Flat = plain white heart with an un-chipped count beside it (Immersive player).
+    flatCount: Boolean = false,
 ) {
     var likeCount by remember(videoId) { mutableStateOf<Int?>(null) }
     LaunchedEffect(videoId) {
         if (videoId.isNotBlank()) likeCount = YouTube.getMediaInfo(videoId).getOrNull()?.like
     }
-    val tint = if (isLiked) Color(0xFFFF3B4D) else {
+    val tint = if (isLiked) Color(0xFFFF3B4D) else if (flatCount) Color.White.copy(alpha = 0.92f) else {
         if (FrostSoulTheme.colors.background.luminance() > 0.5f) Color.Black else Color(0xFFD7DBE0)
     }
     // Count now lives in a small cutout badge tucked into the heart's top-right corner
@@ -1741,7 +1760,19 @@ private fun FrostSoulFullPlayerLikeButton(
             modifier = Modifier.size(25.dp),
         )
         val count = likeCount ?: 0
-        if (count > 0) {
+        if (count > 0 && flatCount) {
+            Text(
+                text = formatLikeCount(count),
+                color = Color.White.copy(alpha = 0.78f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 12.dp, y = (-1).dp),
+            )
+        }
+        if (count > 0 && !flatCount) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -1766,9 +1797,10 @@ private fun FrostSoulFullPlayerDislikeButton(
     videoId: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    flat: Boolean = false,
 ) {
     var isDisliked by remember(videoId) { mutableStateOf(false) }
-    val tint = if (isDisliked) Color(0xFFFF6B6B) else {
+    val tint = if (isDisliked) Color(0xFFFF6B6B) else if (flat) Color.White.copy(alpha = 0.92f) else {
         if (FrostSoulTheme.colors.background.luminance() > 0.5f) Color.Black else Color(0xFFD7DBE0)
     }
     Box(

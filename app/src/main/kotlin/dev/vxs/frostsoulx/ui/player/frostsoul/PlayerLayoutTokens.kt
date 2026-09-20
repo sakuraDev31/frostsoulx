@@ -16,6 +16,9 @@ import androidx.compose.ui.unit.sp
 /** Stable geometry and typography tokens for the full-screen FrostSoul player. */
 internal object PlayerLayoutTokens {
     val MasterHorizontalPadding = 22.dp
+
+    /** Wider gutter used by the Immersive (artwork-blur) main page: title, lyrics, seekbar and controls share it. */
+    val ImmersiveHorizontalPadding = 28.dp
     val VinylDiscSize = 300.dp
     val CenterAlbumArtSize = 184.dp
 
@@ -73,21 +76,21 @@ internal object PlayerLayoutTokens {
     )
 
     val ImmersiveTitleStyle = TextStyle(
-        fontFamily = FontFamily.Serif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 41.sp,
-        letterSpacing = (-0.8).sp,
-        lineHeight = 44.sp,
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 26.sp,
+        letterSpacing = 0.sp,
+        lineHeight = 32.sp,
         color = Color.White,
     )
 
     val ImmersiveArtistStyle = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 18.sp,
-        letterSpacing = 0.12.sp,
-        lineHeight = 22.sp,
-        color = Color.White.copy(alpha = 0.76f),
+        fontSize = 15.sp,
+        letterSpacing = 0.1.sp,
+        lineHeight = 20.sp,
+        color = Color.White.copy(alpha = 0.72f),
     )
 
     val TimelineTimeStyle = TextStyle(
