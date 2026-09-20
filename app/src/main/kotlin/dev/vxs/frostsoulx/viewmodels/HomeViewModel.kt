@@ -66,7 +66,8 @@ import dev.vxs.frostsoulx.innertube.utils.completed
 import dev.vxs.frostsoulx.innertube.utils.hasYouTubeLoginCookie
 import dev.vxs.frostsoulx.models.SimilarRecommendation
 import dev.vxs.frostsoulx.models.toMediaMetadata
-import dev.vxs.frostsoulx.recommendation.OfflineRecommendationScheduler
+import dev.vxs.frostsoulx.recommendation.OfflineRecommendationEngine
+import dev.vxs.frostsoulx.recommendation.RecommendationContext
 import dev.vxs.frostsoulx.recommendation.RecommendationSignalType
 import dev.vxs.frostsoulx.repository.LibraryTopMixRepository
 import dev.vxs.frostsoulx.taste.GetTasteProfileUseCase
@@ -260,6 +261,7 @@ class HomeViewModel
         private val loadAiContentFilterPolicy: LoadAiContentFilterPolicyUseCase,
         private val filterAiContent: FilterAiContentUseCase,
         private val getTasteProfile: GetTasteProfileUseCase,
+        private val offlineRecommendationEngine: OfflineRecommendationEngine,
     ) : ViewModel() {
         private val isRefreshing = MutableStateFlow(false)
         private val isLoading = MutableStateFlow(false)
@@ -1176,13 +1178,16 @@ class HomeViewModel
 
         private fun refresh() {
             selectedChip.value?.let { toggleChip(it, force = true); return }
-            if (isRefreshing.value || isLoading.value) return
+            if (isRefreshing.value) return
             ++pageGeneration
             loadMoreJob?.cancel()
             isLoadingMore.value = false
             isRefreshing.value = true
             viewModelScope.launch(Dispatchers.IO) {
                 try {
+                    // A load already in flight (start-up, AI-filter change) makes load() bail out,
+                    // which used to swallow the pull entirely. Let it finish, then refresh for real.
+                    withTimeoutOrNull(RefreshSettleTimeoutMs) { isLoading.first { loading -> !loading } }
                     supervisorScope {
                         launch {
                             load(refreshTaste = true)
@@ -1191,9 +1196,16 @@ class HomeViewModel
                             withTimeoutOrNull(RefreshSettleTimeoutMs) { recommendationJob?.join() }
                         }
                         launch { refreshQuickPicks() }
+                        // Daily Mix / Random Discovery used to wait for a WorkManager job that is
+                        // deferred while the battery is low. Regenerate them in-process so a pull
+                        // visibly changes them; the taste profile was just rebuilt by load().
+                        launch {
+                            offlineRecommendationEngine.refresh(
+                                context = currentRecommendationContext(),
+                                forceTasteRefresh = false,
+                            )
+                        }
                     }
-                    // Regenerates Daily Mix / Random Discovery; WorkManager keeps this off the UI path.
-                    OfflineRecommendationScheduler.enqueue(context)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -1202,6 +1214,18 @@ class HomeViewModel
                     isRefreshing.value = false
                 }
             }
+        }
+
+        private fun currentRecommendationContext(): RecommendationContext {
+            val now = java.time.LocalDateTime.now()
+            return RecommendationContext(
+                hourOfDay = now.hour,
+                dayOfWeek = now.dayOfWeek.value,
+                isHeadphones = false,
+                isBluetooth = false,
+                isCharging = false,
+                isOffline = false,
+            )
         }
 
         fun switchToAccount(

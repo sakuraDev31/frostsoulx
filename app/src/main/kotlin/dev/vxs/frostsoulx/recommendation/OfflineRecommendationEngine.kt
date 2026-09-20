@@ -7,6 +7,7 @@
 
 package dev.vxs.frostsoulx.recommendation
 
+import kotlin.random.Random
 import com.google.common.collect.ImmutableList
 import dev.vxs.frostsoulx.db.MusicDatabase
 import dev.vxs.frostsoulx.db.entities.RecommendationFeatureEntity
@@ -37,6 +38,9 @@ class OfflineRecommendationEngine @Inject constructor(
 ) {
     private val budget = RecommendationBudget()
     private val refreshMutex = Mutex()
+
+    @Volatile
+    private var lastMixTrackIds: Set<String> = emptySet()
     private val encoder = MetadataFeatureEncoder(budget.embeddingDimension)
     private val _lastRefresh = MutableStateFlow<RecommendationRefreshState>(RecommendationRefreshState.Idle)
 
@@ -44,12 +48,13 @@ class OfflineRecommendationEngine @Inject constructor(
 
     suspend fun refresh(
         context: RecommendationContext,
+        forceTasteRefresh: Boolean = true,
     ): RecommendationRefreshState =
         refreshMutex.withLock {
             _lastRefresh.value = RecommendationRefreshState.Refreshing
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val taste = getTasteProfile(forceRefresh = true).getOrDefault(TasteProfile.Empty)
+                    val taste = getTasteProfile(forceRefresh = forceTasteRefresh).getOrDefault(TasteProfile.Empty)
                     val candidates =
                         database
                             .offlineRecommendationCandidates(budget.candidateLimit)
@@ -88,6 +93,7 @@ class OfflineRecommendationEngine @Inject constructor(
                         )
                     val mixes = buildMixes(recommendations)
                     topMixRepository.replaceTopMixes(mixes)
+                    lastMixTrackIds = mixes.flatMapTo(HashSet()) { mix -> mix.tracks.map { track -> track.id } }
                     RecommendationRefreshState.Success(
                         candidateCount = tracks.size,
                         recommendationCount = recommendations.size,
@@ -305,8 +311,14 @@ class OfflineRecommendationEngine @Inject constructor(
                 // sequential signal (see buildSequenceAffinity) that previously had no path into
                 // the score at all.
                 val sequence = sequenceAffinity[track.id] ?: 0f
+                // Without any variation every refresh returned the identical mixes. A little jitter
+                // plus a nudge against last time's tracks lets near-ties rotate, while strong taste
+                // matches still win.
+                val variety = Random.nextFloat() * ExplorationJitter
+                val repeatPenalty = if (track.id in lastMixTrackIds) RepeatExposurePenalty else 0f
                 val score =
-                    (similarity * 0.38f) +
+                    variety - repeatPenalty +
+                        (similarity * 0.38f) +
                         (novelty * 0.14f) +
                         (contextScore * 0.10f) +
                         (replayProbability * 0.18f) +
@@ -368,6 +380,7 @@ class OfflineRecommendationEngine @Inject constructor(
             val source =
                 when (shelf) {
                     RecommendationShelfType.DailyMix -> recommendations
+                    RecommendationShelfType.RandomDiscovery -> byShelf[shelf].orEmpty().shuffled()
                     else -> byShelf[shelf].orEmpty()
                 }
             val tracks = source.take(budget.shelfSize).map { it.track }
@@ -429,6 +442,8 @@ class OfflineRecommendationEngine @Inject constructor(
     private companion object {
         const val EmbeddingVersion = 1
         const val MaxTasteWeight = 0.6f
+        const val ExplorationJitter = 0.10f
+        const val RepeatExposurePenalty = 0.06f
         const val MinimumShelfSize = 5
         const val MaxTracksPerArtist = 2
         const val RecentAnchorCount = 5
