@@ -411,6 +411,7 @@ fun AlbumScreen(
                 itemsIndexed(
                     items = wrappedSongs,
                     key = { _, song -> song.item.id },
+                    contentType = { _, _ -> "album_song" },
                 ) { index, songWrapper ->
                     SongListItem(
                         song = songWrapper.item,
@@ -479,6 +480,7 @@ fun AlbumScreen(
                             items(
                                 items = otherVersions.distinctBy { it.id },
                                 key = { it.id },
+                                contentType = { "album_version" },
                             ) { item ->
                                 YouTubeGridItem(
                                     item = item,

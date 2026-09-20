@@ -2110,29 +2110,25 @@ class MainActivity : ComponentActivity() {
                                     popEnterTransition = {
                                         if (disableAnimations) {
                                             fadeIn(tween(0))
-                                        } else if ((
-                                                initialState.destination.route in topLevelScreens ||
-                                                    initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
-                                            ) &&
-                                            targetState.destination.route in topLevelScreens
-                                        ) {
-                                            fadeIn(tween(250))
                                         } else {
-                                            fadeIn(tween(250)) + slideInHorizontally { -it / 2 }
+                                            // Predictive-back style reveal: the previous page
+                                            // grows from a slightly recessed card while the
+                                            // outgoing page scales away above it.
+                                            fadeIn(tween(220)) +
+                                                scaleIn(initialScale = 0.95f) +
+                                                slideInHorizontally { -it / 8 }
                                         }
                                     },
                                     popExitTransition = {
                                         if (disableAnimations) {
                                             fadeOut(tween(0))
-                                        } else if ((
-                                                initialState.destination.route in topLevelScreens ||
-                                                    initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
-                                            ) &&
-                                            targetState.destination.route in topLevelScreens
-                                        ) {
-                                            fadeOut(tween(200))
                                         } else {
-                                            fadeOut(tween(200)) + slideOutHorizontally { it / 2 }
+                                            // Matches Android's predictive-back gesture visual:
+                                            // current content follows the finger and recedes to
+                                            // roughly 90% before the destination is revealed.
+                                            fadeOut(tween(180)) +
+                                                scaleOut(targetScale = 0.90f) +
+                                                slideOutHorizontally { it / 2 }
                                         }
                                     },
                                     modifier =

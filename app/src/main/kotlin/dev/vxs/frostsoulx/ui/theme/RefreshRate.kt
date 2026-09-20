@@ -68,17 +68,18 @@ private fun applyRefreshRate(
     activity: Activity?,
     requestedFps: Float,
 ) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-        view.setRequestedFrameRate(requestedFps)
-        return
-    }
-
     activity?.window?.let { window ->
         val attributes = window.attributes
         if (attributes.preferredRefreshRate != requestedFps) {
             attributes.preferredRefreshRate = requestedFps
             window.attributes = attributes
         }
+    }
+
+    // Android 15's View hint is more precise for Compose content. Keep the
+    // window hint above as the compatibility path for older releases and OEMs.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+        view.setRequestedFrameRate(requestedFps)
     }
 }
 

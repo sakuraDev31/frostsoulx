@@ -55,11 +55,13 @@ val NavigationBarAnimationSpec =
 val BottomSheetAnimationSpec =
     spring<Dp>(
         dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = Spring.StiffnessMediumLow,
+        // Medium stiffness reaches the expanded player promptly without the
+        // long settling tail that is visible during a 120 Hz gesture.
+        stiffness = Spring.StiffnessMedium,
     )
 
 val BottomSheetSoftAnimationSpec =
     spring<Dp>(
         dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = Spring.StiffnessLow,
+        stiffness = Spring.StiffnessMediumLow,
     )
