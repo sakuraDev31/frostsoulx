@@ -246,6 +246,9 @@ fun LyricsScreen(
     val durationState = remember(mediaMetadata.id) { mutableLongStateOf(C.TIME_UNSET) }
     var sliderPosition by remember(mediaMetadata.id) { mutableStateOf<Long?>(null) }
     var gradientColors by remember(mediaMetadata.thumbnailUrl) { mutableStateOf(AppleMusicFallbackGradient) }
+    val artworkAccent = remember(gradientColors) {
+        gradientColors.firstOrNull() ?: foregroundColor
+    }
 
     val gradientColorsCache =
         remember {
@@ -441,6 +444,7 @@ fun LyricsScreen(
                                 playerConnection.seekToNext()
                             },
                             foregroundColor = foregroundColor,
+                            accentColor = artworkAccent,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -487,6 +491,7 @@ fun LyricsScreen(
                             playerConnection.seekToNext()
                         },
                         foregroundColor = foregroundColor,
+                        accentColor = artworkAccent,
                         modifier =
                             Modifier
                                 .fillMaxWidth()
@@ -809,6 +814,7 @@ private fun AppleMusicControls(
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
     foregroundColor: Color,
+    accentColor: Color,
     modifier: Modifier = Modifier,
 ) {
     val position = positionProvider()
@@ -825,7 +831,7 @@ private fun AppleMusicControls(
         AppleMusicSlider(
             value = currentPosition.toFloat(),
             valueRange = 0f..safeDuration.toFloat(),
-            activeColor = foregroundColor.copy(alpha = 0.94f),
+            activeColor = accentColor.copy(alpha = 0.94f),
             inactiveColor = foregroundColor.copy(alpha = 0.28f),
             trackHeight = 8.dp,
             onValueChange = { onPositionChange(it.toLong()) },
@@ -870,7 +876,11 @@ private fun AppleMusicControls(
             )
             IconButton(
                 onClick = onPlayPauseClick,
-                modifier = Modifier.size(74.dp),
+                modifier =
+                    Modifier
+                        .size(74.dp)
+                        .clip(CircleShape)
+                        .background(accentColor.copy(alpha = 0.18f)),
             ) {
                 if (isLoading) {
                     CircularWavyProgressIndicator(
@@ -917,7 +927,7 @@ private fun AppleMusicControls(
             AppleMusicSlider(
                 value = volume.coerceIn(0f, 1f),
                 valueRange = 0f..1f,
-                activeColor = foregroundColor.copy(alpha = 0.88f),
+                activeColor = accentColor.copy(alpha = 0.88f),
                 inactiveColor = foregroundColor.copy(alpha = 0.24f),
                 trackHeight = 8.dp,
                 onValueChange = onVolumeChange,

@@ -279,7 +279,7 @@ internal fun FrostSoulHomeFeed(
                         contentPadding = FrostSoulShelfItemPadding,
                         horizontalArrangement = Arrangement.spacedBy(FrostSoulShelfSpacing),
                     ) {
-                        items(artists, key = { it.id }) { artist ->
+                        items(artists, key = { it.id }, contentType = { "artist_card" }) { artist ->
                             FSArtistCard(
                                 name = artist.title,
                                 artworkUrl = artist.artist.thumbnailUrl,
@@ -481,7 +481,7 @@ private fun FrostSoulBannerCarousel(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.height(cardHeight),
             ) {
-                items(songs, key = { "banner_${it.id}" }) { song ->
+                items(songs, key = { "banner_${it.id}" }, contentType = { "featured_banner" }) { song ->
                     val active = song.id == mediaMetadata?.id
                     val playing = active && isPlaying
                     val playSong = {
@@ -622,7 +622,7 @@ private fun FrostSoulRecommendationList(
         contentPadding = FrostSoulShelfItemPadding,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(songs, key = { "quick_card_${it.id}" }) { song ->
+        items(songs, key = { "quick_card_${it.id}" }, contentType = { "quick_card" }) { song ->
             val isCurrent = song.id == mediaMetadata?.id
             PremiumCard(
                 modifier = Modifier
@@ -730,7 +730,7 @@ private fun FrostSoulSongShelf(
         contentPadding = FrostSoulShelfItemPadding,
         horizontalArrangement = Arrangement.spacedBy(FrostSoulShelfSpacing),
     ) {
-        items(songs, key = { it.id }) { song ->
+        items(songs, key = { it.id }, contentType = { "song_card" }) { song ->
             FSAlbumCard(
                 title = song.title,
                 subtitle = song.artists.joinToString(separator = " • ") { it.name },
@@ -761,7 +761,7 @@ private fun FrostSoulOfflineMixShelf(
         contentPadding = FrostSoulShelfItemPadding,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(mixes, key = { it.id }) { mix ->
+        items(mixes, key = { it.id }, contentType = { "offline_mix" }) { mix ->
             PremiumCard(
                 modifier = Modifier.width(196.dp).height(86.dp),
                 shape = FrostSoulTheme.shapes.large,
@@ -827,7 +827,11 @@ private fun FrostSoulLocalShelf(
         contentPadding = FrostSoulShelfItemPadding,
         horizontalArrangement = Arrangement.spacedBy(FrostSoulShelfSpacing),
     ) {
-        items(items, key = { item -> "${item::class.simpleName}_${item.id}" }) { item ->
+        items(
+            items,
+            key = { item -> "${item::class.simpleName}_${item.id}" },
+            contentType = { item -> item::class.simpleName ?: "local_item" },
+        ) { item ->
             FSAlbumCard(
                 title = item.title,
                 subtitle = item.frostSoulSubtitle(),

@@ -72,8 +72,21 @@ private fun applyRefreshRate(
         val attributes = window.attributes
         if (attributes.preferredRefreshRate != requestedFps) {
             attributes.preferredRefreshRate = requestedFps
-            window.attributes = attributes
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val requestedModeId =
+                if (requestedFps > 0f) {
+                    window.windowManager.defaultDisplay.supportedModes
+                        .minByOrNull { kotlin.math.abs(it.refreshRate - requestedFps) }
+                        ?.modeId ?: 0
+                } else {
+                    0
+                }
+            if (attributes.preferredDisplayModeId != requestedModeId) {
+                attributes.preferredDisplayModeId = requestedModeId
+            }
+        }
+        window.attributes = attributes
     }
 
     // Android 15's View hint is more precise for Compose content. Keep the
