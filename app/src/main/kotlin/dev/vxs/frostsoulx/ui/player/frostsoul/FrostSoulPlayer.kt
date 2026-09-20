@@ -6,6 +6,7 @@
  */
 
 package dev.vxs.frostsoulx.ui.player.frostsoul
+import dev.vxs.frostsoulx.ui.player.legibleArtworkAccent
 import dev.vxs.frostsoulx.ui.utils.formatLikeCount
 
 import androidx.compose.animation.AnimatedContent
@@ -415,6 +416,12 @@ internal fun FrostSoulPlayer(
                     .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
                     .padding(horizontal = 16.dp),
             ) {
+                // Highlight colour follows the current artwork instead of a fixed teal.
+                val queueAccent by animateColorAsState(
+                    targetValue = legibleArtworkAccent(uiState.palette.artworkPrimary, FrostSoulQueueFallbackAccent),
+                    animationSpec = tween(durationMillis = 400),
+                    label = "queueAccent",
+                )
                 var queueDismissDrag by remember { mutableFloatStateOf(0f) }
                 val dismissThreshold = with(LocalDensity.current) { 64.dp.toPx() }
                 Column(
@@ -457,7 +464,7 @@ internal fun FrostSoulPlayer(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Spacer(Modifier.height(6.dp))
-                                Box(Modifier.width(62.dp).height(2.dp).background(if (queueTab == index) Color.White else Color.Transparent))
+                                Box(Modifier.width(62.dp).height(2.dp).background(if (queueTab == index) queueAccent else Color.Transparent))
                             }
                         }
                     }
@@ -497,6 +504,7 @@ internal fun FrostSoulPlayer(
                     onToggleLike = actions.onToggleQueueLike,
                     onRemove = actions.onRemoveQueueItem,
                     onSelect = actions.onSelectQueueItem,
+                    accent = queueAccent,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -2374,6 +2382,7 @@ internal fun FSQueue(
     isPlaying: Boolean = false,
     onToggleLike: (Int) -> Unit = {},
     onRemove: (Int) -> Unit = {},
+    accent: Color = FrostSoulQueueFallbackAccent,
 ) {
     LazyColumn(
         state = listState,
@@ -2403,7 +2412,7 @@ internal fun FSQueue(
         }
         items(queue, key = { item -> "${item.index}-${item.id}" }) { item ->
             FrostSoulQueueRow(
-                item = item, isPlaying = isPlaying,
+                item = item, isPlaying = isPlaying, activeColor = accent,
                 onClick = { onSelect(item.index) },
                 onToggleLike = { onToggleLike(item.index) },
                 onRemove = { onRemove(item.index) },
@@ -2416,11 +2425,11 @@ internal fun FSQueue(
 private fun FrostSoulQueueRow(
     item: FrostSoulQueueItem,
     isPlaying: Boolean,
+    activeColor: Color,
     onClick: () -> Unit,
     onToggleLike: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val activeColor = Color(0xFF20B486)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -2519,6 +2528,9 @@ internal fun rememberFrostSoulPalette(artworkUrl: String?): FrostSoulPalette {
 }
 
 private const val PaletteCacheCapacity = 24
+
+/** Only used when no artwork palette is available. */
+private val FrostSoulQueueFallbackAccent = Color(0xFF20B486)
 
 /** Select actual artwork swatches, not hue-shifted gradient filler colors. Runs off-main. */
 private fun extractGlowColors(palette: Palette): List<Color> {

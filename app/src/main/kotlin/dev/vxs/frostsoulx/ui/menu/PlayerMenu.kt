@@ -9,6 +9,15 @@
 
 package dev.vxs.frostsoulx.ui.menu
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import dev.vxs.frostsoulx.ui.player.legibleArtworkAccent
+import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import android.content.Intent
 import android.media.audiofx.AudioEffect
 import android.widget.Toast
@@ -146,6 +155,14 @@ fun PlayerMenu(
         rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
     val librarySong by database.song(mediaMetadata.id).collectAsState(initial = null)
     val coroutineScope = rememberCoroutineScope()
+
+    // Accent follows the current artwork so the menu matches the player it opened from.
+    val artworkPalette = rememberFrostSoulPalette(mediaMetadata.thumbnailUrl)
+    val menuAccent by animateColorAsState(
+        targetValue = legibleArtworkAccent(artworkPalette.artworkPrimary, MaterialTheme.colorScheme.primary),
+        animationSpec = tween(durationMillis = 400),
+        label = "playerMenuAccent",
+    )
 
     val download by LocalDownloadUtil.current
         .getDownload(mediaMetadata.id)
@@ -347,16 +364,22 @@ fun PlayerMenu(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier =
+                Modifier
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(menuAccent.copy(alpha = 0.26f), menuAccent.copy(alpha = 0.04f)),
+                        ),
+                    ).padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
             val thumb = mediaMetadata.thumbnailUrl
             if (thumb.isNullOrBlank()) {
                 Box(
                     modifier =
                         Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .size(68.dp)
+                            .clip(RoundedCornerShape(18.dp))
                             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -374,8 +397,8 @@ fun PlayerMenu(
                     contentScale = ContentScale.Crop,
                     modifier =
                         Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(16.dp)),
+                            .size(68.dp)
+                            .clip(RoundedCornerShape(18.dp)),
                 )
             }
 
@@ -383,7 +406,7 @@ fun PlayerMenu(
                 Text(
                     text = stringResource(R.string.now_playing),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = menuAccent,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -414,6 +437,7 @@ fun PlayerMenu(
 
         PlayerVolumeCard(
             volume = deviceMusicVolumeController.volumeFraction,
+            accent = menuAccent,
             onVolumeChange = onPlayerVolumeChange,
         )
     }
@@ -433,6 +457,7 @@ fun PlayerMenu(
         item {
             MenuSurfaceSection(modifier = Modifier.padding(vertical = 6.dp)) {
                 NewActionGrid(
+                    accentColor = menuAccent,
                     actions =
                         buildList {
                             add(
@@ -442,7 +467,7 @@ fun PlayerMenu(
                                             painter = painterResource(R.drawable.equalizer),
                                             contentDescription = null,
                                             modifier = Modifier.size(30.dp),
-                                            tint = if (surroundEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            tint = if (surroundEnabled) MaterialTheme.colorScheme.primary else menuAccent,
                                         )
                                     },
                                     text = "Surround ${if (surroundEnabled) "On" else "Off"}",
@@ -466,7 +491,7 @@ fun PlayerMenu(
                                                 painter = painterResource(R.drawable.radio),
                                                 contentDescription = null,
                                                 modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                tint = menuAccent,
                                             )
                                         },
                                         text = stringResource(R.string.start_radio),
@@ -494,7 +519,7 @@ fun PlayerMenu(
                                                     painter = painterResource(R.drawable.sync),
                                                     contentDescription = null,
                                                     modifier = Modifier.size(28.dp),
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    tint = menuAccent,
                                                 )
                                             }
                                         },
@@ -532,7 +557,7 @@ fun PlayerMenu(
                                             painter = painterResource(R.drawable.playlist_add),
                                             contentDescription = null,
                                             modifier = Modifier.size(28.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            tint = menuAccent,
                                         )
                                     },
                                     text = stringResource(R.string.add_to_playlist),
@@ -549,7 +574,7 @@ fun PlayerMenu(
                                                 ),
                                             contentDescription = null,
                                             modifier = Modifier.size(28.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            tint = menuAccent,
                                         )
                                     },
                                     text =
@@ -575,7 +600,7 @@ fun PlayerMenu(
                                                 painter = painterResource(R.drawable.share),
                                                 contentDescription = null,
                                                 modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                tint = menuAccent,
                                             )
                                         },
                                         text = stringResource(R.string.share),
@@ -591,7 +616,7 @@ fun PlayerMenu(
                                                 painter = painterResource(R.drawable.link),
                                                 contentDescription = null,
                                                 modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                tint = menuAccent,
                                             )
                                         },
                                         text = stringResource(R.string.copy_link),
@@ -625,7 +650,7 @@ fun PlayerMenu(
                                                 painter = painterResource(R.drawable.fire),
                                                 contentDescription = null,
                                                 modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                tint = menuAccent,
                                             )
                                         },
                                         text = stringResource(R.string.music_together),
@@ -645,7 +670,7 @@ fun PlayerMenu(
                                                 painter = painterResource(R.drawable.bedtime),
                                                 contentDescription = null,
                                                 modifier = Modifier.size(28.dp),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                tint = menuAccent,
                                             )
                                         },
                                         text = stringResource(R.string.aod_mode),
@@ -960,71 +985,47 @@ fun PlayerMenu(
 @Composable
 private fun PlayerVolumeCard(
     volume: Float,
+    accent: Color,
     onVolumeChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val safeVolume = volume.coerceIn(0f, 1f)
+    val volumeLabel = stringResource(R.string.volume)
 
     Surface(
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier.fillMaxWidth(),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = stringResource(R.string.volume),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
+            Icon(
+                painter = painterResource(if (safeVolume <= 0f) R.drawable.volume_off else R.drawable.volume_up),
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(22.dp),
+            )
 
-                Text(
-                    text = "${(safeVolume * 100).roundToInt()}%",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
+            VolumeSliderL(
+                value = safeVolume,
+                accent = accent,
+                onValueChange = onVolumeChange,
+                modifier = Modifier.weight(1f).semantics { contentDescription = volumeLabel },
+            )
 
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.volume_off),
-                        contentDescription = stringResource(R.string.minimum_volume),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-
-                    VolumeSliderL(
-                        value = safeVolume,
-                        onValueChange = onVolumeChange,
-                        modifier = Modifier.weight(1f),
-                    )
-
-                    Icon(
-                        painter = painterResource(R.drawable.volume_up),
-                        contentDescription = stringResource(R.string.maximum_volume),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
+            Text(
+                text = "${(safeVolume * 100).roundToInt()}%",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(44.dp),
+            )
         }
     }
 }
@@ -1033,6 +1034,7 @@ private fun PlayerVolumeCard(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun VolumeSliderL(
     value: Float,
+    accent: Color,
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1054,24 +1056,37 @@ private fun VolumeSliderL(
         },
         onValueChangeFinished = { isDragging = false },
         valueRange = 0f..1f,
-        modifier = modifier.height(36.dp),
+        modifier = modifier.height(40.dp),
         thumb = {
             Box(
                 modifier =
                     Modifier
-                        .size(14.dp)
+                        .size(20.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
+                        .background(accent),
             )
         },
-        colors =
-            SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent,
-            ),
+        track = { sliderState ->
+            val range = sliderState.valueRange
+            val fraction =
+                ((sliderState.value - range.start) / (range.endInclusive - range.start)).coerceIn(0f, 1f)
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth(fraction)
+                            .fillMaxHeight()
+                            .background(accent),
+                )
+            }
+        },
     )
 }
 
