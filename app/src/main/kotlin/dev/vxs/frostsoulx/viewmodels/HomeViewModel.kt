@@ -66,8 +66,13 @@ import dev.vxs.frostsoulx.innertube.utils.completed
 import dev.vxs.frostsoulx.innertube.utils.hasYouTubeLoginCookie
 import dev.vxs.frostsoulx.models.SimilarRecommendation
 import dev.vxs.frostsoulx.models.toMediaMetadata
+import dev.vxs.frostsoulx.recommendation.OfflineRecommendationEngine
+import dev.vxs.frostsoulx.recommendation.RecommendationContext
 import dev.vxs.frostsoulx.recommendation.RecommendationSignalType
 import dev.vxs.frostsoulx.repository.LibraryTopMixRepository
+import dev.vxs.frostsoulx.taste.GetTasteProfileUseCase
+import dev.vxs.frostsoulx.taste.TasteProfile
+import dev.vxs.frostsoulx.taste.affinityOf
 import dev.vxs.frostsoulx.utils.SavedAccount
 import dev.vxs.frostsoulx.utils.SpeedDialPinType
 import dev.vxs.frostsoulx.utils.SyncUtils
@@ -79,6 +84,19 @@ import dev.vxs.frostsoulx.utils.reportException
 import dev.vxs.frostsoulx.utils.toPlaybackAuthState
 import timber.log.Timber
 import javax.inject.Inject
+import kotlin.random.Random
+
+/** How strongly the taste profile pulls a candidate's similarity away from its source prior. */
+private const val TasteBlendWeight = 0.5f
+
+/** Extra score for candidates that match the taste profile, scaled by profile confidence. */
+private const val TasteBonusWeight = 0.24f
+
+/** Random tie-breaker so refreshes seed discovery from different favourites. */
+private const val SeedJitter = 0.15f
+
+/** Longest the pull-to-refresh indicator waits for remote shelves to settle. */
+private const val RefreshSettleTimeoutMs = 15_000L
 
 sealed interface AccountChannelsState {
     data object Loading : AccountChannelsState
@@ -242,6 +260,8 @@ class HomeViewModel
         observeAiContentFilter: ObserveAiContentFilterUseCase,
         private val loadAiContentFilterPolicy: LoadAiContentFilterPolicyUseCase,
         private val filterAiContent: FilterAiContentUseCase,
+        private val getTasteProfile: GetTasteProfileUseCase,
+        private val offlineRecommendationEngine: OfflineRecommendationEngine,
     ) : ViewModel() {
         private val isRefreshing = MutableStateFlow(false)
         private val isLoading = MutableStateFlow(false)
@@ -435,6 +455,7 @@ class HomeViewModel
             recentIds: Set<String>,
             statsBySong: Map<String, SongWithStats>,
             signalsBySong: Map<String, List<RecommendationSignalEntity>>,
+            taste: TasteProfile,
         ): Pair<List<Song>, List<Song>> {
             val dislikedIds =
                 signalsBySong
@@ -445,16 +466,18 @@ class HomeViewModel
                     .keys
             val maxPlayCount = statsBySong.values.maxOfOrNull { it.songCountListened }?.coerceAtLeast(1) ?: 1
             val round = recommendationRound++
+            val tasteWeight = if (taste.isUsable) TasteBlendWeight * taste.confidence else 0f
             val ranked =
                 candidates
                     .distinctBy { it.song.id }
                     .filterNot { it.song.id in dislikedIds }
+                    .filterNot { candidate -> candidate.song.artists.any { it.id in taste.avoidedArtistIds } }
                     .map { candidate ->
                         val stats = statsBySong[candidate.song.id]
                         val frequency = ((stats?.songCountListened ?: 0).toFloat() / maxPlayCount).coerceIn(0f, 1f)
                         val recentPenalty = if (candidate.song.id in recentIds) 0.45f else 0f
                         val exposurePenalty = if (candidate.song.id in lastRecommendedIds) 0.30f else 0f
-                        val similarity =
+                        val sourcePrior =
                             when (candidate.source) {
                                 HomeCandidateSource.DISCOVERY -> 0.78f
                                 HomeCandidateSource.RELATED -> 1f
@@ -462,6 +485,10 @@ class HomeViewModel
                                 HomeCandidateSource.HISTORY -> 0.58f
                                 HomeCandidateSource.LIBRARY -> 0.25f
                             }
+                        // Where a track came from is only a prior; how well it fits the listener's
+                        // taste profile decides the rest.
+                        val tasteFit = taste.affinityOf(candidate.song)
+                        val similarity = sourcePrior * (1f - tasteWeight) + tasteFit * tasteWeight
                         val novelty = if (candidate.song.id !in historyIds && stats == null) 1f else 0.25f * (1f - frequency)
                         val feedback =
                             signalsBySong[candidate.song.id].orEmpty().take(20).sumOf { signal ->
@@ -483,6 +510,7 @@ class HomeViewModel
                         val exploration = ((candidate.song.id.hashCode() xor (round * 0x45d9f3b)).ushr(1) % 1000) / 1000f
                         val score = (frequency * 0.08f) + (similarity * 0.38f) +
                             (novelty * 0.28f) + (feedback * 0.18f) + contextBoost +
+                            (tasteFit * TasteBonusWeight * taste.confidence) +
                             exploration * 0.10f - recentPenalty - exposurePenalty
                         candidate to score
                     }.sortedByDescending { it.second }
@@ -679,7 +707,7 @@ class HomeViewModel
             }
         }
 
-        private suspend fun load() {
+        private suspend fun load(refreshTaste: Boolean = false) {
             if (!isLoading.compareAndSet(expect = false, update = true)) return
             loadError.value = null
 
@@ -687,7 +715,7 @@ class HomeViewModel
                 recommendationJob?.cancel()
                 coroutineScope {
                     // Cached/local ranking must not wait for filter downloads or YouTube.
-                    launch { loadHistoryRecommendations(includeRemote = false) }
+                    launch { loadHistoryRecommendations(includeRemote = false, refreshTaste = refreshTaste) }
                     launch {
                         forgottenFavorites.value =
                             database
@@ -744,12 +772,17 @@ class HomeViewModel
         }
 
         /** Mix fresh network discovery with bounded cached candidates, not download totals. */
-        private suspend fun loadHistoryRecommendations(includeRemote: Boolean) {
+        private suspend fun loadHistoryRecommendations(
+            includeRemote: Boolean,
+            refreshTaste: Boolean = false,
+        ) {
             val fromTimeStamp = System.currentTimeMillis() - 86400000L * 30
             val hideExplicit = context.dataStore.get(HideExplicitKey, false)
             val hideVideo = context.dataStore.get(HideVideoKey, false)
             val blockedArtistIds = database.getBlockedArtistIds().toSet()
             val signalsBySong = database.recentRecommendationSignals(limit = 2_000).groupBy { it.songId }
+            // Built on demand when absent, so first launch and cleared data still get a profile.
+            val taste = getTasteProfile(forceRefresh = refreshTaste).getOrDefault(TasteProfile.Empty)
             val dislikedIds = signalsBySong.filterValues {
                 it.firstOrNull { signal ->
                     signal.type == RecommendationSignalType.Dislike.name ||
@@ -766,10 +799,7 @@ class HomeViewModel
                 .filter(::eligible).distinctBy { it.id }
             val historyIds = history.mapTo(HashSet()) { it.id }
             val historyArtistIds = history.flatMapTo(HashSet()) { song -> song.artists.map { it.id } }
-            // Recent tastes and different artists get a chance to seed discovery, not just
-            // the same four all-time/download-heavy tracks on every visit.
-            val seeds = history.filterNot { it.song.isLocal }
-                .distinctBy { it.artists.firstOrNull()?.name ?: it.id }.take(6)
+            val seeds = pickDiscoverySeeds(history, taste)
             val related = seeds.take(3).flatMap { database.homeRelatedSongs(it.id) }
                 .filter(::eligible).distinctBy { it.id }.take(120)
             val library = database.homeRecommendationCandidates(limit = 120).filter(::eligible)
@@ -811,11 +841,36 @@ class HomeViewModel
                 recentIds = recent.take(12).mapTo(HashSet()) { it.id },
                 statsBySong = database.mostPlayedSongsStats(fromTimeStamp, limit = 200).first().associateBy { it.id },
                 signalsBySong = signalsBySong,
+                taste = taste,
             )
             currentCoroutineContext().ensureActive()
             featuredForYou.value = featured
             forThisMoment.value = moment
             updateAllLocalItems()
+        }
+
+        /**
+         * Seeds live discovery from the artists the taste profile likes most, with a little random
+         * jitter so consecutive refreshes explore different corners of the same taste instead of
+         * replaying whatever was played last. Without a profile it falls back to history order.
+         */
+        private fun pickDiscoverySeeds(
+            history: List<Song>,
+            taste: TasteProfile,
+        ): List<Song> {
+            val streamable = history.filterNot { it.song.isLocal }
+            val ordered =
+                if (taste.isUsable) {
+                    // Score once per song: a random selector inside sortedBy would break the
+                    // comparator contract.
+                    streamable
+                        .map { song -> song to taste.affinityOf(song) + Random.nextFloat() * SeedJitter }
+                        .sortedByDescending { scored -> scored.second }
+                        .map { scored -> scored.first }
+                } else {
+                    streamable
+                }
+            return ordered.distinctBy { it.artists.firstOrNull()?.name ?: it.id }.take(6)
         }
 
         private suspend fun loadLiveRelatedSongs(seeds: List<Song>): List<SongItem> {
@@ -1123,16 +1178,33 @@ class HomeViewModel
 
         private fun refresh() {
             selectedChip.value?.let { toggleChip(it, force = true); return }
-            if (isRefreshing.value || isLoading.value) return
+            if (isRefreshing.value) return
             ++pageGeneration
             loadMoreJob?.cancel()
             isLoadingMore.value = false
             isRefreshing.value = true
             viewModelScope.launch(Dispatchers.IO) {
                 try {
+                    // A load already in flight (start-up, AI-filter change) makes load() bail out,
+                    // which used to swallow the pull entirely. Let it finish, then refresh for real.
+                    withTimeoutOrNull(RefreshSettleTimeoutMs) { isLoading.first { loading -> !loading } }
                     supervisorScope {
-                        launch { load() }
+                        launch {
+                            load(refreshTaste = true)
+                            // load() hands remote enrichment to recommendationJob; keep the
+                            // indicator up until those shelves settle instead of dropping it early.
+                            withTimeoutOrNull(RefreshSettleTimeoutMs) { recommendationJob?.join() }
+                        }
                         launch { refreshQuickPicks() }
+                        // Daily Mix / Random Discovery used to wait for a WorkManager job that is
+                        // deferred while the battery is low. Regenerate them in-process so a pull
+                        // visibly changes them; the taste profile was just rebuilt by load().
+                        launch {
+                            offlineRecommendationEngine.refresh(
+                                context = currentRecommendationContext(),
+                                forceTasteRefresh = false,
+                            )
+                        }
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -1142,6 +1214,18 @@ class HomeViewModel
                     isRefreshing.value = false
                 }
             }
+        }
+
+        private fun currentRecommendationContext(): RecommendationContext {
+            val now = java.time.LocalDateTime.now()
+            return RecommendationContext(
+                hourOfDay = now.hour,
+                dayOfWeek = now.dayOfWeek.value,
+                isHeadphones = false,
+                isBluetooth = false,
+                isCharging = false,
+                isOffline = false,
+            )
         }
 
         fun switchToAccount(
