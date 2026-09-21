@@ -19,6 +19,9 @@ internal object PlayerLayoutTokens {
 
     /** Wider gutter used by the Immersive (artwork-blur) main page: title, lyrics, seekbar and controls share it. */
     val ImmersiveHorizontalPadding = 28.dp
+
+    /** Space the Immersive page keeps free at the bottom of its scrolling content for the pinned seekbar + transport controls. */
+    val ImmersiveControlsReserve = 172.dp
     val VinylDiscSize = 300.dp
     val CenterAlbumArtSize = 184.dp
 

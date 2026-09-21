@@ -1427,7 +1427,10 @@ private fun FrostSoulArtworkBlurAlbumPage(
     val immersiveBlurRadius = artworkHeaderBlur.coerceAtLeast(28f).coerceAtMost(72f)
     val sharpArtworkUrl = uiState.canvasStaticUrl ?: uiState.track.artworkUrl
     val hasCanvas = !uiState.canvasPrimaryUrl.isNullOrBlank() || !uiState.canvasFallbackUrl.isNullOrBlank()
-    Box(modifier = modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        // Artwork header scales with the page (about half the screen, matching the reference)
+        // instead of a fixed dp, so title / lyrics / controls keep the same proportions on any device.
+        val headerHeight = (maxHeight * 0.5f).coerceIn(280.dp, PlayerLayoutTokens.ArtworkBlurHeaderHeight + 34.dp)
         if (!sharpArtworkUrl.isNullOrBlank()) {
             AsyncImage(
                 model = sharpArtworkUrl,
@@ -1461,7 +1464,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = 18.dp),
+                .padding(bottom = PlayerLayoutTokens.ImmersiveControlsReserve),
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
             // Full-bleed artwork header: the image spans the whole width with no card
@@ -1470,7 +1473,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(PlayerLayoutTokens.ArtworkBlurHeaderHeight)
+                    .height(headerHeight)
                     .clipToBounds(),
             ) {
                 if (!sharpArtworkUrl.isNullOrBlank()) {
@@ -1601,8 +1604,10 @@ private fun FrostSoulArtworkBlurAlbumPage(
             )
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        }
 
+        // Seekbar + transport controls are pinned to the bottom of the page (as in the reference),
+        // so the gap between lyrics and seekbar absorbs any spare height instead of leaving dead space below.
         FrostSoulImmersiveControls(
             state = uiState,
             actions = actions,
@@ -1610,10 +1615,10 @@ private fun FrostSoulArtworkBlurAlbumPage(
             onOpenQueue = onOpenQueue,
             onSeekDraggingChanged = onSeekDraggingChanged,
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .padding(horizontal = PlayerLayoutTokens.ImmersiveHorizontalPadding)
-                .padding(top = 6.dp),
+                .padding(bottom = 12.dp),
         )
-        }
         // Top-right overflow menu, level with the collapse chevron / pager dots header.
         androidx.compose.material3.IconButton(
             onClick = onOpenOptions,
