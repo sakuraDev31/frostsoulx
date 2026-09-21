@@ -50,13 +50,21 @@ internal class PlayerArtworkAnchor(val layer: GraphicsLayer) {
     var rotation: () -> Float = { 0f }
 }
 
-internal class PlayerArtworkTransition(val sheet: BottomSheetState) {
+/**
+ * Immersive player: while the sheet is dragged less than this far from fully open, the page keeps
+ * drawing its own full-bleed cover (glued to the sheet, under the header controls). The travelling
+ * cover only takes over after that, so the artwork never detaches into a floating card on first touch.
+ */
+private const val ImmersiveArtworkAttachedProgress = 0.92f
+
+internal class PlayerArtworkTransition(val sheet: BottomSheetState, val immersive: Boolean = false) {
     var source by mutableStateOf<PlayerArtworkAnchor?>(null)
     var target by mutableStateOf<PlayerArtworkAnchor?>(null)
     var root by mutableStateOf<LayoutCoordinates?>(null)
     var enabled by mutableStateOf(true)
     val active: Boolean
-        get() = enabled && sheet.progress > 0f && sheet.progress < 1f &&
+        get() = enabled && sheet.progress > 0f &&
+            sheet.progress < (if (immersive) ImmersiveArtworkAttachedProgress else 1f) &&
             root?.isAttached == true && source?.coordinates?.isAttached == true &&
             target?.coordinates?.isAttached == true &&
             source?.recorded == true && target?.recorded == true
@@ -106,8 +114,9 @@ internal fun PlayerArtworkBottomSheet(
     collapsedContentHeight: Dp?,
     collapsedContent: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit,
+    immersive: Boolean = false,
 ) {
-    val transition = remember(state, artworkKey) { PlayerArtworkTransition(state) }
+    val transition = remember(state, artworkKey, immersive) { PlayerArtworkTransition(state, immersive) }
     if (state.isExpandedOrExpanding) BackHandler(onBack = state::collapseSoft)
     CompositionLocalProvider(LocalPlayerArtworkTransition provides transition) {
         Box(modifier.fillMaxSize().onGloballyPositioned { transition.root = it }) {
@@ -139,11 +148,22 @@ internal fun PlayerArtworkBottomSheet(
                             shape = playerPageShape(visibleHeight, radius)
                             clip = true
                         }
-                        .background(backgroundColor.copy(alpha = backgroundColor.alpha * state.progress.coerceIn(0f, 1f))),
+                        // The Immersive page is already opaque; its colour alpha is already tied to progress, so it is
+                        // not squared here (that made the whole page see-through mid-drag).
+                        .background(
+                            backgroundColor.copy(
+                                alpha = backgroundColor.alpha * (if (immersive) 1f else state.progress.coerceIn(0f, 1f)),
+                            ),
+                        ),
                 ) {
                     BoxWithConstraints(
                         Modifier.fillMaxSize().graphicsLayer {
-                            alpha = ((state.progress - 0.12f) / 0.88f).coerceIn(0f, 1f)
+                            // Immersive: opaque quickly so the home screen never bleeds through the blur.
+                            alpha = if (immersive) {
+                                ((state.progress - 0.04f) / 0.26f).coerceIn(0f, 1f)
+                            } else {
+                                ((state.progress - 0.12f) / 0.88f).coerceIn(0f, 1f)
+                            }
                         },
                         content = content,
                     )
@@ -160,25 +180,44 @@ internal fun PlayerArtworkBottomSheet(
                         val from = source.coordinates ?: return@onDrawBehind
                         val to = target.coordinates ?: return@onDrawBehind
                         val p = state.progress.coerceIn(0f, 1f)
+                        val translation = (state.expandedBound - state.value).roundToPx().toFloat()
                         // Subtract the sheet's translation: artwork follows one continuous
                         // trajectory instead of inheriting the page's downward slide as well.
-                        val sourceCenter = root.localPositionOf(from, Offset(from.size.width / 2f, from.size.height / 2f)) -
-                            Offset(0f, (state.expandedBound - state.value).roundToPx().toFloat())
+                        val sourceRest = root.localPositionOf(from, Offset(from.size.width / 2f, from.size.height / 2f)) -
+                            Offset(0f, translation)
                         val targetCenter = root.localPositionOf(to, Offset(to.size.width / 2f, to.size.height / 2f))
-                        val center = targetCenter + (sourceCenter - targetCenter) * p
-                        val width = to.size.width + (from.size.width - to.size.width) * p
-                        val height = to.size.height + (from.size.height - to.size.height) * p
+                        // morph: 0 = full cover, 1 = mini artwork. Classic styles map it linearly to (1 - p).
+                        // Immersive holds the cover on the sheet first, then eases into the mini artwork.
+                        val morph: Float
+                        val follow: Float
+                        if (immersive) {
+                            val u = ((ImmersiveArtworkAttachedProgress - p) / ImmersiveArtworkAttachedProgress).coerceIn(0f, 1f)
+                            morph = u * u * (3f - 2f * u)
+                            follow = 1f - morph
+                        } else {
+                            morph = 1f - p
+                            follow = 0f
+                        }
+                        val t = 1f - morph
+                        val startCenter = sourceRest + Offset(0f, translation * follow)
+                        val center = targetCenter + (startCenter - targetCenter) * t
+                        val width = to.size.width + (from.size.width - to.size.width) * t
+                        val height = to.size.height + (from.size.height - to.size.height) * t
                         if (width <= 0f || height <= 0f) return@onDrawBehind
                         val sourceRadius = if (source.round) minOf(width, height) / 2f else 0f
-                        val radius = 8.dp.toPx() * (1f - p) + sourceRadius * p
+                        val travelRadius = 8.dp.toPx() * (1f - t) + sourceRadius * t
+                        // Immersive: match the sheet's own top corners while attached, so no square cover
+                        // corners poke out of (or fall short of) the rounded page.
+                        val sheetRadius = 28.dp.toPx() * ((1f - p) * 6f).coerceIn(0f, 1f)
+                        val radius = if (immersive) sheetRadius * (1f - morph) + travelRadius * morph else travelRadius
                         clip.reset()
                         clip.addRoundRect(RoundRect(0f, 0f, width, height, CornerRadius(radius)))
-                        val rotation = ((source.rotation() % 360f + 540f) % 360f - 180f) * p
+                        val rotation = ((source.rotation() % 360f + 540f) % 360f - 180f) * t
                         withTransform({ translate(center.x - width / 2f, center.y - height / 2f) }) {
                             clipPath(clip) {
                                 // Blend into the mini layer to handle canvas covers and the
                                 // immersive lower-edge mask without a last-frame artwork swap.
-                                val targetAlpha = ((1f - p) * 2f).coerceIn(0f, 1f)
+                                val targetAlpha = ((1f - t) * 2f).coerceIn(0f, 1f)
                                 source.layer.alpha = 1f - targetAlpha
                                 target.layer.alpha = targetAlpha
                                 withTransform({

@@ -1004,6 +1004,7 @@ fun BottomSheetPlayer(
             playerConnection.service.stopAndClearPlayback(clearPersistentState = true)
         },
         sharedArtworkKey = mediaMetadata?.id.takeUnless { aodModeEnabled },
+        immersiveArtwork = playerDesignStyle == PlayerDesignStyle.ARTWORK_BLUR,
         collapsedContentHeight = MiniPlayerHeight,
         collapsedContent = {
             MiniPlayer(

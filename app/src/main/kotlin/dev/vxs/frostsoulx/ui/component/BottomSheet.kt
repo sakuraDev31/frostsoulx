@@ -69,6 +69,7 @@ fun BottomSheet(
     onDismiss: (() -> Unit)? = null,
     collapsedContentHeight: Dp? = null,
     sharedArtworkKey: String? = null,
+    immersiveArtwork: Boolean = false,
     collapsedContent: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -76,6 +77,7 @@ fun BottomSheet(
         PlayerArtworkBottomSheet(
             state, sharedArtworkKey, modifier, backgroundColor, onDismiss,
             collapsedContentHeight, collapsedContent, content,
+            immersive = immersiveArtwork,
         )
         return
     }

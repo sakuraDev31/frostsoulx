@@ -217,13 +217,17 @@ internal fun FrostSoulPlayer(
     }
     // The enclosing sheet owns vertical drag, fling, and collapse progress. A second
     // drag offset here would snap back on release and detach artwork from its destination.
-    // On the ARTWORK_BLUR ("Immersive") style, the main player page wants its artwork to
-    // reach the true top of the screen (behind the already-hidden status bar), with the
-    // collapse chevron + pager dots floating over the artwork instead of sitting in their
-    // own reserved row above it. Other pages/styles keep the reserved row untouched.
-    val isImmersiveArtworkMainPage =
-        playerDesignStyle == dev.vxs.frostsoulx.constants.PlayerDesignStyle.ARTWORK_BLUR &&
-            pages.getOrNull(pagerState.currentPage) == FrostSoulPage.MainPlayer
+    // On the ARTWORK_BLUR ("Immersive") style the cover reaches the true top of the screen,
+    // under the status bar, with the collapse chevron + pager dots floating over it. The system
+    // top inset is therefore not applied to the whole player; each non-immersive page reserves
+    // (status bar + header row) itself. Keeping that reservation per page, instead of on the pager,
+    // stops the artwork jumping down/up mid-swipe when the current page flips at the halfway point.
+    val isImmersiveStyle = playerDesignStyle == dev.vxs.frostsoulx.constants.PlayerDesignStyle.ARTWORK_BLUR
+    val statusTop = if (isImmersiveStyle) {
+        with(LocalDensity.current) { WindowInsets.systemBars.getTop(this).toDp() }
+    } else {
+        0.dp
+    }
     LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
         showPagerDots = true
         if (!pagerState.isScrollInProgress) {
@@ -253,7 +257,11 @@ internal fun FrostSoulPlayer(
                     .fillMaxSize()
                     .windowInsetsPadding(
                         WindowInsets.systemBars.only(
-                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
+                            if (isImmersiveStyle) {
+                                WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+                            } else {
+                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+                            },
                         ),
                     ),
         ) {
@@ -262,11 +270,24 @@ internal fun FrostSoulPlayer(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(top = statusTop)
                     .then(
                         // Compact 26dp chevron inside the existing generous 56dp touch target.
                         Modifier.height(64.dp),
                     )
                     .zIndex(12f)
+                    .then(
+                        if (isImmersiveStyle) {
+                            // The travelling cover is drawn above the page while the sheet is dragged;
+                            // fade these controls out first so they never pop behind it.
+                            Modifier.graphicsLayer {
+                                val sheetProgress = artworkTransition?.let { it.sheet.progress } ?: 1f
+                                alpha = ((sheetProgress - 0.90f) / 0.08f).coerceIn(0f, 1f)
+                            }
+                        } else {
+                            Modifier
+                        },
+                    )
                     .padding(
                         start = PlayerLayoutTokens.MasterHorizontalPadding,
                         end = PlayerLayoutTokens.MasterHorizontalPadding,
@@ -302,11 +323,11 @@ internal fun FrostSoulPlayer(
                 key = { index -> pages[index].name },
                 beyondViewportPageCount = 1,
                 userScrollEnabled = !isSeekbarDragging,
-                modifier = Modifier.fillMaxSize()
-                    // Immersive artwork stays full bleed beneath the enlarged header.
-                    .padding(top = if (isImmersiveArtworkMainPage) 0.dp else 64.dp),
+                modifier = Modifier.fillMaxSize(),
             ) { pageIndex ->
                 val pageDistance = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
+                // Only the Immersive main page is full-bleed; every other page sits below the header row.
+                val isImmersivePage = isImmersiveStyle && pages[pageIndex] == FrostSoulPage.MainPlayer
                 Box(
                     modifier =
                         Modifier
@@ -316,7 +337,8 @@ internal fun FrostSoulPlayer(
                                 // adjacent pages never look scaled-in or pushed off-centre.
                                 val distance = kotlin.math.abs(pageDistance).coerceIn(0f, 1f)
                                 alpha = (1f - distance * 0.28f).coerceIn(0.70f, 1f)
-                            },
+                            }
+                            .padding(top = if (isImmersivePage) 0.dp else statusTop + 64.dp),
                 ) {
                     when (pages[pageIndex]) {
                         FrostSoulPage.Lyrics ->
@@ -341,6 +363,14 @@ internal fun FrostSoulPlayer(
                                 FrostSoulArtworkBlurAlbumPage(
                                     uiState = uiState,
                                     actions = actions,
+                                    topInset = statusTop,
+                                    // 0 = settled on this page, 1 = fully swiped away: drives the cover
+                                    // dissolving into the blurred backdrop instead of sliding out as a hard-edged card.
+                                    swipeDistance = {
+                                        kotlin.math.abs(
+                                            (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction,
+                                        ).coerceIn(0f, 1f)
+                                    },
                                     onOpenQueue = { queueVisible = true },
                                     onOpenOptions = actions.onOpenOptions,
                                     onSearchTrack = onSearchTrack,
@@ -1428,6 +1458,8 @@ private fun FrostSoulArtworkBlurAlbumPage(
     onSearchTrack: () -> Unit,
     onShowArtists: () -> Unit,
     onSeekDraggingChanged: (Boolean) -> Unit = {},
+    topInset: Dp = 0.dp,
+    swipeDistance: () -> Float = { 0f },
     modifier: Modifier = Modifier,
 ) {
     val artworkHeaderBlur =
@@ -1451,7 +1483,7 @@ private fun FrostSoulArtworkBlurAlbumPage(
                 modifier = Modifier
                     .fillMaxSize()
                     .blur(immersiveBlurRadius.dp, BlurredEdgeTreatment.Rectangle)
-                    .graphicsLayer { alpha = 0.92f },
+                    .graphicsLayer { alpha = 0.92f * (1f - swipeDistance()).coerceIn(0f, 1f) },
             )
         } else {
             Box(
@@ -1463,7 +1495,10 @@ private fun FrostSoulArtworkBlurAlbumPage(
             )
         }
         Box(
-            modifier = Modifier.fillMaxSize().background(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = (1f - swipeDistance()).coerceIn(0f, 1f) }
+                .background(
                 Brush.verticalGradient(
                     0f to Color.Black.copy(alpha = 0.20f),
                     0.48f to Color.Transparent,
@@ -1485,7 +1520,11 @@ private fun FrostSoulArtworkBlurAlbumPage(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(headerHeight)
+                    // Cover runs from the very top of the screen (under the status bar).
+                    .height(headerHeight + topInset)
+                    // Dissolve faster than the backdrop so the cover's vertical edge is gone
+                    // before it can read as a hard-cut card while swiping.
+                    .graphicsLayer { alpha = (1f - swipeDistance() * 1.6f).coerceIn(0f, 1f) }
                     .clipToBounds(),
             ) {
                 if (!sharpArtworkUrl.isNullOrBlank()) {
@@ -1632,12 +1671,17 @@ private fun FrostSoulArtworkBlurAlbumPage(
                 .padding(bottom = 12.dp),
         )
         // Top-right overflow menu, level with the collapse chevron / pager dots header.
+        val artworkTransition = LocalPlayerArtworkTransition.current
         androidx.compose.material3.IconButton(
             onClick = onOpenOptions,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 8.dp, end = 14.dp)
-                .size(48.dp),
+                .padding(top = 8.dp + topInset, end = 14.dp)
+                .size(48.dp)
+                .graphicsLayer {
+                    val sheetProgress = artworkTransition?.let { it.sheet.progress } ?: 1f
+                    alpha = ((sheetProgress - 0.90f) / 0.08f).coerceIn(0f, 1f)
+                },
         ) {
             Icon(
                 painter = painterResource(R.drawable.more_vert),
