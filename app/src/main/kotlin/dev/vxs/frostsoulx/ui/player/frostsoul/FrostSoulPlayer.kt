@@ -528,8 +528,7 @@ internal fun FSMiniPlayer(
     onCardClick: () -> Unit,
     onLongPress: () -> Unit,
     onTogglePlayPause: () -> Unit,
-    onToggleLike: () -> Unit,
-    onQueueClick: (() -> Unit)?,
+    onSkipNext: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val rawProgress =
@@ -685,15 +684,39 @@ internal fun FSMiniPlayer(
                     }
                 }
             }
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Spacer(Modifier.width(12.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                // Full song name: scrolls sideways on its own when it doesn't fit, stays still when it does.
                 Text(
                     text = track.title,
                     color = primaryTextColor,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            // Soft fade on the trailing edge so scrolling text doesn't hard-clip.
+                            drawRect(
+                                brush = Brush.horizontalGradient(
+                                    0f to Color.Black,
+                                    0.92f to Color.Black,
+                                    1f to Color.Transparent,
+                                ),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        }
+                        .basicMarquee(
+                            iterations = Int.MAX_VALUE,
+                            initialDelayMillis = 1_200,
+                            velocity = 36.dp,
+                        ),
                 )
                 if (track.artist.isNotBlank()) {
                     Text(
@@ -705,17 +728,7 @@ internal fun FSMiniPlayer(
                     )
                 }
             }
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(48.dp).zIndex(1f).clickable(role = Role.Button, onClick = onToggleLike),
-            ) {
-                Icon(
-                    painter = painterResource(if (track.isLiked) R.drawable.favorite else R.drawable.favorite_border),
-                    contentDescription = if (track.isLiked) "Remove from favorites" else "Add to favorites",
-                    tint = if (track.isLiked) Color(0xFFFF3B4D) else primaryTextColor,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
+            Spacer(Modifier.width(10.dp))
             FSIconButton(
                 painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
                 contentDescription = if (isPlaying) "Pause" else "Play",
@@ -728,22 +741,21 @@ internal fun FSMiniPlayer(
                 tintOverride = if (isLightTheme) Color.Black else Color.White,
                 modifier = Modifier.zIndex(1f),
             )
-            onQueueClick?.let { openQueue ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier =
-                        Modifier
-                            .size(48.dp)
-                            .zIndex(2f)
-                            .clickable(role = Role.Button, onClick = openQueue),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.queue_music),
-                        contentDescription = "Open queue",
-                        tint = if (isLightTheme) Color.Black else Color.White,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
+            Spacer(Modifier.width(4.dp))
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .zIndex(1f)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = onSkipNext),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.skip_next),
+                    contentDescription = "Next track",
+                    tint = if (isLightTheme) Color.Black else Color.White,
+                    modifier = Modifier.size(28.dp),
+                )
             }
         }
     }

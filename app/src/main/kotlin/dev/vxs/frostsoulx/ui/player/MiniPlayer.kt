@@ -131,8 +131,7 @@ fun MiniPlayer(
             },
             onLongPress = { quickMenuVisible = true },
             onTogglePlayPause = { playerConnection.player.togglePlayPause() },
-            onToggleLike = playerConnection::toggleLike,
-            onQueueClick = onQueueClick,
+            onSkipNext = { playerConnection.seekToNext() },
         )
         DropdownMenu(expanded = quickMenuVisible, onDismissRequest = { quickMenuVisible = false }) {
             DropdownMenuItem(
