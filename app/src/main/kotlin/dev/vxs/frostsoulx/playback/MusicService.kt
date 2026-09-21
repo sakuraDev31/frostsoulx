@@ -8091,16 +8091,11 @@ class MusicService :
                         150.toShort(),
                     )
                 val sonic = SonicAudioProcessor()
-                val surround =
-                    if (ImmersiveAudioRuntime.isEnabled()) {
-                        ImmersiveAudioProcessor().also(ImmersiveAudioRuntime::attach)
-                    } else {
-                        null
-                    }
-                val chain =
-                    surround?.let {
-                        DefaultAudioSink.DefaultAudioProcessorChain(silenceSkipping, sonic, it)
-                    } ?: DefaultAudioSink.DefaultAudioProcessorChain(silenceSkipping, sonic)
+                // Keep the adapter in the chain even when the engine is OFF. Its OFF branch
+                // copies PCM byte-for-byte while collecting real input/output telemetry; the
+                // native DSP itself remains disabled until the runtime toggle enables it.
+                val surround = ImmersiveAudioProcessor().also(ImmersiveAudioRuntime::attach)
+                val chain = DefaultAudioSink.DefaultAudioProcessorChain(silenceSkipping, sonic, surround)
                 return DefaultAudioSink
                     .Builder(context)
                     .setEnableFloatOutput(false)
