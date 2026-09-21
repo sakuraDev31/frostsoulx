@@ -52,7 +52,38 @@ data class ImmersiveAudioDiagnostics(
     val processorEnabled: Boolean = false,
     val pcmEncoding: Int = 0,
 ) {
+    fun truePeakWarningSource(): String {
+        val inputL = inputTruePeakL > TRUE_PEAK_WARNING_LIMIT
+        val inputR = inputTruePeakR > TRUE_PEAK_WARNING_LIMIT
+        val outputL = outputTruePeakL > TRUE_PEAK_WARNING_LIMIT
+        val outputR = outputTruePeakR > TRUE_PEAK_WARNING_LIMIT
+        val inputChannels = buildList {
+            if (inputL) add("L")
+            if (inputR) add("R")
+        }
+        val outputChannels = buildList {
+            if (outputL) add("L")
+            if (outputR) add("R")
+        }
+        return when {
+            inputChannels.isNotEmpty() && outputChannels.isNotEmpty() ->
+                "BOTH (input ${inputChannels.joinToString("/")}, output ${outputChannels.joinToString("/")})"
+            inputChannels.isNotEmpty() -> "INPUT (${inputChannels.joinToString("/")})"
+            outputChannels.isNotEmpty() -> "OUTPUT (${outputChannels.joinToString("/")})"
+            else -> "NONE"
+        }
+    }
+
+    fun clippingSource(): String = when {
+        clippedInput > 0L && clippedOutput > 0L -> "BOTH (input $clippedInput, output $clippedOutput samples)"
+        clippedInput > 0L -> "INPUT ($clippedInput samples at native DSP input)"
+        clippedOutput > 0L -> "OUTPUT ($clippedOutput samples after native DSP)"
+        else -> "NONE"
+    }
+
     companion object {
+        const val TRUE_PEAK_WARNING_LIMIT = 0.988553f
+
         fun fromNative(values: DoubleArray?): ImmersiveAudioDiagnostics {
             if (values == null || values.size < 41) return ImmersiveAudioDiagnostics()
             fun f(index: Int): Float = values[index].toFloat().takeIf(Float::isFinite) ?: 0f

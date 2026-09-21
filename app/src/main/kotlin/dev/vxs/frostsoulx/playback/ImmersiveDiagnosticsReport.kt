@@ -52,6 +52,7 @@ data class ImmersiveDiagnosticCapture(
             appendLine("PCM format: ${if (d.pcmEncoding == 4) "PCM float" else if (d.pcmEncoding == 2) "PCM 16-bit" else "Unknown"}")
             appendLine("Processor state: $state")
             appendLine("Signal path: Input → ${if (processorOn) "Native DSP" else "Bypass"} → Output")
+            appendLine("Input measurement boundary: PCM immediately before native DSP/bypass")
             appendLine("Capture duration: ${durationSeconds}s")
             appendLine("Processing quantum: ${d.quantumFrames} frames")
             appendLine("Host callback size: ${d.hostCallbackFrames} frames")
@@ -93,7 +94,9 @@ data class ImmersiveDiagnosticCapture(
             appendLine("Native process failures: ${d.nativeProcessFailures}")
             appendLine()
             appendLine("TRUE-PEAK WARNING")
-            appendLine(if (maxOf(d.inputTruePeakL, d.inputTruePeakR, d.outputTruePeakL, d.outputTruePeakR) > 0.988553f) "WARNING: true peak above -0.1 dBTP ($state)" else "None ($state)")
+            appendLine(if (d.truePeakWarningSource() == "NONE") "None ($state)" else "WARNING: above -0.1 dBTP at ${d.truePeakWarningSource()} ($state)")
+            appendLine("True-peak max: input=${db(maxOf(d.inputTruePeakL, d.inputTruePeakR))}, output=${db(maxOf(d.outputTruePeakL, d.outputTruePeakR))}")
+            appendLine("Hard-clipping source: ${d.clippingSource()}")
             appendLine()
             appendLine("TIME SERIES (elapsed_s,input_peak_L,input_peak_R,output_peak_L,output_peak_R,input_rms_L,input_rms_R,output_rms_L,output_rms_R)")
             samples.forEach { sample ->

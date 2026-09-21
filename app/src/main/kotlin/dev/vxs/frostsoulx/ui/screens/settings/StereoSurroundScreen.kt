@@ -564,12 +564,7 @@ private fun DiagnosticImmersivePage(
     onReset: () -> Unit,
 ) {
     val stateOn = diagnostics.processorEnabled
-    val truePeakWarning = maxOf(
-        diagnostics.inputTruePeakL,
-        diagnostics.inputTruePeakR,
-        diagnostics.outputTruePeakL,
-        diagnostics.outputTruePeakR,
-    ) > 0.988553f
+    val truePeakWarningSource = diagnostics.truePeakWarningSource()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
@@ -607,8 +602,9 @@ private fun DiagnosticImmersivePage(
             DiagnosticRow("Clipped", diagnostics.clippedInput.toString(), diagnostics.clippedOutput.toString())
             HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.14f))
             StatusLine("Difference", "max ${formatRaw(diagnostics.maxAbsDifference)} · average ${formatRaw(diagnostics.averageAbsDifference)} · changed ${String.format(Locale.US, "%.2f", diagnostics.changedPercentage)}%")
-            if (truePeakWarning) {
-                Text("True peak above -0.1 dBTP · ${if (stateOn) "ON" else "OFF"} capture", color = Color(0xFFFFB4AB), fontSize = 12.sp)
+            StatusLine("Clipping source", diagnostics.clippingSource())
+            if (truePeakWarningSource != "NONE") {
+                Text("True peak above -0.1 dBTP · $truePeakWarningSource · ${if (stateOn) "ON" else "OFF"} capture", color = Color(0xFFFFB4AB), fontSize = 12.sp)
             }
         }
 
