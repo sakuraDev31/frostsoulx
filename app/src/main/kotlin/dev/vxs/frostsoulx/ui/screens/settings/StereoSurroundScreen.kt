@@ -263,6 +263,18 @@ fun StereoSurroundScreen(navController: NavController) {
         ImmersiveAudioRuntime.setLimiterEnabled(limiterEnabled)
     }
 
+    LaunchedEffect(bassEnabled, bassStrength, trebleGainMb, outputGainEnabled, outputGainMb) {
+        // The immersive engine uses dB controls. Keep the existing preference units
+        // (millibel for treble/output and 0..1000 strength for bass) at the UI boundary.
+        ImmersiveAudioRuntime.setBassGainDb(
+            if (bassEnabled) (bassStrength / 1000f * 12f) else 0f,
+        )
+        ImmersiveAudioRuntime.setTrebleGainDb(trebleGainMb / 1500f * 12f)
+        ImmersiveAudioRuntime.setOutputGainDb(
+            if (outputGainEnabled) (outputGainMb / 1500f * 12f).coerceIn(-24f, 12f) else 0f,
+        )
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             diagnostics = ImmersiveAudioRuntime.readDiagnostics()

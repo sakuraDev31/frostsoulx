@@ -609,8 +609,12 @@ struct ImmersiveAudioEngine::Impl {
         reflectionWriteIndex = (reflectionWriteIndex + 1) % reflectionRing;
         reverbWriteIndex = (reverbWriteIndex + 1) % reverbRing;
 
-        const float wetL = reflectionL + (0.70f * reverbLowpassL);
-        const float wetR = reflectionR + (0.70f * reverbLowpassR);
+        // Reflection amount controls the audible early-reflection taps as well
+        // as their contribution to the reverb tank. Previously it only affected
+        // the tank input, making the Reflection control appear ineffective when
+        // the reverb tail was quiet.
+        const float wetL = (reflectionAmount * reflectionL) + (0.70f * reverbLowpassL);
+        const float wetR = (reflectionAmount * reflectionR) + (0.70f * reverbLowpassR);
 
         const float dryMix = 1.0f - effectiveRoomMix;
         left = dryMix * left + effectiveRoomMix * wetL;

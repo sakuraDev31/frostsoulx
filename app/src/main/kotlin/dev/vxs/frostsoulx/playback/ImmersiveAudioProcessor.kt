@@ -283,6 +283,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
     @Volatile private var stereoWidth = 0.5f
     @Volatile private var quantumFrames = DEFAULT_QUANTUM_FRAMES
     @Volatile private var limiterEnabled = true
+    @Volatile private var bassGainDb = 0f
+    @Volatile private var trebleGainDb = 0f
+    @Volatile private var outputGainDb = 0f
 
     override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         val supportedEncoding =
@@ -307,6 +310,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
             setStereoWidth(stereoWidth)
             setQuantumFrames(quantumFrames)
             setLimiterEnabled(limiterEnabled)
+            setBassGainDb(bassGainDb)
+            setTrebleGainDb(trebleGainDb)
+            setOutputGainDb(outputGainDb)
             setEnabled(enabled)
         }
         outputAudioFormat = inputAudioFormat
@@ -417,6 +423,21 @@ class ImmersiveAudioProcessor : AudioProcessor {
         if (nativeHandle != 0L) nativeSetLimiterEnabled(nativeHandle, value)
     }
 
+    fun setBassGainDb(value: Float) {
+        bassGainDb = value.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f
+        if (nativeHandle != 0L) nativeSetBassGainDb(nativeHandle, bassGainDb)
+    }
+
+    fun setTrebleGainDb(value: Float) {
+        trebleGainDb = value.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f
+        if (nativeHandle != 0L) nativeSetTrebleGainDb(nativeHandle, trebleGainDb)
+    }
+
+    fun setOutputGainDb(value: Float) {
+        outputGainDb = value.takeIf(Float::isFinite)?.coerceIn(-24f, 12f) ?: 0f
+        if (nativeHandle != 0L) nativeSetOutputGainDb(nativeHandle, outputGainDb)
+    }
+
     fun readDiagnostics(): ImmersiveAudioDiagnostics =
         if (nativeHandle == 0L) ImmersiveAudioDiagnostics() else ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
 
@@ -447,6 +468,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeResetDiagnostics(handle: Long)
         @JvmStatic private external fun nativeSetEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetLimiterEnabled(handle: Long, enabled: Boolean)
+        @JvmStatic private external fun nativeSetBassGainDb(handle: Long, gainDb: Float)
+        @JvmStatic private external fun nativeSetTrebleGainDb(handle: Long, gainDb: Float)
+        @JvmStatic private external fun nativeSetOutputGainDb(handle: Long, gainDb: Float)
         @JvmStatic private external fun nativeSetSpatialBlend(handle: Long, blend: Float)
         @JvmStatic private external fun nativeSetRoomPreset(handle: Long, preset: Int)
         @JvmStatic private external fun nativeSetRoomMix(handle: Long, wetMix: Float)
@@ -475,6 +499,9 @@ object ImmersiveAudioRuntime {
     @Volatile private var stereoWidth = 0.5f
     @Volatile private var quantumFrames = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES
     @Volatile private var limiterEnabled = true
+    @Volatile private var bassGainDb = 0f
+    @Volatile private var trebleGainDb = 0f
+    @Volatile private var outputGainDb = 0f
     @Volatile private var b1Meter: ImmersiveStageMeter? = null
     @Volatile private var b2Meter: ImmersiveStageMeter? = null
 
@@ -495,6 +522,9 @@ object ImmersiveAudioRuntime {
         value.setStereoWidth(stereoWidth)
         value.setQuantumFrames(quantumFrames)
         value.setLimiterEnabled(limiterEnabled)
+        value.setBassGainDb(bassGainDb)
+        value.setTrebleGainDb(trebleGainDb)
+        value.setOutputGainDb(outputGainDb)
         value.setEnabled(enabled)
     }
 
@@ -591,5 +621,20 @@ object ImmersiveAudioRuntime {
     fun setLimiterEnabled(value: Boolean) {
         limiterEnabled = value
         processor?.setLimiterEnabled(value)
+    }
+
+    fun setBassGainDb(value: Float) {
+        bassGainDb = value.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f
+        processor?.setBassGainDb(bassGainDb)
+    }
+
+    fun setTrebleGainDb(value: Float) {
+        trebleGainDb = value.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f
+        processor?.setTrebleGainDb(trebleGainDb)
+    }
+
+    fun setOutputGainDb(value: Float) {
+        outputGainDb = value.takeIf(Float::isFinite)?.coerceIn(-24f, 12f) ?: 0f
+        processor?.setOutputGainDb(outputGainDb)
     }
 }

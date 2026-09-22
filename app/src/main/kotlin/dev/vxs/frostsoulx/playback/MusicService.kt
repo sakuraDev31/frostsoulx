@@ -179,6 +179,15 @@ import dev.vxs.frostsoulx.constants.PermanentShuffleKey
 import dev.vxs.frostsoulx.constants.PersistentQueueKey
 import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
+import dev.vxs.frostsoulx.constants.StereoSurroundRoomPresetKey
+import dev.vxs.frostsoulx.constants.StereoSurroundRoomMixKey
+import dev.vxs.frostsoulx.constants.StereoSurroundReflectionAmountKey
+import dev.vxs.frostsoulx.constants.StereoSurroundReverbTimeKey
+import dev.vxs.frostsoulx.constants.StereoSurroundRoomSizeKey
+import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
+import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
+import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
+import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
 import dev.vxs.frostsoulx.constants.PlayerStreamClient
 import dev.vxs.frostsoulx.constants.PlayerStreamClientKey
 import dev.vxs.frostsoulx.constants.PlayerVolumeKey
@@ -1068,6 +1077,38 @@ class MusicService :
         // Select the renderer chain from persisted state before ExoPlayer is built. When off,
         // no surround processor or JNI library participates in the playback path at all.
         ImmersiveAudioRuntime.setIntensity(dataStore.get(StereoSurroundIntensityKey, 0.5f))
+        ImmersiveAudioRuntime.setRoomPreset(
+            ImmersiveRoomPreset.fromNative(
+                dataStore.get(StereoSurroundRoomPresetKey, ImmersiveRoomPreset.STUDIO.nativeValue),
+            ),
+        )
+        ImmersiveAudioRuntime.setRoomMix(dataStore.get(StereoSurroundRoomMixKey, 0.18f))
+        ImmersiveAudioRuntime.setReflectionAmount(dataStore.get(StereoSurroundReflectionAmountKey, 0.28f))
+        ImmersiveAudioRuntime.setReverbTimeSeconds(dataStore.get(StereoSurroundReverbTimeKey, 1.35f))
+        ImmersiveAudioRuntime.setRoomSize(dataStore.get(StereoSurroundRoomSizeKey, 0.5f))
+        ImmersiveAudioRuntime.setDampening(dataStore.get(StereoSurroundDampeningKey, 0.5f))
+        ImmersiveAudioRuntime.setStereoWidth(dataStore.get(StereoSurroundStereoWidthKey, 0.5f))
+        ImmersiveAudioRuntime.setQuantumFrames(
+            dataStore.get(StereoSurroundQuantumFramesKey, ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES),
+        )
+        ImmersiveAudioRuntime.setLimiterEnabled(dataStore.get(StereoSurroundLimiterEnabledKey, true))
+        ImmersiveAudioRuntime.setBassGainDb(
+            if (dataStore.get(EqualizerBassBoostEnabledKey, false)) {
+                dataStore.get(EqualizerBassBoostStrengthKey, 0).coerceIn(0, 1000) / 1000f * 12f
+            } else {
+                0f
+            },
+        )
+        ImmersiveAudioRuntime.setTrebleGainDb(
+            dataStore.get(EqualizerTrebleGainMbKey, 0).coerceIn(-1500, 1500) / 1500f * 12f,
+        )
+        ImmersiveAudioRuntime.setOutputGainDb(
+            if (dataStore.get(EqualizerOutputGainEnabledKey, false)) {
+                (dataStore.get(EqualizerOutputGainMbKey, 0).coerceIn(-1500, 1500) / 1500f * 12f).coerceIn(-24f, 12f)
+            } else {
+                0f
+            },
+        )
         ImmersiveAudioRuntime.setEnabled(dataStore.get(StereoSurroundEnabledKey, false))
         equalizerPlaybackController.attach(this)
         ensureScopesActive()
