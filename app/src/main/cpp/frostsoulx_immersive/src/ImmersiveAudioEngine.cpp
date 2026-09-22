@@ -637,16 +637,25 @@ struct ImmersiveAudioEngine::Impl {
         float wetR = (reflectionAmount * reflectionR) + (0.70f * reverbLowpassR);
 
         if (roomPreset == RoomSimulationPreset::ClosedCar) {
-            // Model a four-speaker cabin: direct front speakers remain coherent,
-            // while rear speakers are represented by the short delayed cabin
-            // field. The fader changes the front/rear energy without changing
-            // the stereo balance of either pair.
-            const float frontWeight = 0.5f - (0.5f * carFader);
-            const float rearWeight = 1.0f - frontWeight;
-            const float frontL = 0.94f * left + 0.06f * right;
-            const float frontR = 0.94f * right + 0.06f * left;
-            wetL = frontWeight * frontL + rearWeight * wetL;
-            wetR = frontWeight * frontR + rearWeight * wetR;
+            // Explicit four-speaker cabin field. The front pair is coherent and
+            // wide, while the rear pair is made from short, cross-fed cabin
+            // reflections. This is intentionally not just a reflection-volume
+            // control: at the rear endpoint the direct front image must leave
+            // the listener's field and be replaced by the delayed rear field.
+            const float frontPosition = 0.5f * (1.0f - carFader);
+            const float frontAngle = frontPosition * 1.57079632679f;
+            const float frontWeight = std::cos(frontAngle);
+            const float rearWeight = std::sin(frontAngle);
+
+            const float frontL = 0.92f * left + 0.08f * right;
+            const float frontR = 0.92f * right + 0.08f * left;
+            const float rearL = 0.72f * reflectionL + 0.18f * reflectionR + 0.10f * reverbLowpassL;
+            const float rearR = 0.72f * reflectionR + 0.18f * reflectionL + 0.10f * reverbLowpassR;
+
+            // Equal-power pair interpolation keeps the center position loud
+            // while making both fader endpoints unambiguously different.
+            wetL = frontWeight * frontL + rearWeight * rearL;
+            wetR = frontWeight * frontR + rearWeight * rearR;
         }
 
         const float dryMix = 1.0f - effectiveRoomMix;
