@@ -14,15 +14,18 @@ namespace frostsoulx {
 namespace {
 constexpr float kInputSanitizeLimit = 2.0f;
 constexpr float kOutputCeiling = 0.98f;
-// Keep ordinary HRTF/room peaks out of the dynamics stage. The previous 0.90 threshold
-// caused continuous gain modulation on loud passages, which was audible as low-level clipping.
-constexpr float kLimiterThreshold = 0.96f;
-constexpr float kLimiterMinGain = 0.1f;
 constexpr float kZeroEpsilon = 1.0e-12f;
+// Flush denormals. Sustained denormal arithmetic inside the reverb tank is a
+// known source of CPU spikes on mobile cores, which shows up as crackle.
+constexpr float kDenormalFloor = 1.0e-18f;
 
 inline float sanitizeInputSample(float sample) noexcept {
     if (!std::isfinite(sample)) return 0.0f;
     return std::clamp(sample, -kInputSanitizeLimit, kInputSanitizeLimit);
+}
+
+inline float flushDenormal(float value) noexcept {
+    return std::fabs(value) < kDenormalFloor ? 0.0f : value;
 }
 
 inline int msToSamples(float milliseconds, int sampleRate) noexcept {
@@ -34,17 +37,139 @@ inline float clampUnit(float value) noexcept {
     return std::isfinite(value) ? std::clamp(value, 0.0f, 1.0f) : 0.0f;
 }
 
+inline float dbToLinear(float db) noexcept {
+    return std::pow(10.0f, db / 20.0f);
+}
+
+inline float linearToDb(float linear) noexcept {
+    return linear > 1.0e-7f ? 20.0f * std::log10(linear) : 0.0f;
+}
+
+// Raised-cosine shaping turns a linear 0..1 ramp into a click-free fade with
+// zero slope at both ends.
+inline float smoothRamp(float linearPosition) noexcept {
+    const float clamped = std::clamp(linearPosition, 0.0f, 1.0f);
+    return 0.5f - 0.5f * std::cos(clamped * 3.14159265358979323846f);
+}
+
+/**
+ * Stereo peak limiter with a smoothed gain envelope.
+ *
+ * Every gain-producing stage owns one of these, so a boost applied in one stage
+ * is contained by that same stage instead of being dumped on a single shared
+ * limiter at the very end of the chain.
+ */
+struct StageLimiter {
+    float threshold = 0.96f;
+    float gain = 1.0f;
+    float attackCoeff = 0.0f;
+    float releaseCoeff = 0.0f;
+    float minGain = 0.05f;
+    float maxReduction = 0.0f;
+
+    void configure(int sampleRate, float thresholdValue, float attackSeconds, float releaseSeconds) noexcept {
+        threshold = thresholdValue;
+        const float rate = static_cast<float>(std::max(sampleRate, 8000));
+        attackCoeff = std::exp(-1.0f / (attackSeconds * rate));
+        releaseCoeff = std::exp(-1.0f / (releaseSeconds * rate));
+        gain = 1.0f;
+        maxReduction = 0.0f;
+    }
+
+    void reset() noexcept {
+        gain = 1.0f;
+        maxReduction = 0.0f;
+    }
+
+    void process(float& left, float& right) noexcept {
+        const float peak = std::max(std::fabs(left), std::fabs(right));
+        const float target = peak > threshold ? std::max(threshold / peak, minGain) : 1.0f;
+        if (target < gain) {
+            gain += (target - gain) * (1.0f - attackCoeff);
+        } else {
+            gain += (1.0f - gain) * (1.0f - releaseCoeff);
+            gain = std::min(gain, 1.0f);
+        }
+        gain = std::isfinite(gain) ? std::clamp(gain, minGain, 1.0f) : 1.0f;
+        maxReduction = std::max(maxReduction, 1.0f - gain);
+        left *= gain;
+        right *= gain;
+    }
+
+    float reductionDb() const noexcept {
+        return maxReduction <= 1.0e-6f ? 0.0f : -linearToDb(1.0f - maxReduction);
+    }
+};
+
+/** Transposed direct-form II biquad, one instance per channel. */
+struct Biquad {
+    float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
+    float z1 = 0.0f, z2 = 0.0f;
+
+    void reset() noexcept {
+        z1 = 0.0f;
+        z2 = 0.0f;
+    }
+
+    void setBypass() noexcept {
+        b0 = 1.0f; b1 = 0.0f; b2 = 0.0f; a1 = 0.0f; a2 = 0.0f;
+    }
+
+    void setLowShelf(float sampleRate, float frequency, float gainDb, float slope) noexcept {
+        const float a = std::pow(10.0f, gainDb / 40.0f);
+        const float w0 = 2.0f * 3.14159265358979323846f * frequency / sampleRate;
+        const float cosW0 = std::cos(w0);
+        const float sinW0 = std::sin(w0);
+        const float alpha = sinW0 * 0.5f * std::sqrt((a + 1.0f / a) * (1.0f / slope - 1.0f) + 2.0f);
+        const float twoSqrtAAlpha = 2.0f * std::sqrt(a) * alpha;
+        const float a0 = (a + 1.0f) + (a - 1.0f) * cosW0 + twoSqrtAAlpha;
+        if (!std::isfinite(a0) || std::fabs(a0) < 1.0e-12f) { setBypass(); return; }
+        const float inv = 1.0f / a0;
+        b0 = a * ((a + 1.0f) - (a - 1.0f) * cosW0 + twoSqrtAAlpha) * inv;
+        b1 = 2.0f * a * ((a - 1.0f) - (a + 1.0f) * cosW0) * inv;
+        b2 = a * ((a + 1.0f) - (a - 1.0f) * cosW0 - twoSqrtAAlpha) * inv;
+        a1 = -2.0f * ((a - 1.0f) + (a + 1.0f) * cosW0) * inv;
+        a2 = ((a + 1.0f) + (a - 1.0f) * cosW0 - twoSqrtAAlpha) * inv;
+    }
+
+    void setHighShelf(float sampleRate, float frequency, float gainDb, float slope) noexcept {
+        const float a = std::pow(10.0f, gainDb / 40.0f);
+        const float w0 = 2.0f * 3.14159265358979323846f * frequency / sampleRate;
+        const float cosW0 = std::cos(w0);
+        const float sinW0 = std::sin(w0);
+        const float alpha = sinW0 * 0.5f * std::sqrt((a + 1.0f / a) * (1.0f / slope - 1.0f) + 2.0f);
+        const float twoSqrtAAlpha = 2.0f * std::sqrt(a) * alpha;
+        const float a0 = (a + 1.0f) - (a - 1.0f) * cosW0 + twoSqrtAAlpha;
+        if (!std::isfinite(a0) || std::fabs(a0) < 1.0e-12f) { setBypass(); return; }
+        const float inv = 1.0f / a0;
+        b0 = a * ((a + 1.0f) + (a - 1.0f) * cosW0 + twoSqrtAAlpha) * inv;
+        b1 = -2.0f * a * ((a - 1.0f) + (a + 1.0f) * cosW0) * inv;
+        b2 = a * ((a + 1.0f) + (a - 1.0f) * cosW0 - twoSqrtAAlpha) * inv;
+        a1 = 2.0f * ((a - 1.0f) - (a + 1.0f) * cosW0) * inv;
+        a2 = ((a + 1.0f) - (a - 1.0f) * cosW0 - twoSqrtAAlpha) * inv;
+    }
+
+    inline float process(float input) noexcept {
+        const float output = b0 * input + z1;
+        z1 = flushDenormal(b1 * input - a1 * output + z2);
+        z2 = flushDenormal(b2 * input - a2 * output);
+        return output;
+    }
+};
+
 } // namespace
 
 struct ImmersiveAudioEngine::Impl {
-    // Keep the effect block below 10 ms at 48 kHz for low-latency playback.
+    // Steam Audio binaural effects require a fixed block length. Every call to
+    // iplBinauralEffectApply must therefore receive exactly this many frames.
     static constexpr int kSteamAudioFrameSize = 384;
     static constexpr float kMaxReverbTimeSeconds = 8.0f;
     static constexpr float kMinReverbTimeSeconds = 0.2f;
+    // Bypass <-> processed crossfade length.
+    static constexpr float kTransitionSeconds = 0.120f;
 
     int sampleRate = 0;
     int maxFrames = 0;
-    int frameCapacity = 0;
     bool prepared = false;
     bool enabled = false;
     float spatialBlend = 1.0f;
@@ -62,17 +187,51 @@ struct ImmersiveAudioEngine::Impl {
     float dampeningNorm = 0.5f;
     float widthNorm = 0.5f;
 
+    // Tone stage controls.
+    float bassGainDbValue = 0.0f;
+    float trebleGainDbValue = 0.0f;
+    float outputGainDbValue = 0.0f;
+    float outputGainLinear = 1.0f;
+    float smoothedOutputGain = 1.0f;
+    float gainSmoothCoeff = 0.0f;
+    Biquad bassFilterL, bassFilterR;
+    Biquad trebleFilterL, trebleFilterR;
+    StageLimiter bassLimiter;
+    StageLimiter trebleLimiter;
+    StageLimiter outputLimiter;
+    StageLimiter spatialLimiter;
+
     // Derived room shaping values.
     float delayScale = 1.0f;
     float decorrelationSkew = 1.13f;
     float reflectionCrossFeed = 0.15f;
 
-    std::vector<float> inputLeft;
-    std::vector<float> inputRight;
-    std::vector<float> outputLeft;
-    std::vector<float> outputRight;
+    // Fixed-size Steam Audio scratch (deinterleaved).
+    std::array<float, kSteamAudioFrameSize> inputLeft{};
+    std::array<float, kSteamAudioFrameSize> inputRight{};
+    std::array<float, kSteamAudioFrameSize> outputLeft{};
+    std::array<float, kSteamAudioFrameSize> outputRight{};
     float* inputChannels[2] = {nullptr, nullptr};
     float* outputChannels[2] = {nullptr, nullptr};
+
+    // ---------------------------------------------------------------------
+    // Block alignment FIFOs.
+    //
+    // Media3 hands us arbitrary buffer sizes (commonly 1024 or 1152 frames).
+    // The previous implementation zero-padded every leftover partial chunk up
+    // to 384 frames and discarded the effect tail, which injected a step
+    // discontinuity into the HRTF convolution on every single block. That is
+    // the continuous ~8 ms crackle. These FIFOs guarantee the effect only ever
+    // sees complete, gapless 384-frame blocks.
+    // ---------------------------------------------------------------------
+    std::array<float, kSteamAudioFrameSize * 2> pendingInput{};
+    int pendingInputFrames = 0;
+    std::vector<float> outputFifo; // interleaved stereo
+    int outputFifoRead = 0;
+    int outputFifoWrite = 0;
+    int outputFifoFrames = 0;
+    int outputFifoCapacityFrames = 0;
+
 
     // Lightweight room/reflection/reverb simulation buffers.
     std::vector<float> reflectionDelayLeft;
@@ -90,19 +249,53 @@ struct ImmersiveAudioEngine::Impl {
     int reverbTapL = 1;
     int reverbTapR = 1;
     float reverbFeedback = 0.72f;
+    float reverbInputScale = 0.28f;
     float reverbLowpassL = 0.0f;
     float reverbLowpassR = 0.0f;
 
-    // Lightweight stereo peak limiter state to prevent residual clipping.
-    float limiterGain = 1.0f;
-    float limiterReleaseCoeff = 0.9996f;
-    float limiterAttackCoeff = 0.98f;
+    // Bypass crossfade state.
+    float transitionPosition = 0.0f; // linear 0..1
+    float transitionStep = 0.0f;
+    // True while process() is taking the real-bypass early return. Used to
+    // re-prime the DSP exactly once, on the audio thread, when playback
+    // re-enters the processed path.
+    bool bypassed = true;
 
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
     IPLContext context = nullptr;
     IPLHRTF hrtf = nullptr;
     IPLBinauralEffect effect = nullptr;
 #endif
+
+    bool transitionActive() const noexcept {
+        const float target = enabled ? 1.0f : 0.0f;
+        return std::fabs(transitionPosition - target) > 1.0e-4f;
+    }
+
+    void updateToneStage() noexcept {
+        if (sampleRate <= 0) return;
+        const float rate = static_cast<float>(sampleRate);
+        const float bassFrequency = std::min(200.0f, rate * 0.25f);
+        const float trebleFrequency = std::min(4000.0f, rate * 0.45f);
+
+        if (std::fabs(bassGainDbValue) < 0.05f) {
+            bassFilterL.setBypass();
+            bassFilterR.setBypass();
+        } else {
+            bassFilterL.setLowShelf(rate, bassFrequency, bassGainDbValue, 0.7f);
+            bassFilterR.setLowShelf(rate, bassFrequency, bassGainDbValue, 0.7f);
+        }
+
+        if (std::fabs(trebleGainDbValue) < 0.05f) {
+            trebleFilterL.setBypass();
+            trebleFilterR.setBypass();
+        } else {
+            trebleFilterL.setHighShelf(rate, trebleFrequency, trebleGainDbValue, 0.7f);
+            trebleFilterR.setHighShelf(rate, trebleFrequency, trebleGainDbValue, 0.7f);
+        }
+
+        outputGainLinear = dbToLinear(std::clamp(outputGainDbValue, kMinOutputGainDb, kMaxOutputGainDb));
+    }
 
     void updateRoomModel() noexcept {
         // Defaults are intentionally conservative for mobile thermal limits.
@@ -192,11 +385,7 @@ struct ImmersiveAudioEngine::Impl {
         }
 
         // Normalize combined reflection-tap gain so correlated content (sustained bass, held
-        // chords) can't push reflectionL/R past unity before the room-mix crossfade. Several
-        // presets' raw tap gains already sum above 1.0 before the room-size multiplier below —
-        // that structural over-unity stacking, not the final limiter, is the actual source of
-        // the "consistent, low-level" clipping: it happens on ordinary loud passages, not just
-        // peaks.
+        // chords) can't push reflectionL/R past unity before the room-mix crossfade.
         constexpr float kTargetReflectionTapSum = 0.65f;
         float tapGainSum = 0.0f;
         for (int i = 0; i < reflectionTapCount; ++i) {
@@ -239,6 +428,7 @@ struct ImmersiveAudioEngine::Impl {
             reverbTapL = 1;
             reverbTapR = 1;
             reverbFeedback = 0.0f;
+            reverbInputScale = 0.0f;
             return;
         }
 
@@ -252,6 +442,13 @@ struct ImmersiveAudioEngine::Impl {
         const float delaySeconds = static_cast<float>(reverbTapL) / static_cast<float>(sampleRate);
         const float gainAtT60 = std::exp((-6.9077553f * delaySeconds) / clampedT60);
         reverbFeedback = std::clamp(gainAtT60 * (0.80f + 0.20f * dampeningFactor), 0.0f, 0.90f);
+
+        // A comb tank with feedback g has a steady-state DC gain of 1/(1-g).
+        // With the long reverb times the UI allows, g reaches 0.90, i.e. a 10x
+        // build-up on sustained material. Normalizing the tank input keeps the
+        // wet signal near unity regardless of the selected reverb time, which
+        // is what stops the room stage from permanently slamming the limiter.
+        reverbInputScale = std::clamp(1.0f - reverbFeedback, 0.06f, 1.0f);
     }
 
     void initializeRoomBuffers() noexcept {
@@ -270,13 +467,37 @@ struct ImmersiveAudioEngine::Impl {
         reverbWriteIndex = 0;
         reverbLowpassL = 0.0f;
         reverbLowpassR = 0.0f;
-        limiterGain = 1.0f;
-        // ~80 ms release for transparent recovery, ~2 ms attack so gain reduction ramps
-        // instead of snapping instantly — the instant-cut attack was adding its own grainy
-        // edge on top of the softclip/limiter overlap.
-        limiterReleaseCoeff = std::exp(-1.0f / (0.080f * static_cast<float>(sampleRate)));
-        limiterAttackCoeff = std::exp(-1.0f / (0.002f * static_cast<float>(sampleRate)));
+
+        // Per-stage limiters. Bass/treble use slightly slower attacks because
+        // shelf boosts are steady-state, while the output stage is the final
+        // brick wall and needs a faster grab.
+        bassLimiter.configure(sampleRate, 0.97f, 0.006f, 0.120f);
+        trebleLimiter.configure(sampleRate, 0.97f, 0.003f, 0.100f);
+        spatialLimiter.configure(sampleRate, 0.96f, 0.004f, 0.100f);
+        outputLimiter.configure(sampleRate, kOutputCeiling, 0.002f, 0.080f);
+
+        gainSmoothCoeff = std::exp(-1.0f / (0.020f * static_cast<float>(sampleRate)));
+        smoothedOutputGain = outputGainLinear;
+        transitionStep = 1.0f / std::max(1.0f, kTransitionSeconds * static_cast<float>(sampleRate));
+
+        updateToneStage();
         updateRoomModel();
+    }
+
+    void resetFifos() noexcept {
+        pendingInput.fill(0.0f);
+        pendingInputFrames = 0;
+        std::fill(outputFifo.begin(), outputFifo.end(), 0.0f);
+        outputFifoRead = 0;
+        outputFifoWrite = 0;
+        outputFifoFrames = 0;
+        // Prime the output FIFO with exactly one effect block of silence. This
+        // is what lets us answer every host request immediately while still
+        // only ever feeding the effect complete 384-frame blocks.
+        if (outputFifoCapacityFrames >= kSteamAudioFrameSize) {
+            outputFifoWrite = kSteamAudioFrameSize * 2;
+            outputFifoFrames = kSteamAudioFrameSize;
+        }
     }
 
     void clearStateOnly() noexcept {
@@ -288,7 +509,17 @@ struct ImmersiveAudioEngine::Impl {
         reverbLowpassR = 0.0f;
         reflectionWriteIndex = 0;
         reverbWriteIndex = 0;
-        limiterGain = 1.0f;
+        bassLimiter.reset();
+        trebleLimiter.reset();
+        spatialLimiter.reset();
+        outputLimiter.reset();
+        bassFilterL.reset(); bassFilterR.reset();
+        trebleFilterL.reset(); trebleFilterR.reset();
+        smoothedOutputGain = outputGainLinear;
+        // Land directly on the steady-state value so a flush/seek does not
+        // replay a fade-in over the first block of the new position.
+        transitionPosition = enabled ? 1.0f : 0.0f;
+        resetFifos();
     }
 
     void release() noexcept {
@@ -306,16 +537,18 @@ struct ImmersiveAudioEngine::Impl {
         prepared = false;
         sampleRate = 0;
         maxFrames = 0;
-        frameCapacity = 0;
 
-        inputLeft.clear();
-        inputRight.clear();
-        outputLeft.clear();
-        outputRight.clear();
-        inputChannels[0] = nullptr;
-        inputChannels[1] = nullptr;
-        outputChannels[0] = nullptr;
-        outputChannels[1] = nullptr;
+        inputLeft.fill(0.0f);
+        inputRight.fill(0.0f);
+        outputLeft.fill(0.0f);
+        outputRight.fill(0.0f);
+
+        outputFifo.clear();
+        outputFifoCapacityFrames = 0;
+        outputFifoRead = 0;
+        outputFifoWrite = 0;
+        outputFifoFrames = 0;
+        pendingInputFrames = 0;
 
         reflectionDelayLeft.clear();
         reflectionDelayRight.clear();
@@ -325,39 +558,17 @@ struct ImmersiveAudioEngine::Impl {
         reverbLowpassR = 0.0f;
         reflectionWriteIndex = 0;
         reverbWriteIndex = 0;
-        limiterGain = 1.0f;
+        transitionPosition = 0.0f;
 
         lastResult = ImmersiveProcessResult::NotPrepared;
         lastState = -1;
     }
 
-    void applyOutputLimiter(float& left, float& right) noexcept {
-        const float peak = std::max(std::fabs(left), std::fabs(right));
-        const float targetGain = peak > kLimiterThreshold
-            ? std::max(kLimiterThreshold / peak, kLimiterMinGain)
-            : 1.0f;
-
-        if (targetGain < limiterGain) {
-            limiterGain = limiterGain + (targetGain - limiterGain) * (1.0f - limiterAttackCoeff);
-        } else {
-            limiterGain = std::min(1.0f, limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
-        }
-
-        left *= limiterGain;
-        right *= limiterGain;
-        left = std::clamp(left, -kOutputCeiling, kOutputCeiling);
-        right = std::clamp(right, -kOutputCeiling, kOutputCeiling);
-    }
-
     void applyRoomModel(float& left, float& right) noexcept {
-        // Room processing must be transparent when disabled or when spatial intensity is
-        // effectively zero. Applying softClipSample here used to distort ordinary loud
-        // samples continuously, even though the room stage was visually set to Off.
         const float effectiveRoomMix = roomMix * spatialBlend;
         if (roomPreset == RoomSimulationPreset::Off || effectiveRoomMix <= kZeroEpsilon) {
             return;
         }
-
         if (reflectionDelayLeft.empty() || reverbDelayLeft.empty()) {
             return;
         }
@@ -380,18 +591,20 @@ struct ImmersiveAudioEngine::Impl {
         const float delayedRevL = reverbDelayLeft[static_cast<std::size_t>(revReadL)];
         const float delayedRevR = reverbDelayRight[static_cast<std::size_t>(revReadR)];
 
-        reverbLowpassL += damping * (delayedRevL - reverbLowpassL);
-        reverbLowpassR += damping * (delayedRevR - reverbLowpassR);
+        reverbLowpassL = flushDenormal(reverbLowpassL + damping * (delayedRevL - reverbLowpassL));
+        reverbLowpassR = flushDenormal(reverbLowpassR + damping * (delayedRevR - reverbLowpassR));
 
         const float monoInput = 0.5f * (left + right);
-        const float revInputL = monoInput + (reflectionL * reflectionAmount);
-        const float revInputR = monoInput + (reflectionR * reflectionAmount);
+        // Scale the tank input by (1 - feedback) so the recirculating sum stays
+        // near unity instead of building up to 1/(1-feedback).
+        const float revInputL = (monoInput + (reflectionL * reflectionAmount)) * reverbInputScale;
+        const float revInputR = (monoInput + (reflectionR * reflectionAmount)) * reverbInputScale;
 
-        reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = revInputL + reverbLowpassL * reverbFeedback;
-        reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = revInputR + reverbLowpassR * reverbFeedback;
+        reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = flushDenormal(revInputL + reverbLowpassL * reverbFeedback);
+        reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = flushDenormal(revInputR + reverbLowpassR * reverbFeedback);
 
-        reflectionDelayLeft[static_cast<std::size_t>(reflectionWriteIndex)] = left + reflectionCrossFeed * right;
-        reflectionDelayRight[static_cast<std::size_t>(reflectionWriteIndex)] = right + reflectionCrossFeed * left;
+        reflectionDelayLeft[static_cast<std::size_t>(reflectionWriteIndex)] = flushDenormal(left + reflectionCrossFeed * right);
+        reflectionDelayRight[static_cast<std::size_t>(reflectionWriteIndex)] = flushDenormal(right + reflectionCrossFeed * left);
 
         reflectionWriteIndex = (reflectionWriteIndex + 1) % reflectionRing;
         reverbWriteIndex = (reverbWriteIndex + 1) % reverbRing;
@@ -403,8 +616,88 @@ struct ImmersiveAudioEngine::Impl {
         left = dryMix * left + effectiveRoomMix * wetL;
         right = dryMix * right + effectiveRoomMix * wetR;
 
-        if (std::fabs(left) < kZeroEpsilon) left = 0.0f;
-        if (std::fabs(right) < kZeroEpsilon) right = 0.0f;
+        left = flushDenormal(left);
+        right = flushDenormal(right);
+    }
+
+    /** Bass -> treble -> output gain, each with a dedicated limiter. */
+    void applyToneStage(float& left, float& right) noexcept {
+        if (bassGainDbValue > 0.05f || bassGainDbValue < -0.05f) {
+            left = bassFilterL.process(left);
+            right = bassFilterR.process(right);
+            if (bassGainDbValue > 0.0f) bassLimiter.process(left, right);
+        }
+        if (trebleGainDbValue > 0.05f || trebleGainDbValue < -0.05f) {
+            left = trebleFilterL.process(left);
+            right = trebleFilterR.process(right);
+            if (trebleGainDbValue > 0.0f) trebleLimiter.process(left, right);
+        }
+
+        smoothedOutputGain += (outputGainLinear - smoothedOutputGain) * (1.0f - gainSmoothCoeff);
+        left *= smoothedOutputGain;
+        right *= smoothedOutputGain;
+        outputLimiter.process(left, right);
+    }
+
+    /** Runs one complete 384-frame effect block. Returns false on hard failure. */
+    bool runEffectBlock() noexcept {
+#if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
+        constexpr int steamFrames = kSteamAudioFrameSize;
+        for (int frame = 0; frame < steamFrames; ++frame) {
+            inputLeft[static_cast<std::size_t>(frame)] = pendingInput[static_cast<std::size_t>(frame * 2)];
+            inputRight[static_cast<std::size_t>(frame)] = pendingInput[static_cast<std::size_t>(frame * 2 + 1)];
+        }
+        std::fill(outputLeft.begin(), outputLeft.end(), 0.0f);
+        std::fill(outputRight.begin(), outputRight.end(), 0.0f);
+
+        IPLAudioBuffer input{};
+        input.numChannels = 2;
+        input.numSamples = steamFrames;
+        input.data = inputChannels;
+        IPLAudioBuffer output{};
+        output.numChannels = 2;
+        output.numSamples = steamFrames;
+        output.data = outputChannels;
+
+        IPLBinauralEffectParams params{};
+        params.direction = IPLVector3{0.0f, 0.0f, 1.0f};
+        params.interpolation = IPL_HRTFINTERPOLATION_BILINEAR;
+        params.spatialBlend = spatialBlend;
+        params.hrtf = hrtf;
+        params.peakDelays = nullptr;
+
+        const IPLAudioEffectState state = iplBinauralEffectApply(effect, &params, &input, &output);
+        lastState = static_cast<int>(state);
+        if (state != IPL_AUDIOEFFECTSTATE_TAILCOMPLETE && state != IPL_AUDIOEFFECTSTATE_TAILREMAINING) {
+            lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
+            return false;
+        }
+
+        // -6 dB of fixed headroom before the room stage so ordinary HRTF peaks
+        // never reach the limiters.
+        constexpr float kSteamAudioOutputGain = 0.50118723f;
+        for (int frame = 0; frame < steamFrames; ++frame) {
+            float wetL = outputLeft[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
+            float wetR = outputRight[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
+            if (!std::isfinite(wetL)) wetL = 0.0f;
+            if (!std::isfinite(wetR)) wetR = 0.0f;
+
+            applyRoomModel(wetL, wetR);
+            spatialLimiter.process(wetL, wetR);
+            applyToneStage(wetL, wetR);
+
+            if (!std::isfinite(wetL)) wetL = 0.0f;
+            if (!std::isfinite(wetR)) wetR = 0.0f;
+
+            outputFifo[static_cast<std::size_t>(outputFifoWrite)] = wetL;
+            outputFifo[static_cast<std::size_t>(outputFifoWrite + 1)] = wetR;
+            outputFifoWrite = (outputFifoWrite + 2) % static_cast<int>(outputFifo.size());
+        }
+        outputFifoFrames += steamFrames;
+        return true;
+#else
+        return false;
+#endif
     }
 
     SpaceDesignControls currentSpaceDesignControls() const noexcept {
@@ -424,16 +717,17 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
     impl_->release();
     impl_->sampleRate = sampleRate;
     impl_->maxFrames = maxFrames;
-    impl_->frameCapacity = std::max(maxFrames, Impl::kSteamAudioFrameSize);
-    impl_->inputLeft.resize(static_cast<std::size_t>(impl_->frameCapacity));
-    impl_->inputRight.resize(static_cast<std::size_t>(impl_->frameCapacity));
-    impl_->outputLeft.resize(static_cast<std::size_t>(impl_->frameCapacity));
-    impl_->outputRight.resize(static_cast<std::size_t>(impl_->frameCapacity));
     impl_->inputChannels[0] = impl_->inputLeft.data();
     impl_->inputChannels[1] = impl_->inputRight.data();
     impl_->outputChannels[0] = impl_->outputLeft.data();
     impl_->outputChannels[1] = impl_->outputRight.data();
+
+    // Worst case the FIFO holds the priming block, one host buffer and one
+    // partially consumed effect block.
+    impl_->outputFifoCapacityFrames = maxFrames + Impl::kSteamAudioFrameSize * 3;
+    impl_->outputFifo.assign(static_cast<std::size_t>(impl_->outputFifoCapacityFrames) * 2, 0.0f);
     impl_->initializeRoomBuffers();
+    impl_->resetFifos();
 
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
     IPLContextSettings contextSettings{};
@@ -445,8 +739,9 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
 
     IPLAudioSettings audioSettings{};
     audioSettings.samplingRate = sampleRate;
-    // Steam Audio effects use a fixed frame size; process() pads/splits
-    // variable Media3 blocks before applying the effect.
+    // Steam Audio effects use a fixed frame size; process() now buffers the
+    // variable Media3 blocks so the effect always receives exactly this many
+    // frames with no zero padding and no discarded tail.
     audioSettings.frameSize = Impl::kSteamAudioFrameSize;
 
     IPLHRTFSettings hrtfSettings{};
@@ -469,6 +764,7 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
 #endif
 
     impl_->prepared = true;
+    impl_->transitionPosition = 0.0f;
     impl_->lastResult = ImmersiveProcessResult::Disabled;
     return true;
 }
@@ -485,10 +781,9 @@ void ImmersiveAudioEngine::reset() noexcept {
 }
 
 void ImmersiveAudioEngine::setEnabled(bool enabled) noexcept {
+    // Do not touch transitionPosition here: process() ramps towards the new
+    // target, which is exactly what makes the toggle inaudible.
     impl_->enabled = enabled;
-    if (!enabled && impl_->prepared) {
-        impl_->lastResult = ImmersiveProcessResult::Disabled;
-    }
 }
 
 void ImmersiveAudioEngine::setSpatialBlend(float blend) noexcept {
@@ -530,12 +825,48 @@ void ImmersiveAudioEngine::setStereoWidth(float width) noexcept {
     impl_->updateRoomModel();
 }
 
+void ImmersiveAudioEngine::setBassGainDb(float gainDb) noexcept {
+    impl_->bassGainDbValue = std::isfinite(gainDb)
+        ? std::clamp(gainDb, kMinShelfGainDb, kMaxShelfGainDb) : 0.0f;
+    impl_->updateToneStage();
+}
+
+void ImmersiveAudioEngine::setTrebleGainDb(float gainDb) noexcept {
+    impl_->trebleGainDbValue = std::isfinite(gainDb)
+        ? std::clamp(gainDb, kMinShelfGainDb, kMaxShelfGainDb) : 0.0f;
+    impl_->updateToneStage();
+}
+
+void ImmersiveAudioEngine::setOutputGainDb(float gainDb) noexcept {
+    impl_->outputGainDbValue = std::isfinite(gainDb)
+        ? std::clamp(gainDb, kMinOutputGainDb, kMaxOutputGainDb) : 0.0f;
+    impl_->updateToneStage();
+}
+
+float ImmersiveAudioEngine::bassGainDb() const noexcept { return impl_->bassGainDbValue; }
+float ImmersiveAudioEngine::trebleGainDb() const noexcept { return impl_->trebleGainDbValue; }
+float ImmersiveAudioEngine::outputGainDb() const noexcept { return impl_->outputGainDbValue; }
+
+ToneStageTelemetry ImmersiveAudioEngine::toneStageTelemetry() const noexcept {
+    ToneStageTelemetry telemetry{};
+    telemetry.bassGainReductionDb = impl_->bassLimiter.reductionDb();
+    telemetry.trebleGainReductionDb = impl_->trebleLimiter.reductionDb();
+    telemetry.outputGainReductionDb = impl_->outputLimiter.reductionDb();
+    telemetry.spatialGainReductionDb = impl_->spatialLimiter.reductionDb();
+    telemetry.transitionRamp = smoothRamp(impl_->transitionPosition);
+    return telemetry;
+}
+
 SpaceDesignControls ImmersiveAudioEngine::spaceDesignControls() const noexcept {
     return impl_->currentSpaceDesignControls();
 }
 
 bool ImmersiveAudioEngine::isPrepared() const noexcept {
     return impl_->prepared;
+}
+
+bool ImmersiveAudioEngine::isTransitioning() const noexcept {
+    return impl_->prepared && impl_->transitionActive();
 }
 
 int ImmersiveAudioEngine::maxFrames() const noexcept {
@@ -555,7 +886,9 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
         impl_->lastResult = ImmersiveProcessResult::NotPrepared;
         return false;
     }
-    if (!impl_->enabled) {
+    // Fully faded out and not asked to fade in: real bypass, zero added latency.
+    if (!impl_->enabled && !impl_->transitionActive()) {
+        impl_->bypassed = true;
         impl_->lastResult = ImmersiveProcessResult::Disabled;
         return false;
     }
@@ -565,85 +898,73 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
     }
 
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
-    bool anyInputEnergy = false;
-    bool anyOutputEnergy = false;
-    int frameOffset = 0;
-    while (frameOffset < frames) {
-        const int activeFrames = std::min(Impl::kSteamAudioFrameSize, frames - frameOffset);
-        const int steamFrames = Impl::kSteamAudioFrameSize;
-        std::fill(impl_->inputLeft.begin(), impl_->inputLeft.begin() + steamFrames, 0.0f);
-        std::fill(impl_->inputRight.begin(), impl_->inputRight.begin() + steamFrames, 0.0f);
-        std::fill(impl_->outputLeft.begin(), impl_->outputLeft.begin() + steamFrames, 0.0f);
-        std::fill(impl_->outputRight.begin(), impl_->outputRight.begin() + steamFrames, 0.0f);
-        for (int frame = 0; frame < activeFrames; ++frame) {
-            impl_->inputLeft[static_cast<std::size_t>(frame)] = sanitizeInputSample(interleavedStereo[(frameOffset + frame) * 2]);
-            impl_->inputRight[static_cast<std::size_t>(frame)] = sanitizeInputSample(interleavedStereo[(frameOffset + frame) * 2 + 1]);
+    // Re-entering the processed path. The delay lines, filter state and FIFO
+    // still hold audio from before the bypass, which would be replayed as a
+    // burst. Clear them here, on the audio thread, so the fade-in starts from
+    // true silence. transitionPosition is deliberately preserved.
+    if (impl_->bypassed) {
+        impl_->bypassed = false;
+        const float resumePosition = impl_->transitionPosition;
+        impl_->clearStateOnly();
+        impl_->transitionPosition = resumePosition;
+        if (impl_->effect != nullptr) {
+            iplBinauralEffectReset(impl_->effect);
         }
+    }
 
-        IPLAudioBuffer input{};
-        input.numChannels = 2;
-        input.numSamples = steamFrames;
-        input.data = impl_->inputChannels;
-        IPLAudioBuffer output{};
-        output.numChannels = 2;
-        output.numSamples = steamFrames;
-        output.data = impl_->outputChannels;
+    constexpr int steamFrames = Impl::kSteamAudioFrameSize;
+    const int fifoSamples = static_cast<int>(impl_->outputFifo.size());
 
-        IPLBinauralEffectParams params{};
-        params.direction = IPLVector3{0.0f, 0.0f, 1.0f};
-        params.interpolation = IPL_HRTFINTERPOLATION_BILINEAR;
-        params.spatialBlend = impl_->spatialBlend;
-        params.hrtf = impl_->hrtf;
-        params.peakDelays = nullptr;
+    for (int frame = 0; frame < frames; ++frame) {
+        const float dryL = sanitizeInputSample(interleavedStereo[frame * 2]);
+        const float dryR = sanitizeInputSample(interleavedStereo[frame * 2 + 1]);
 
-        const IPLAudioEffectState state = iplBinauralEffectApply(impl_->effect, &params, &input, &output);
-        impl_->lastState = static_cast<int>(state);
-        if (state != IPL_AUDIOEFFECTSTATE_TAILCOMPLETE && state != IPL_AUDIOEFFECTSTATE_TAILREMAINING) {
-            impl_->lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
-            return false;
-        }
-
-        bool inputHasEnergy = false;
-        bool outputHasEnergy = false;
-        // Fixed headroom keeps normal HRTF output below the safety limiter. The limiter is now
-        // reserved for exceptional peaks instead of acting as a continuous tone shaper.
-        constexpr float kSteamAudioOutputGain = 0.50118723f; // -6 dB
-        for (int frame = 0; frame < activeFrames; ++frame) {
-            const float inputLeft = impl_->inputLeft[static_cast<std::size_t>(frame)];
-            const float inputRight = impl_->inputRight[static_cast<std::size_t>(frame)];
-            float outputLeft = impl_->outputLeft[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
-            float outputRight = impl_->outputRight[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
-            if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
-                impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
+        // 1. Accumulate into the effect block.
+        impl_->pendingInput[static_cast<std::size_t>(impl_->pendingInputFrames * 2)] = dryL;
+        impl_->pendingInput[static_cast<std::size_t>(impl_->pendingInputFrames * 2 + 1)] = dryR;
+        ++impl_->pendingInputFrames;
+        if (impl_->pendingInputFrames == steamFrames) {
+            impl_->pendingInputFrames = 0;
+            if (!impl_->runEffectBlock()) {
                 return false;
             }
-
-            impl_->applyRoomModel(outputLeft, outputRight);
-            impl_->applyOutputLimiter(outputLeft, outputRight);
-
-            if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
-                impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
-                return false;
-            }
-
-            inputHasEnergy = inputHasEnergy || std::fabs(inputLeft) > 1.0e-8f || std::fabs(inputRight) > 1.0e-8f;
-            outputHasEnergy = outputHasEnergy || std::fabs(outputLeft) > 1.0e-8f || std::fabs(outputRight) > 1.0e-8f;
-
-            interleavedStereo[(frameOffset + frame) * 2] = outputLeft;
-            interleavedStereo[(frameOffset + frame) * 2 + 1] = outputRight;
         }
-        if (inputHasEnergy && !outputHasEnergy) {
-            impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
-            return false;
+
+        // 2. Pop the matching processed frame. The FIFO was primed with one
+        //    block of silence, so it can never underrun.
+        float wetL = 0.0f;
+        float wetR = 0.0f;
+        if (impl_->outputFifoFrames > 0) {
+            wetL = impl_->outputFifo[static_cast<std::size_t>(impl_->outputFifoRead)];
+            wetR = impl_->outputFifo[static_cast<std::size_t>(impl_->outputFifoRead + 1)];
+            impl_->outputFifoRead = (impl_->outputFifoRead + 2) % fifoSamples;
+            --impl_->outputFifoFrames;
         }
-        anyInputEnergy = anyInputEnergy || inputHasEnergy;
-        anyOutputEnergy = anyOutputEnergy || outputHasEnergy;
-        frameOffset += activeFrames;
+
+        // 3. Advance the bypass crossfade and mix against the *live* dry input.
+        //    Deliberately not time-aligned to the wet path: at ramp == 0 the
+        //    output is then bit-identical to the input, so handing over to the
+        //    zero-latency bypass early-return costs no sample jump. Aligning
+        //    the dry path instead would make the fade phase-coherent but would
+        //    put an 8 ms discontinuity at that hand-off, which is far worse.
+        const float target = impl_->enabled ? 1.0f : 0.0f;
+        if (impl_->transitionPosition < target) {
+            impl_->transitionPosition = std::min(target, impl_->transitionPosition + impl_->transitionStep);
+        } else if (impl_->transitionPosition > target) {
+            impl_->transitionPosition = std::max(target, impl_->transitionPosition - impl_->transitionStep);
+        }
+        const float ramp = smoothRamp(impl_->transitionPosition);
+        const float dryLevel = 1.0f - ramp;
+
+        float outL = dryL * dryLevel + wetL * ramp;
+        float outR = dryR * dryLevel + wetR * ramp;
+        if (!std::isfinite(outL)) outL = 0.0f;
+        if (!std::isfinite(outR)) outR = 0.0f;
+
+        interleavedStereo[frame * 2] = std::clamp(outL, -kOutputCeiling, kOutputCeiling);
+        interleavedStereo[frame * 2 + 1] = std::clamp(outR, -kOutputCeiling, kOutputCeiling);
     }
-    if (anyInputEnergy && !anyOutputEnergy) {
-        impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
-        return false;
-    }
+
     impl_->lastResult = ImmersiveProcessResult::SteamAudioProcessed;
     return true;
 #else

@@ -4,6 +4,142 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.DoubleAdder
+
+data class ImmersiveStageDiagnostics(
+    val available: Boolean = false,
+    val rms: Float = 0f,
+    val peak: Float = 0f,
+    val truePeak: Float = 0f,
+    val clippedSamples: Long = 0L,
+    val nanCount: Long = 0L,
+    val infCount: Long = 0L,
+    val frames: Long = 0L,
+    val sampleRate: Int = 0,
+    val encoding: Int = 0,
+)
+
+/** Transparent Media3 processor used only to observe a real PCM boundary. */
+class ImmersiveStageMeterAudioProcessor(private val stage: ImmersiveStageMeter) : AudioProcessor {
+    private var format = AudioProcessor.AudioFormat.NOT_SET
+    private var outputBuffer: ByteBuffer = EMPTY_BUFFER
+    private var ended = false
+
+    override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        format = inputAudioFormat
+        stage.configure(inputAudioFormat)
+        return inputAudioFormat
+    }
+
+    override fun isActive(): Boolean = format != AudioProcessor.AudioFormat.NOT_SET
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        if (!inputBuffer.hasRemaining()) return
+        val readable = inputBuffer.duplicate().order(ByteOrder.nativeOrder())
+        val byteCount = inputBuffer.remaining()
+        if (outputBuffer.capacity() < byteCount) {
+            outputBuffer = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
+        } else {
+            outputBuffer.clear()
+        }
+        outputBuffer.limit(byteCount)
+        outputBuffer.put(inputBuffer)
+        outputBuffer.flip()
+        stage.observe(readable)
+    }
+
+    override fun queueEndOfStream() { ended = true }
+    override fun getOutput(): ByteBuffer = outputBuffer
+    override fun isEnded(): Boolean = ended && !outputBuffer.hasRemaining()
+    override fun flush() { outputBuffer = EMPTY_BUFFER; ended = false; stage.reset() }
+    override fun reset() { flush(); format = AudioProcessor.AudioFormat.NOT_SET; stage.reset() }
+
+    private companion object {
+        val EMPTY_BUFFER = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
+    }
+}
+
+class ImmersiveStageMeter {
+    private val sumSquares = DoubleAdder()
+    private val peakBits = AtomicLong(java.lang.Float.floatToRawIntBits(0f).toLong())
+    private val truePeakBits = AtomicLong(java.lang.Float.floatToRawIntBits(0f).toLong())
+    private val clipped = AtomicLong(0L)
+    private val nan = AtomicLong(0L)
+    private val inf = AtomicLong(0L)
+    private val frames = AtomicLong(0L)
+    @Volatile private var sampleRate = 0
+    @Volatile private var encoding = 0
+    @Volatile private var previous = 0f
+
+    fun configure(format: AudioProcessor.AudioFormat) {
+        sampleRate = format.sampleRate
+        encoding = format.encoding
+    }
+
+    fun observe(buffer: ByteBuffer) {
+        val bytesPerSample = when (encoding) {
+            C.ENCODING_PCM_FLOAT -> 4
+            C.ENCODING_PCM_16BIT -> 2
+            else -> return
+        }
+        if (buffer.remaining() < bytesPerSample * 2) return
+        val frameCount = buffer.remaining() / (bytesPerSample * 2)
+        repeat(frameCount) {
+            val left = readSample(buffer, bytesPerSample)
+            val right = readSample(buffer, bytesPerSample)
+            observeSample(left)
+            observeSample(right)
+            val interpolated = maxOf(kotlin.math.abs(previous), kotlin.math.abs((previous + left) * 0.5f))
+            updateMax(truePeakBits, interpolated)
+            previous = left
+        }
+        frames.addAndGet(frameCount.toLong())
+    }
+
+    private fun readSample(buffer: ByteBuffer, bytes: Int): Float = when (bytes) {
+        4 -> buffer.float
+        else -> buffer.short / 32768f
+    }
+
+    private fun observeSample(value: Float) {
+        when {
+            value.isNaN() -> nan.incrementAndGet()
+            value.isInfinite() -> inf.incrementAndGet()
+            else -> {
+                sumSquares.add(value.toDouble() * value.toDouble())
+                updateMax(peakBits, kotlin.math.abs(value))
+                if (kotlin.math.abs(value) >= 1f) clipped.incrementAndGet()
+            }
+        }
+    }
+
+    private fun updateMax(target: AtomicLong, value: Float) {
+        val bits = java.lang.Float.floatToRawIntBits(value).toLong()
+        while (true) {
+            val old = target.get()
+            if (java.lang.Float.intBitsToFloat(old.toInt()) >= value || target.compareAndSet(old, bits)) return
+        }
+    }
+
+    fun snapshot(): ImmersiveStageDiagnostics {
+        val frameCount = frames.get()
+        val sum = sumSquares.sum()
+        return ImmersiveStageDiagnostics(
+            available = frameCount > 0,
+            rms = if (frameCount > 0) kotlin.math.sqrt(sum / (frameCount * 2.0)).toFloat() else 0f,
+            peak = java.lang.Float.intBitsToFloat(peakBits.get().toInt()),
+            truePeak = java.lang.Float.intBitsToFloat(truePeakBits.get().toInt()),
+            clippedSamples = clipped.get(), nanCount = nan.get(), infCount = inf.get(),
+            frames = frameCount, sampleRate = sampleRate, encoding = encoding,
+        )
+    }
+
+    fun reset() {
+        sumSquares.reset(); peakBits.set(0L); truePeakBits.set(0L)
+        clipped.set(0L); nan.set(0L); inf.set(0L); frames.set(0L); previous = 0f
+    }
+}
 
 data class ImmersiveAudioDiagnostics(
     val inputRmsL: Float = 0f,
@@ -51,6 +187,9 @@ data class ImmersiveAudioDiagnostics(
     val quantumFrames: Int = 384,
     val processorEnabled: Boolean = false,
     val pcmEncoding: Int = 0,
+    val b1AfterSilenceSkipping: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
+    val b2AfterSonic: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
+    val b5AudioTrack: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
 ) {
     fun truePeakWarningSource(): String {
         val inputL = inputTruePeakL > TRUE_PEAK_WARNING_LIMIT
@@ -103,7 +242,7 @@ data class ImmersiveAudioDiagnostics(
                 averageProcessingTimeMs = values[32].takeIf(Double::isFinite) ?: 0.0,
                 maxProcessingTimeMs = values[33].takeIf(Double::isFinite) ?: 0.0,
                 deadlineMisses = l(34), nativeProcessFailures = l(35), sampleRate = values[36].toInt().coerceAtLeast(0),
-                hostCallbackFrames = values[37].toInt().coerceAtLeast(0), quantumFrames = values[38].toInt().coerceIn(96, 2048),
+                hostCallbackFrames = values[37].toInt().coerceAtLeast(0), quantumFrames = values[38].toInt().coerceIn(1, 1_000_000),
                 processorEnabled = values[39] > 0.5,
                 pcmEncoding = values[40].toInt(),
             )
@@ -143,6 +282,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
     @Volatile private var dampening = 0.5f
     @Volatile private var stereoWidth = 0.5f
     @Volatile private var quantumFrames = DEFAULT_QUANTUM_FRAMES
+    @Volatile private var limiterEnabled = true
 
     override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         val supportedEncoding =
@@ -166,6 +306,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
             setDampening(dampening)
             setStereoWidth(stereoWidth)
             setQuantumFrames(quantumFrames)
+            setLimiterEnabled(limiterEnabled)
             setEnabled(enabled)
         }
         outputAudioFormat = inputAudioFormat
@@ -271,6 +412,11 @@ class ImmersiveAudioProcessor : AudioProcessor {
 
     fun quantumFrames(): Int = quantumFrames
 
+    fun setLimiterEnabled(value: Boolean) {
+        limiterEnabled = value
+        if (nativeHandle != 0L) nativeSetLimiterEnabled(nativeHandle, value)
+    }
+
     fun readDiagnostics(): ImmersiveAudioDiagnostics =
         if (nativeHandle == 0L) ImmersiveAudioDiagnostics() else ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
 
@@ -287,8 +433,8 @@ class ImmersiveAudioProcessor : AudioProcessor {
 
     companion object {
         const val DEFAULT_QUANTUM_FRAMES = 384
-        const val MIN_QUANTUM_FRAMES = 96
-        const val MAX_QUANTUM_FRAMES = 2048
+        const val MIN_QUANTUM_FRAMES = 1
+        const val MAX_QUANTUM_FRAMES = 1_000_000
         private val EMPTY_BUFFER = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
 
         init {
@@ -300,6 +446,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeReset(handle: Long)
         @JvmStatic private external fun nativeResetDiagnostics(handle: Long)
         @JvmStatic private external fun nativeSetEnabled(handle: Long, enabled: Boolean)
+        @JvmStatic private external fun nativeSetLimiterEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetSpatialBlend(handle: Long, blend: Float)
         @JvmStatic private external fun nativeSetRoomPreset(handle: Long, preset: Int)
         @JvmStatic private external fun nativeSetRoomMix(handle: Long, wetMix: Float)
@@ -327,6 +474,14 @@ object ImmersiveAudioRuntime {
     @Volatile private var dampening = 0.5f
     @Volatile private var stereoWidth = 0.5f
     @Volatile private var quantumFrames = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES
+    @Volatile private var limiterEnabled = true
+    @Volatile private var b1Meter: ImmersiveStageMeter? = null
+    @Volatile private var b2Meter: ImmersiveStageMeter? = null
+
+    fun attachStageMeters(b1: ImmersiveStageMeter, b2: ImmersiveStageMeter) {
+        b1Meter = b1
+        b2Meter = b2
+    }
 
     fun attach(value: ImmersiveAudioProcessor) {
         processor = value
@@ -339,6 +494,7 @@ object ImmersiveAudioRuntime {
         value.setDampening(dampening)
         value.setStereoWidth(stereoWidth)
         value.setQuantumFrames(quantumFrames)
+        value.setLimiterEnabled(limiterEnabled)
         value.setEnabled(enabled)
     }
 
@@ -406,8 +562,20 @@ object ImmersiveAudioRuntime {
         processor?.setQuantumFrames(quantumFrames)
     }
 
-    fun readDiagnostics(): ImmersiveAudioDiagnostics = processor?.readDiagnostics() ?: ImmersiveAudioDiagnostics()
-    fun resetDiagnostics() { processor?.resetDiagnostics() }
+    fun readDiagnostics(): ImmersiveAudioDiagnostics {
+        val native = processor?.readDiagnostics() ?: ImmersiveAudioDiagnostics()
+        return native.copy(
+            b1AfterSilenceSkipping = b1Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
+            b2AfterSonic = b2Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
+            // AudioTrack consumes PCM inside the platform; post-device PCM is not observable here.
+            b5AudioTrack = ImmersiveStageDiagnostics(),
+        )
+    }
+    fun resetDiagnostics() {
+        processor?.resetDiagnostics()
+        b1Meter?.reset()
+        b2Meter?.reset()
+    }
 
     fun isEnabled(): Boolean = enabled
     fun intensity(): Float = intensity
@@ -419,4 +587,9 @@ object ImmersiveAudioRuntime {
     fun dampening(): Float = dampening
     fun stereoWidth(): Float = stereoWidth
     fun quantumFrames(): Int = quantumFrames
+
+    fun setLimiterEnabled(value: Boolean) {
+        limiterEnabled = value
+        processor?.setLimiterEnabled(value)
+    }
 }

@@ -151,6 +151,7 @@ import dev.vxs.frostsoulx.constants.EqualizerAutoHeadroomEnabledKey
 import dev.vxs.frostsoulx.constants.EqualizerBandLevelsMbKey
 import dev.vxs.frostsoulx.constants.EqualizerBassBoostEnabledKey
 import dev.vxs.frostsoulx.constants.EqualizerBassBoostStrengthKey
+import dev.vxs.frostsoulx.constants.EqualizerTrebleGainMbKey
 import dev.vxs.frostsoulx.constants.EqualizerEnabledKey
 import dev.vxs.frostsoulx.constants.EqualizerOutputGainEnabledKey
 import dev.vxs.frostsoulx.constants.EqualizerOutputGainMbKey
@@ -5813,6 +5814,7 @@ class MusicService :
             outputGainMb = prefs[EqualizerOutputGainMbKey] ?: 0,
             bassBoostEnabled = prefs[EqualizerBassBoostEnabledKey] ?: false,
             bassBoostStrength = (prefs[EqualizerBassBoostStrengthKey] ?: 0).coerceIn(0, 1000),
+            trebleGainMb = (prefs[EqualizerTrebleGainMbKey] ?: 0).coerceIn(-1500, 1500),
             virtualizerEnabled = prefs[EqualizerVirtualizerEnabledKey] ?: false,
             virtualizerStrength = (prefs[EqualizerVirtualizerStrengthKey] ?: 0).coerceIn(0, 1000),
             autoHeadroomEnabled = prefs[EqualizerAutoHeadroomEnabledKey] ?: false,
@@ -6034,7 +6036,8 @@ class MusicService :
         val preampMb = if (safeHeadroomEnabled) -(eqBoostMb + bassBoostHeadroomMb + virtualizerHeadroomMb) else 0
 
         for (band in 0 until bandCount) {
-            val levelMb = ((levels.getOrNull(band) ?: 0) + preampMb).coerceIn(minMb, maxMb)
+            val trebleBoostMb = if ((caps?.centerFreqHz?.getOrNull(band) ?: 0) >= 2000) settings.trebleGainMb else 0
+            val levelMb = ((levels.getOrNull(band) ?: 0) + trebleBoostMb + preampMb).coerceIn(minMb, maxMb)
             runCatching { eq.setBandLevel(band.toShort(), levelMb.toShort()) }
         }
 
@@ -8091,11 +8094,22 @@ class MusicService :
                         150.toShort(),
                     )
                 val sonic = SonicAudioProcessor()
+                val b1Meter = ImmersiveStageMeter()
+                val b2Meter = ImmersiveStageMeter()
+                ImmersiveAudioRuntime.attachStageMeters(b1Meter, b2Meter)
+                val afterSilence = ImmersiveStageMeterAudioProcessor(b1Meter)
+                val afterSonic = ImmersiveStageMeterAudioProcessor(b2Meter)
                 // Keep the adapter in the chain even when the engine is OFF. Its OFF branch
                 // copies PCM byte-for-byte while collecting real input/output telemetry; the
                 // native DSP itself remains disabled until the runtime toggle enables it.
                 val surround = ImmersiveAudioProcessor().also(ImmersiveAudioRuntime::attach)
-                val chain = DefaultAudioSink.DefaultAudioProcessorChain(silenceSkipping, sonic, surround)
+                val chain = DefaultAudioSink.DefaultAudioProcessorChain(
+                    silenceSkipping,
+                    afterSilence,
+                    sonic,
+                    afterSonic,
+                    surround,
+                )
                 return DefaultAudioSink
                     .Builder(context)
                     .setEnableFloatOutput(false)

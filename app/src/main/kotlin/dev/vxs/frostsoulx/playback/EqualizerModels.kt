@@ -47,6 +47,7 @@ data class EqSettings(
     val outputGainMb: Int,
     val bassBoostEnabled: Boolean,
     val bassBoostStrength: Int,
+    val trebleGainMb: Int = 0,
     val virtualizerEnabled: Boolean,
     val virtualizerStrength: Int,
     val autoHeadroomEnabled: Boolean,

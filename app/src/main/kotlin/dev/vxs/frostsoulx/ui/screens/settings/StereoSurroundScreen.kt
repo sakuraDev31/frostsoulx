@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,10 +53,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
@@ -72,6 +79,13 @@ import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
 import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
 import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
 import dev.vxs.frostsoulx.constants.StereoSurroundSavedPresetsKey
+import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
+import dev.vxs.frostsoulx.constants.EqualizerEnabledKey
+import dev.vxs.frostsoulx.constants.EqualizerBassBoostEnabledKey
+import dev.vxs.frostsoulx.constants.EqualizerBassBoostStrengthKey
+import dev.vxs.frostsoulx.constants.EqualizerTrebleGainMbKey
+import dev.vxs.frostsoulx.constants.EqualizerOutputGainEnabledKey
+import dev.vxs.frostsoulx.constants.EqualizerOutputGainMbKey
 import dev.vxs.frostsoulx.constants.ImmersiveDevelopmentWarningShownKey
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.playback.ImmersiveRoomPreset
@@ -107,6 +121,13 @@ fun StereoSurroundScreen(navController: NavController) {
     val dampeningPreference = rememberPreference(StereoSurroundDampeningKey, defaultValue = 0.5f)
     val stereoWidthPreference = rememberPreference(StereoSurroundStereoWidthKey, defaultValue = 0.5f)
     val quantumPreference = rememberPreference(StereoSurroundQuantumFramesKey, defaultValue = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES)
+    val limiterPreference = rememberPreference(StereoSurroundLimiterEnabledKey, defaultValue = true)
+    val eqEnabledPreference = rememberPreference(EqualizerEnabledKey, defaultValue = false)
+    val bassEnabledPreference = rememberPreference(EqualizerBassBoostEnabledKey, defaultValue = false)
+    val bassStrengthPreference = rememberPreference(EqualizerBassBoostStrengthKey, defaultValue = 0)
+    val trebleGainPreference = rememberPreference(EqualizerTrebleGainMbKey, defaultValue = 0)
+    val outputGainEnabledPreference = rememberPreference(EqualizerOutputGainEnabledKey, defaultValue = false)
+    val outputGainPreference = rememberPreference(EqualizerOutputGainMbKey, defaultValue = 0)
     val savedPresetsPreference = rememberPreference(StereoSurroundSavedPresetsKey, defaultValue = "")
     val developmentWarningPreference = rememberPreference(ImmersiveDevelopmentWarningShownKey, defaultValue = false)
     val persistedRoomPreset by roomPresetPreference
@@ -117,6 +138,12 @@ fun StereoSurroundScreen(navController: NavController) {
     val persistedDampening by dampeningPreference
     val persistedStereoWidth by stereoWidthPreference
     val persistedQuantum by quantumPreference
+    val limiterEnabled by limiterPreference
+    val bassEnabled by bassEnabledPreference
+    val bassStrength by bassStrengthPreference
+    val trebleGainMb by trebleGainPreference
+    val outputGainEnabled by outputGainEnabledPreference
+    val outputGainMb by outputGainPreference
     val savedPresetsRaw by savedPresetsPreference
     val developmentWarningShown by developmentWarningPreference
 
@@ -128,7 +155,7 @@ fun StereoSurroundScreen(navController: NavController) {
     var draftRoomSize by remember { mutableFloatStateOf(persistedRoomSize.coerceIn(0f, 1f)) }
     var draftDampening by remember { mutableFloatStateOf(persistedDampening.coerceIn(0f, 1f)) }
     var draftStereoWidth by remember { mutableFloatStateOf(persistedStereoWidth.coerceIn(0f, 1f)) }
-    var draftQuantum by remember { mutableStateOf(persistedQuantum.coerceIn(96, 2048)) }
+    var draftQuantum by remember { mutableStateOf(persistedQuantum.coerceAtLeast(1)) }
     var isDragging by remember { mutableStateOf(false) }
     var diagnostics by remember { mutableStateOf(ImmersiveAudioDiagnostics()) }
     var showSavePreset by remember { mutableStateOf(false) }
@@ -224,12 +251,16 @@ fun StereoSurroundScreen(navController: NavController) {
         ImmersiveAudioRuntime.setRoomSize(draftRoomSize)
         ImmersiveAudioRuntime.setDampening(draftDampening)
         ImmersiveAudioRuntime.setStereoWidth(draftStereoWidth)
-        draftQuantum = persistedQuantum.coerceIn(96, 2048)
+        draftQuantum = persistedQuantum.coerceAtLeast(1)
         ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
     }
 
     LaunchedEffect(enabled) {
         ImmersiveAudioRuntime.setEnabled(enabled)
+    }
+
+    LaunchedEffect(limiterEnabled) {
+        ImmersiveAudioRuntime.setLimiterEnabled(limiterEnabled)
     }
 
     LaunchedEffect(Unit) {
@@ -320,6 +351,12 @@ fun StereoSurroundScreen(navController: NavController) {
                     dampening = draftDampening,
                     stereoWidth = draftStereoWidth,
                     quantumFrames = draftQuantum,
+                    limiterEnabled = limiterEnabled,
+                    bassEnabled = bassEnabled,
+                    bassStrength = bassStrength,
+                    trebleGainMb = trebleGainMb,
+                    outputGainEnabled = outputGainEnabled,
+                    outputGainMb = outputGainMb,
                     savedPresets = savedPresets,
                     onRoomPresetChange = { roomPresetPreference.value = it.nativeValue },
                     onRoomMixChange = { draftRoomMix = it; roomMixPreference.value = it; ImmersiveAudioRuntime.setRoomMix(it) },
@@ -329,10 +366,16 @@ fun StereoSurroundScreen(navController: NavController) {
                     onDampeningChange = { draftDampening = it; dampeningPreference.value = it; ImmersiveAudioRuntime.setDampening(it) },
                     onStereoWidthChange = { draftStereoWidth = it; stereoWidthPreference.value = it; ImmersiveAudioRuntime.setStereoWidth(it) },
                     onQuantumChange = { value ->
-                        draftQuantum = value.coerceIn(96, 2048)
+                        draftQuantum = value.coerceAtLeast(1)
                         quantumPreference.value = draftQuantum
                         ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
                     },
+                    onLimiterChange = { limiterPreference.value = it },
+                    onBassEnabledChange = { bassEnabledPreference.value = it; eqEnabledPreference.value = true },
+                    onBassStrengthChange = { bassStrengthPreference.value = it.coerceIn(0, 1000); eqEnabledPreference.value = true },
+                    onTrebleGainChange = { trebleGainPreference.value = it.coerceIn(-1500, 1500); eqEnabledPreference.value = true },
+                    onOutputGainEnabledChange = { outputGainEnabledPreference.value = it; eqEnabledPreference.value = true },
+                    onOutputGainChange = { outputGainPreference.value = it.coerceIn(-1500, 1500); eqEnabledPreference.value = true },
                     onPresetSelected = { preset ->
                         enabledPreference.value = preset.enabled
                         intensityPreference.value = preset.intensity
@@ -580,6 +623,8 @@ private fun DiagnosticImmersivePage(
             Text(if (diagnostics.processCallCount > 0) "Receiving PCM" else "Waiting for audio", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
         }
 
+        StageTelemetryCard(diagnostics)
+
         Column(
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
                 .background(FrostSoulTheme.colors.surface).padding(16.dp),
@@ -645,6 +690,62 @@ private fun DiagnosticImmersivePage(
 }
 
 @Composable
+private fun StageTelemetryCard(diagnostics: ImmersiveAudioDiagnostics) {
+    val on = diagnostics.processorEnabled
+    val b1 = diagnostics.b1AfterSilenceSkipping
+    val b2 = diagnostics.b2AfterSonic
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+            .background(FrostSoulTheme.colors.surface).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("SIGNAL PATH BOUNDARIES", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
+        Text("Real PCM measurements · ${if (on) "processor ON" else "processor OFF / bypass"}", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
+        StageRow("B1 · after silence skip", b1.available, b1)
+        StageRow("B2 · after Sonic", b2.available, b2)
+        StageRow("B3 · native DSP input", diagnostics.processCallCount > 0, stageFromNative(diagnostics, input = true))
+        StageRow("B4 · native DSP output", diagnostics.processCallCount > 0, stageFromNative(diagnostics, input = false))
+        StageRow("B5 · AudioTrack/device", false, null)
+        Text(
+            if (on) "DSP-only controls and processing metrics are active." else "DSP parameters, DSP processing time and input→output difference: N/A while OFF.",
+            color = FrostSoulTheme.colors.onSurfaceMuted,
+            fontSize = 11.sp,
+        )
+    }
+}
+
+@Composable
+private fun StageRow(label: String, available: Boolean, stage: dev.vxs.frostsoulx.playback.ImmersiveStageDiagnostics?) {
+    val value = if (!available || stage == null) "N/A" else "RMS ${formatDb(stage.rms)} · peak ${formatDb(stage.peak)} · TP ${formatDb(stage.truePeak)} · clip ${stage.clippedSamples}"
+    StatusLine(label, value)
+}
+
+private fun stageFromNative(diagnostics: ImmersiveAudioDiagnostics, input: Boolean): dev.vxs.frostsoulx.playback.ImmersiveStageDiagnostics =
+    if (input) dev.vxs.frostsoulx.playback.ImmersiveStageDiagnostics(
+        available = diagnostics.processedFrames > 0,
+        rms = diagnostics.inputRms,
+        peak = diagnostics.inputPeak,
+        truePeak = maxOf(diagnostics.inputTruePeakL, diagnostics.inputTruePeakR),
+        clippedSamples = diagnostics.clippedInput,
+        nanCount = diagnostics.nanCount,
+        infCount = diagnostics.infCount,
+        frames = diagnostics.processedFrames,
+        sampleRate = diagnostics.sampleRate,
+        encoding = diagnostics.pcmEncoding,
+    ) else dev.vxs.frostsoulx.playback.ImmersiveStageDiagnostics(
+        available = diagnostics.processedFrames > 0,
+        rms = diagnostics.outputRms,
+        peak = diagnostics.outputPeak,
+        truePeak = maxOf(diagnostics.outputTruePeakL, diagnostics.outputTruePeakR),
+        clippedSamples = diagnostics.clippedOutput,
+        nanCount = diagnostics.nanCount,
+        infCount = diagnostics.infCount,
+        frames = diagnostics.processedFrames,
+        sampleRate = diagnostics.sampleRate,
+        encoding = diagnostics.pcmEncoding,
+    )
+
+@Composable
 private fun DiagnosticRow(label: String, input: String, output: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, modifier = Modifier.weight(1.2f), color = FrostSoulTheme.colors.onSurface, fontSize = 12.sp)
@@ -668,6 +769,12 @@ private fun AdvancedImmersivePage(
     dampening: Float,
     stereoWidth: Float,
     quantumFrames: Int,
+    limiterEnabled: Boolean,
+    bassEnabled: Boolean,
+    bassStrength: Int,
+    trebleGainMb: Int,
+    outputGainEnabled: Boolean,
+    outputGainMb: Int,
     savedPresets: List<ImmersiveAudioPreset>,
     diagnostics: ImmersiveAudioDiagnostics,
     onEnabledChange: (Boolean) -> Unit,
@@ -681,6 +788,12 @@ private fun AdvancedImmersivePage(
     onDampeningChange: (Float) -> Unit,
     onStereoWidthChange: (Float) -> Unit,
     onQuantumChange: (Int) -> Unit,
+    onLimiterChange: (Boolean) -> Unit,
+    onBassEnabledChange: (Boolean) -> Unit,
+    onBassStrengthChange: (Int) -> Unit,
+    onTrebleGainChange: (Int) -> Unit,
+    onOutputGainEnabledChange: (Boolean) -> Unit,
+    onOutputGainChange: (Int) -> Unit,
     onPresetSelected: (ImmersiveAudioPreset) -> Unit,
     onSavePreset: () -> Unit,
     onResetRoom: () -> Unit,
@@ -719,6 +832,20 @@ private fun AdvancedImmersivePage(
         RoomParameterSlider("Dampening", dampening, 0f..1f, "${(dampening * 100).roundToInt()}%", onDampeningChange)
         RoomParameterSlider("Stereo width", stereoWidth, 0f..1f, "${(stereoWidth * 100).roundToInt()}%", onStereoWidthChange)
         QuantumSlider(quantumFrames, onQuantumChange)
+        ToneOutputControls(
+            limiterEnabled = limiterEnabled,
+            bassEnabled = bassEnabled,
+            bassStrength = bassStrength,
+            trebleGainMb = trebleGainMb,
+            outputGainEnabled = outputGainEnabled,
+            outputGainMb = outputGainMb,
+            onLimiterChange = onLimiterChange,
+            onBassEnabledChange = onBassEnabledChange,
+            onBassStrengthChange = onBassStrengthChange,
+            onTrebleGainChange = onTrebleGainChange,
+            onOutputGainEnabledChange = onOutputGainEnabledChange,
+            onOutputGainChange = onOutputGainChange,
+        )
         SavedPresetSection(savedPresets, onPresetSelected, onSavePreset)
         StatusLine("Space design", "Room size scales delay/reverb; dampening shapes decay; width controls decorrelation.")
         Row(
@@ -734,6 +861,61 @@ private fun AdvancedImmersivePage(
         StatusLine("Supported input", "Stereo PCM 16-bit and PCM float.")
         HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
         ImmersiveDiagnosticsSection(diagnostics)
+    }
+}
+
+@Composable
+private fun ToneOutputControls(
+    limiterEnabled: Boolean,
+    bassEnabled: Boolean,
+    bassStrength: Int,
+    trebleGainMb: Int,
+    outputGainEnabled: Boolean,
+    outputGainMb: Int,
+    onLimiterChange: (Boolean) -> Unit,
+    onBassEnabledChange: (Boolean) -> Unit,
+    onBassStrengthChange: (Int) -> Unit,
+    onTrebleGainChange: (Int) -> Unit,
+    onOutputGainEnabledChange: (Boolean) -> Unit,
+    onOutputGainChange: (Int) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(FrostSoulTheme.colors.surface).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ImmersiveSectionLabel("TONE & OUTPUT")
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Limiter", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("Native peak protection", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+            }
+            Switch(checked = limiterEnabled, onCheckedChange = onLimiterChange)
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Bass", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp)
+                Text("Android BassBoost effect", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+            }
+            Switch(checked = bassEnabled, onCheckedChange = onBassEnabledChange)
+        }
+        TechnicalSlider(
+            value = (bassStrength / 1000f).coerceIn(0f, 1f),
+            onValueChange = { onBassStrengthChange((it * 1000f).roundToInt()) },
+            valueRange = 0f..1f,
+            enabled = bassEnabled,
+            label = "Bass strength",
+        )
+        Text("${bassStrength / 10}%", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+        RoomParameterSlider("Treble", trebleGainMb / 1500f, -1f..1f, "${trebleGainMb} mB", { onTrebleGainChange((it * 1500f).roundToInt()) })
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Output gain", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp)
+                Text("Android output gain effect", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+            }
+            Switch(checked = outputGainEnabled, onCheckedChange = onOutputGainEnabledChange)
+        }
+        RoomParameterSlider("Gain", outputGainMb / 1500f, -1f..1f, "${outputGainMb} mB", { onOutputGainChange((it * 1500f).roundToInt()) })
     }
 }
 
@@ -779,38 +961,69 @@ private fun QuantumSlider(
     quantumFrames: Int,
     onQuantumChange: (Int) -> Unit,
 ) {
+    var inputText by remember(quantumFrames) { mutableStateOf(quantumFrames.toString()) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     Column(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
             .background(FrostSoulTheme.colors.surface).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                 Text("Processing quantum", color = FrostSoulTheme.colors.onSurface, fontSize = 13.sp)
-                Text("Host chunk size; Steam Audio remains internally 384-frame", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+                Text("Native processing block size · enter 1–1,000,000 frames", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
             }
-            Text(
-                "$quantumFrames frames",
-                color = FrostSoulTheme.colors.accent,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
+            TextField(
+                value = inputText,
+                onValueChange = { value ->
+                    val digitsOnly = value.filter(Char::isDigit).take(10)
+                    inputText = digitsOnly
+                },
+                modifier = Modifier.width(118.dp).onFocusChanged { state ->
+                    if (!state.isFocused) {
+                        val safe = inputText.toIntOrNull()?.coerceIn(
+                            ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES,
+                            ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES,
+                        ) ?: quantumFrames
+                        inputText = safe.toString()
+                        onQuantumChange(safe)
+                    }
+                },
+                singleLine = true,
+                keyboardActions = KeyboardActions(onDone = {
+                    val safe = inputText.toLongOrNull()?.coerceIn(
+                        ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES.toLong(),
+                        ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES.toLong(),
+                    )?.toInt() ?: quantumFrames
+                    inputText = safe.toString()
+                    onQuantumChange(safe)
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                }),
+                label = { Text("frames") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                isError = inputText.isNotEmpty() && (inputText.toIntOrNull()?.let {
+                    it !in ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES..ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES
+                } ?: true),
+                colors = androidx.compose.material3.TextFieldDefaults.colors(
+                    focusedContainerColor = FrostSoulTheme.colors.surfaceRaised,
+                    unfocusedContainerColor = FrostSoulTheme.colors.surfaceRaised,
+                    focusedTextColor = FrostSoulTheme.colors.onSurface,
+                    unfocusedTextColor = FrostSoulTheme.colors.onSurface,
+                    cursorColor = FrostSoulTheme.colors.accent,
+                    focusedIndicatorColor = FrostSoulTheme.colors.accent,
+                    unfocusedIndicatorColor = FrostSoulTheme.colors.outline,
+                ),
             )
         }
-        Slider(
-            value = quantumFrames.toFloat(),
-            onValueChange = { onQuantumChange((it / 32f).roundToInt() * 32) },
-            valueRange = 96f..2048f,
-            steps = 60,
-            colors = SliderDefaults.colors(
-                thumbColor = FrostSoulTheme.colors.accent,
-                activeTrackColor = FrostSoulTheme.colors.accent,
-                inactiveTrackColor = FrostSoulTheme.colors.onSurface.copy(alpha = 0.14f),
-            ),
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-        )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("96 · lower latency", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-            Text("2048 · larger blocks", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+            Text("1 · lower latency", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+            Text("1,000,000 · larger blocks", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
         }
     }
 }

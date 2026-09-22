@@ -55,6 +55,11 @@ struct Diagnostics {
     std::atomic<uint64_t> maxProcessingTimeNanos{0};
     std::atomic<uint64_t> deadlineMisses{0};
     std::atomic<int> nativeStatus{0};
+    std::atomic<float> bassGainReductionDb{0.0f};
+    std::atomic<float> trebleGainReductionDb{0.0f};
+    std::atomic<float> outputGainReductionDb{0.0f};
+    std::atomic<float> spatialGainReductionDb{0.0f};
+    std::atomic<float> transitionRamp{0.0f};
 
     void reset() noexcept {
         inputSumSquaresL.store(0.0); inputSumSquaresR.store(0.0);
@@ -77,6 +82,9 @@ struct Diagnostics {
         processedFrames.store(0); totalBlocks.store(0); nativeProcessFailures.store(0);
         processingTimeNanos.store(0); maxProcessingTimeNanos.store(0); deadlineMisses.store(0);
         nativeStatus.store(0);
+        bassGainReductionDb.store(0.0f); trebleGainReductionDb.store(0.0f);
+        outputGainReductionDb.store(0.0f); spatialGainReductionDb.store(0.0f);
+        transitionRamp.store(0.0f);
     }
 };
 
@@ -282,6 +290,13 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetEnabled(
     }
 }
 
+// Kept for compatibility with older Kotlin processor builds. The current
+// engine applies its safety limiter as part of the output stage, so there is
+// no separate runtime switch to forward here.
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetLimiterEnabled(
+    JNIEnv*, jclass, jlong, jboolean) {}
+
 extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSpatialBlend(
     JNIEnv*, jclass, jlong address, jfloat blend) {
@@ -346,6 +361,30 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetStereoWidth(
     JNIEnv*, jclass, jlong address, jfloat width) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         handle->engine.setStereoWidth(std::isfinite(width) ? std::clamp(width, 0.0f, 1.0f) : 0.5f);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetBassGainDb(
+    JNIEnv*, jclass, jlong address, jfloat gainDb) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        handle->engine.setBassGainDb(std::isfinite(gainDb) ? std::clamp(gainDb, -12.0f, 12.0f) : 0.0f);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetTrebleGainDb(
+    JNIEnv*, jclass, jlong address, jfloat gainDb) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        handle->engine.setTrebleGainDb(std::isfinite(gainDb) ? std::clamp(gainDb, -12.0f, 12.0f) : 0.0f);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetOutputGainDb(
+    JNIEnv*, jclass, jlong address, jfloat gainDb) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        handle->engine.setOutputGainDb(std::isfinite(gainDb) ? std::clamp(gainDb, -24.0f, 12.0f) : 0.0f);
     }
 }
 
