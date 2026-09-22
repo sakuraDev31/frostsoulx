@@ -400,14 +400,33 @@ fun StereoSurroundScreen(navController: NavController) {
                         enabledPreference.value = preset.enabled
                         intensityPreference.value = preset.intensity
                         roomPresetPreference.value = preset.roomPreset.nativeValue
+                        draftIntensity = preset.intensity.coerceIn(0f, 1f)
                         roomMixPreference.value = preset.roomMix
+                        draftRoomMix = preset.roomMix.coerceIn(0f, 1f)
                         reflectionPreference.value = preset.reflectionAmount
+                        draftReflectionAmount = preset.reflectionAmount.coerceIn(0f, 1f)
                         reverbTimePreference.value = preset.reverbTimeSeconds
+                        draftReverbTime = preset.reverbTimeSeconds.coerceIn(0.2f, 8f)
                         roomSizePreference.value = preset.roomSize
+                        draftRoomSize = preset.roomSize.coerceIn(0f, 1f)
                         dampeningPreference.value = preset.dampening
+                        draftDampening = preset.dampening.coerceIn(0f, 1f)
                         stereoWidthPreference.value = preset.stereoWidth
+                        draftStereoWidth = preset.stereoWidth.coerceIn(0f, 1f)
                         carFaderPreference.value = preset.carFader
+                        draftCarFader = preset.carFader.coerceIn(-1f, 1f)
                         quantumPreference.value = preset.quantumFrames
+                        draftQuantum = preset.quantumFrames.coerceAtLeast(1)
+                        ImmersiveAudioRuntime.setIntensity(draftIntensity)
+                        ImmersiveAudioRuntime.setRoomPreset(preset.roomPreset)
+                        ImmersiveAudioRuntime.setRoomMix(draftRoomMix)
+                        ImmersiveAudioRuntime.setReflectionAmount(draftReflectionAmount)
+                        ImmersiveAudioRuntime.setReverbTimeSeconds(draftReverbTime)
+                        ImmersiveAudioRuntime.setRoomSize(draftRoomSize)
+                        ImmersiveAudioRuntime.setDampening(draftDampening)
+                        ImmersiveAudioRuntime.setStereoWidth(draftStereoWidth)
+                        ImmersiveAudioRuntime.setCarFader(draftCarFader)
+                        ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
                     },
                     onSavePreset = { showSavePreset = true },
                     onResetRoom = {
