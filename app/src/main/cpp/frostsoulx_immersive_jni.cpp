@@ -309,7 +309,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomPreset(
     JNIEnv*, jclass, jlong address, jint preset) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        const int safePreset = std::clamp(static_cast<int>(preset), 0, 5);
+        const int safePreset = std::clamp(static_cast<int>(preset), 0, 6);
         handle->engine.setRoomSimulationPreset(
             static_cast<frostsoulx::RoomSimulationPreset>(safePreset));
     }
@@ -361,6 +361,14 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetStereoWidth(
     JNIEnv*, jclass, jlong address, jfloat width) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         handle->engine.setStereoWidth(std::isfinite(width) ? std::clamp(width, 0.0f, 1.0f) : 0.5f);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetCarFader(
+    JNIEnv*, jclass, jlong address, jfloat fader) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        handle->engine.setCarFader(std::isfinite(fader) ? std::clamp(fader, -1.0f, 1.0f) : 0.0f);
     }
 }
 

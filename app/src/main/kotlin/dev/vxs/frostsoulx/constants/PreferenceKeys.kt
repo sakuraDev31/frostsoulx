@@ -939,6 +939,7 @@ val StereoSurroundReverbTimeKey = floatPreferencesKey("stereoSurroundReverbTime"
 val StereoSurroundRoomSizeKey = floatPreferencesKey("stereoSurroundRoomSize")
 val StereoSurroundDampeningKey = floatPreferencesKey("stereoSurroundDampening")
 val StereoSurroundStereoWidthKey = floatPreferencesKey("stereoSurroundStereoWidth")
+val StereoSurroundCarFaderKey = floatPreferencesKey("stereoSurroundCarFader")
 val ImmersiveDevelopmentWarningShownKey = booleanPreferencesKey("immersiveDevelopmentWarningShown")
 val StereoSurroundQuantumFramesKey = intPreferencesKey("stereoSurroundQuantumFrames")
 val StereoSurroundLimiterEnabledKey = booleanPreferencesKey("stereoSurroundLimiterEnabled")

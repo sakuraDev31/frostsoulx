@@ -186,6 +186,7 @@ import dev.vxs.frostsoulx.constants.StereoSurroundReverbTimeKey
 import dev.vxs.frostsoulx.constants.StereoSurroundRoomSizeKey
 import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
 import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
+import dev.vxs.frostsoulx.constants.StereoSurroundCarFaderKey
 import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
 import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
 import dev.vxs.frostsoulx.constants.PlayerStreamClient
@@ -1088,6 +1089,7 @@ class MusicService :
         ImmersiveAudioRuntime.setRoomSize(dataStore.get(StereoSurroundRoomSizeKey, 0.5f))
         ImmersiveAudioRuntime.setDampening(dataStore.get(StereoSurroundDampeningKey, 0.5f))
         ImmersiveAudioRuntime.setStereoWidth(dataStore.get(StereoSurroundStereoWidthKey, 0.5f))
+        ImmersiveAudioRuntime.setCarFader(dataStore.get(StereoSurroundCarFaderKey, 0f))
         ImmersiveAudioRuntime.setQuantumFrames(
             dataStore.get(StereoSurroundQuantumFramesKey, ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES),
         )

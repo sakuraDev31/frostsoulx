@@ -21,6 +21,7 @@ enum class RoomSimulationPreset {
     ConcertHall,
     Cathedral,
     Subway,
+    ClosedCar,
 };
 
 // UI-friendly normalized controls in [0, 1].
@@ -74,6 +75,8 @@ public:
     void setRoomSize(float size) noexcept;
     void setDampening(float dampening) noexcept;
     void setStereoWidth(float width) noexcept;
+    // Front/rear cabin balance: -1 = front, 0 = centered, +1 = rear.
+    void setCarFader(float fader) noexcept;
     SpaceDesignControls spaceDesignControls() const noexcept;
 
     // Tone and level stage. Each of these stages owns a dedicated limiter so a

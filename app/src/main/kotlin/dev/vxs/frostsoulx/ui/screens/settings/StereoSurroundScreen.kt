@@ -77,6 +77,7 @@ import dev.vxs.frostsoulx.constants.StereoSurroundReverbTimeKey
 import dev.vxs.frostsoulx.constants.StereoSurroundRoomSizeKey
 import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
 import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
+import dev.vxs.frostsoulx.constants.StereoSurroundCarFaderKey
 import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
 import dev.vxs.frostsoulx.constants.StereoSurroundSavedPresetsKey
 import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
@@ -120,6 +121,7 @@ fun StereoSurroundScreen(navController: NavController) {
     val roomSizePreference = rememberPreference(StereoSurroundRoomSizeKey, defaultValue = 0.5f)
     val dampeningPreference = rememberPreference(StereoSurroundDampeningKey, defaultValue = 0.5f)
     val stereoWidthPreference = rememberPreference(StereoSurroundStereoWidthKey, defaultValue = 0.5f)
+    val carFaderPreference = rememberPreference(StereoSurroundCarFaderKey, defaultValue = 0f)
     val quantumPreference = rememberPreference(StereoSurroundQuantumFramesKey, defaultValue = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES)
     val limiterPreference = rememberPreference(StereoSurroundLimiterEnabledKey, defaultValue = true)
     val eqEnabledPreference = rememberPreference(EqualizerEnabledKey, defaultValue = false)
@@ -137,6 +139,7 @@ fun StereoSurroundScreen(navController: NavController) {
     val persistedRoomSize by roomSizePreference
     val persistedDampening by dampeningPreference
     val persistedStereoWidth by stereoWidthPreference
+    val persistedCarFader by carFaderPreference
     val persistedQuantum by quantumPreference
     val limiterEnabled by limiterPreference
     val bassEnabled by bassEnabledPreference
@@ -155,6 +158,7 @@ fun StereoSurroundScreen(navController: NavController) {
     var draftRoomSize by remember { mutableFloatStateOf(persistedRoomSize.coerceIn(0f, 1f)) }
     var draftDampening by remember { mutableFloatStateOf(persistedDampening.coerceIn(0f, 1f)) }
     var draftStereoWidth by remember { mutableFloatStateOf(persistedStereoWidth.coerceIn(0f, 1f)) }
+    var draftCarFader by remember { mutableFloatStateOf(persistedCarFader.coerceIn(-1f, 1f)) }
     var draftQuantum by remember { mutableStateOf(persistedQuantum.coerceAtLeast(1)) }
     var isDragging by remember { mutableStateOf(false) }
     var diagnostics by remember { mutableStateOf(ImmersiveAudioDiagnostics()) }
@@ -237,7 +241,7 @@ fun StereoSurroundScreen(navController: NavController) {
         }
     }
 
-    LaunchedEffect(persistedRoomPreset, persistedRoomMix, persistedReflectionAmount, persistedReverbTime, persistedRoomSize, persistedDampening, persistedStereoWidth, persistedQuantum) {
+    LaunchedEffect(persistedRoomPreset, persistedRoomMix, persistedReflectionAmount, persistedReverbTime, persistedRoomSize, persistedDampening, persistedStereoWidth, persistedCarFader, persistedQuantum) {
         ImmersiveAudioRuntime.setRoomPreset(ImmersiveRoomPreset.fromNative(persistedRoomPreset))
         draftRoomMix = persistedRoomMix.coerceIn(0f, 1f)
         draftReflectionAmount = persistedReflectionAmount.coerceIn(0f, 1f)
@@ -251,6 +255,8 @@ fun StereoSurroundScreen(navController: NavController) {
         ImmersiveAudioRuntime.setRoomSize(draftRoomSize)
         ImmersiveAudioRuntime.setDampening(draftDampening)
         ImmersiveAudioRuntime.setStereoWidth(draftStereoWidth)
+        draftCarFader = persistedCarFader.coerceIn(-1f, 1f)
+        ImmersiveAudioRuntime.setCarFader(draftCarFader)
         draftQuantum = persistedQuantum.coerceAtLeast(1)
         ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
     }
@@ -362,6 +368,7 @@ fun StereoSurroundScreen(navController: NavController) {
                     roomSize = draftRoomSize,
                     dampening = draftDampening,
                     stereoWidth = draftStereoWidth,
+                    carFader = draftCarFader,
                     quantumFrames = draftQuantum,
                     limiterEnabled = limiterEnabled,
                     bassEnabled = bassEnabled,
@@ -377,6 +384,7 @@ fun StereoSurroundScreen(navController: NavController) {
                     onRoomSizeChange = { draftRoomSize = it; roomSizePreference.value = it; ImmersiveAudioRuntime.setRoomSize(it) },
                     onDampeningChange = { draftDampening = it; dampeningPreference.value = it; ImmersiveAudioRuntime.setDampening(it) },
                     onStereoWidthChange = { draftStereoWidth = it; stereoWidthPreference.value = it; ImmersiveAudioRuntime.setStereoWidth(it) },
+                    onCarFaderChange = { draftCarFader = it; carFaderPreference.value = it; ImmersiveAudioRuntime.setCarFader(it) },
                     onQuantumChange = { value ->
                         draftQuantum = value.coerceAtLeast(1)
                         quantumPreference.value = draftQuantum
@@ -398,6 +406,7 @@ fun StereoSurroundScreen(navController: NavController) {
                         roomSizePreference.value = preset.roomSize
                         dampeningPreference.value = preset.dampening
                         stereoWidthPreference.value = preset.stereoWidth
+                        carFaderPreference.value = preset.carFader
                         quantumPreference.value = preset.quantumFrames
                     },
                     onSavePreset = { showSavePreset = true },
@@ -409,6 +418,7 @@ fun StereoSurroundScreen(navController: NavController) {
                         roomSizePreference.value = 0.5f
                         dampeningPreference.value = 0.5f
                         stereoWidthPreference.value = 0.5f
+                        carFaderPreference.value = 0f
                         quantumPreference.value = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES
                     },
                     diagnostics = diagnostics,
@@ -487,6 +497,7 @@ fun StereoSurroundScreen(navController: NavController) {
                             roomSize = draftRoomSize,
                             dampening = draftDampening,
                             stereoWidth = draftStereoWidth,
+                            carFader = draftCarFader,
                             quantumFrames = draftQuantum,
                         )
                         val updated = savedPresets.filterNot { it.name.equals(snapshot.name, ignoreCase = true) } + snapshot
@@ -780,6 +791,7 @@ private fun AdvancedImmersivePage(
     roomSize: Float,
     dampening: Float,
     stereoWidth: Float,
+    carFader: Float,
     quantumFrames: Int,
     limiterEnabled: Boolean,
     bassEnabled: Boolean,
@@ -799,6 +811,7 @@ private fun AdvancedImmersivePage(
     onRoomSizeChange: (Float) -> Unit,
     onDampeningChange: (Float) -> Unit,
     onStereoWidthChange: (Float) -> Unit,
+    onCarFaderChange: (Float) -> Unit,
     onQuantumChange: (Int) -> Unit,
     onLimiterChange: (Boolean) -> Unit,
     onBassEnabledChange: (Boolean) -> Unit,
@@ -843,6 +856,17 @@ private fun AdvancedImmersivePage(
         RoomParameterSlider("Room size", roomSize, 0f..1f, "${(roomSize * 100).roundToInt()}%", onRoomSizeChange)
         RoomParameterSlider("Dampening", dampening, 0f..1f, "${(dampening * 100).roundToInt()}%", onDampeningChange)
         RoomParameterSlider("Stereo width", stereoWidth, 0f..1f, "${(stereoWidth * 100).roundToInt()}%", onStereoWidthChange)
+        RoomParameterSlider(
+            "Front / rear fader",
+            carFader,
+            -1f..1f,
+            when {
+                carFader < -0.05f -> "Front ${((-carFader) * 100).roundToInt()}%"
+                carFader > 0.05f -> "Rear ${(carFader * 100).roundToInt()}%"
+                else -> "Center"
+            },
+            onCarFaderChange,
+        )
         QuantumSlider(quantumFrames, onQuantumChange)
         ToneOutputControls(
             limiterEnabled = limiterEnabled,

@@ -16,6 +16,7 @@ data class ImmersiveAudioPreset(
     val dampening: Float,
     val stereoWidth: Float,
     val quantumFrames: Int,
+    val carFader: Float = 0f,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("name", name.take(64))
@@ -28,6 +29,7 @@ data class ImmersiveAudioPreset(
         put("roomSize", roomSize.safeUnit())
         put("dampening", dampening.safeUnit())
         put("stereoWidth", stereoWidth.safeUnit())
+        put("carFader", carFader.safeFader())
         put("quantumFrames", quantumFrames.coerceIn(96, 2048))
     }
 
@@ -46,6 +48,7 @@ data class ImmersiveAudioPreset(
                 roomSize = value.optDouble("roomSize", 0.5).toFloat().safeUnit(),
                 dampening = value.optDouble("dampening", 0.5).toFloat().safeUnit(),
                 stereoWidth = value.optDouble("stereoWidth", 0.5).toFloat().safeUnit(),
+                carFader = value.optDouble("carFader", 0.0).toFloat().safeFader(),
                 quantumFrames = value.optInt("quantumFrames", 384).coerceIn(96, 2048),
             )
         }
@@ -65,4 +68,5 @@ data class ImmersiveAudioPreset(
 }
 
 private fun Float.safeUnit(): Float = takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+private fun Float.safeFader(): Float = takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
 private fun Float.safeReverb(): Float = takeIf(Float::isFinite)?.coerceIn(0.2f, 8f) ?: 1.35f

@@ -186,6 +186,7 @@ struct ImmersiveAudioEngine::Impl {
     float roomSizeNorm = 0.5f;
     float dampeningNorm = 0.5f;
     float widthNorm = 0.5f;
+    float carFader = 0.0f;
 
     // Tone stage controls.
     float bassGainDbValue = 0.0f;
@@ -382,6 +383,24 @@ struct ImmersiveAudioEngine::Impl {
                 reflectionTapCount = 6;
                 damping = 0.48f;
                 break;
+            case RoomSimulationPreset::ClosedCar:
+                // Compact cabin: four virtual speaker positions (front L/R and
+                // rear L/R), short reflective surfaces, and a tight tail.
+                tapDelaysMs[0] = 4.0f;
+                tapDelaysMs[1] = 7.0f;
+                tapDelaysMs[2] = 11.0f;
+                tapDelaysMs[3] = 16.0f;
+                tapDelaysMs[4] = 23.0f;
+                tapDelaysMs[5] = 31.0f;
+                tapGains[0] = 0.46f;
+                tapGains[1] = 0.39f;
+                tapGains[2] = 0.32f;
+                tapGains[3] = 0.26f;
+                tapGains[4] = 0.19f;
+                tapGains[5] = 0.13f;
+                reflectionTapCount = 6;
+                damping = 0.62f;
+                break;
         }
 
         // Normalize combined reflection-tap gain so correlated content (sustained bass, held
@@ -420,6 +439,7 @@ struct ImmersiveAudioEngine::Impl {
                 case RoomSimulationPreset::ConcertHall: return 79.0f;
                 case RoomSimulationPreset::Cathedral: return 107.0f;
                 case RoomSimulationPreset::Subway: return 86.0f;
+                case RoomSimulationPreset::ClosedCar: return 24.0f;
             }
             return 53.0f;
         }();
@@ -613,8 +633,21 @@ struct ImmersiveAudioEngine::Impl {
         // as their contribution to the reverb tank. Previously it only affected
         // the tank input, making the Reflection control appear ineffective when
         // the reverb tail was quiet.
-        const float wetL = (reflectionAmount * reflectionL) + (0.70f * reverbLowpassL);
-        const float wetR = (reflectionAmount * reflectionR) + (0.70f * reverbLowpassR);
+        float wetL = (reflectionAmount * reflectionL) + (0.70f * reverbLowpassL);
+        float wetR = (reflectionAmount * reflectionR) + (0.70f * reverbLowpassR);
+
+        if (roomPreset == RoomSimulationPreset::ClosedCar) {
+            // Model a four-speaker cabin: direct front speakers remain coherent,
+            // while rear speakers are represented by the short delayed cabin
+            // field. The fader changes the front/rear energy without changing
+            // the stereo balance of either pair.
+            const float frontWeight = 0.5f - (0.5f * carFader);
+            const float rearWeight = 1.0f - frontWeight;
+            const float frontL = 0.94f * left + 0.06f * right;
+            const float frontR = 0.94f * right + 0.06f * left;
+            wetL = frontWeight * frontL + rearWeight * wetL;
+            wetR = frontWeight * frontR + rearWeight * wetR;
+        }
 
         const float dryMix = 1.0f - effectiveRoomMix;
         left = dryMix * left + effectiveRoomMix * wetL;
@@ -827,6 +860,10 @@ void ImmersiveAudioEngine::setDampening(float dampening) noexcept {
 void ImmersiveAudioEngine::setStereoWidth(float width) noexcept {
     impl_->widthNorm = clampUnit(width);
     impl_->updateRoomModel();
+}
+
+void ImmersiveAudioEngine::setCarFader(float fader) noexcept {
+    impl_->carFader = std::isfinite(fader) ? std::clamp(fader, -1.0f, 1.0f) : 0.0f;
 }
 
 void ImmersiveAudioEngine::setBassGainDb(float gainDb) noexcept {

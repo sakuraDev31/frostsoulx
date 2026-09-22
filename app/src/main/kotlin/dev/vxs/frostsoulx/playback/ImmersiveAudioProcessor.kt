@@ -257,6 +257,7 @@ enum class ImmersiveRoomPreset(val nativeValue: Int, val label: String) {
     CONCERT_HALL(3, "Concert hall"),
     CATHEDRAL(4, "Cathedral"),
     SUBWAY(5, "Subway"),
+    CLOSED_CAR(6, "Closed car"),
     ;
 
     companion object {
@@ -281,6 +282,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
     @Volatile private var roomSize = 0.5f
     @Volatile private var dampening = 0.5f
     @Volatile private var stereoWidth = 0.5f
+    @Volatile private var carFader = 0f
     @Volatile private var quantumFrames = DEFAULT_QUANTUM_FRAMES
     @Volatile private var limiterEnabled = true
     @Volatile private var bassGainDb = 0f
@@ -308,6 +310,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
             setRoomSize(roomSize)
             setDampening(dampening)
             setStereoWidth(stereoWidth)
+            setCarFader(carFader)
             setQuantumFrames(quantumFrames)
             setLimiterEnabled(limiterEnabled)
             setBassGainDb(bassGainDb)
@@ -411,6 +414,11 @@ class ImmersiveAudioProcessor : AudioProcessor {
         if (nativeHandle != 0L) nativeSetStereoWidth(nativeHandle, stereoWidth)
     }
 
+    fun setCarFader(value: Float) {
+        carFader = value.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
+        if (nativeHandle != 0L) nativeSetCarFader(nativeHandle, carFader)
+    }
+
     fun setQuantumFrames(value: Int) {
         quantumFrames = value.coerceIn(MIN_QUANTUM_FRAMES, MAX_QUANTUM_FRAMES)
         if (nativeHandle != 0L) nativeSetQuantumFrames(nativeHandle, quantumFrames)
@@ -479,6 +487,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeSetRoomSize(handle: Long, size: Float)
         @JvmStatic private external fun nativeSetDampening(handle: Long, dampening: Float)
         @JvmStatic private external fun nativeSetStereoWidth(handle: Long, width: Float)
+        @JvmStatic private external fun nativeSetCarFader(handle: Long, fader: Float)
         @JvmStatic private external fun nativeSetQuantumFrames(handle: Long, quantumFrames: Int)
         @JvmStatic private external fun nativeReadDiagnostics(handle: Long): DoubleArray?
         @JvmStatic private external fun nativeProcess(handle: Long, pcmBuffer: ByteBuffer, frames: Int, encoding: Int)
@@ -497,6 +506,7 @@ object ImmersiveAudioRuntime {
     @Volatile private var roomSize = 0.5f
     @Volatile private var dampening = 0.5f
     @Volatile private var stereoWidth = 0.5f
+    @Volatile private var carFader = 0f
     @Volatile private var quantumFrames = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES
     @Volatile private var limiterEnabled = true
     @Volatile private var bassGainDb = 0f
@@ -520,6 +530,7 @@ object ImmersiveAudioRuntime {
         value.setRoomSize(roomSize)
         value.setDampening(dampening)
         value.setStereoWidth(stereoWidth)
+        value.setCarFader(carFader)
         value.setQuantumFrames(quantumFrames)
         value.setLimiterEnabled(limiterEnabled)
         value.setBassGainDb(bassGainDb)
@@ -586,6 +597,11 @@ object ImmersiveAudioRuntime {
     fun setStereoWidth(value: Float) {
         stereoWidth = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
         processor?.setStereoWidth(stereoWidth)
+    }
+
+    fun setCarFader(value: Float) {
+        carFader = value.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
+        processor?.setCarFader(carFader)
     }
     fun setQuantumFrames(value: Int) {
         quantumFrames = value.coerceIn(ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES, ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES)
