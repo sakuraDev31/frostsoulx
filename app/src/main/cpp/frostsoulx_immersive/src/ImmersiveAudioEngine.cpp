@@ -253,6 +253,8 @@ struct ImmersiveAudioEngine::Impl {
     float reverbInputScale = 0.28f;
     float reverbLowpassL = 0.0f;
     float reverbLowpassR = 0.0f;
+    float reflectionWetGain = 1.0f;
+    float reverbWetGain = 0.70f;
 
     // Bypass crossfade state.
     float transitionPosition = 0.0f; // linear 0..1
@@ -304,6 +306,8 @@ struct ImmersiveAudioEngine::Impl {
         float tapGains[6] = {0.38f, 0.26f, 0.19f, 0.14f, 0.0f, 0.0f};
         reflectionTapCount = 4;
         damping = 0.42f;
+        reflectionWetGain = 1.0f;
+        reverbWetGain = 0.70f;
 
         delayScale = 0.60f + 1.00f * roomSizeNorm;
         // Wider rooms should spread channels more; narrow rooms should mono-ish collapse.
@@ -350,6 +354,8 @@ struct ImmersiveAudioEngine::Impl {
                 tapGains[5] = 0.10f;
                 reflectionTapCount = 6;
                 damping = 0.50f;
+                reflectionWetGain = 1.10f;
+                reverbWetGain = 0.92f;
                 break;
             case RoomSimulationPreset::Cathedral:
                 tapDelaysMs[0] = 28.0f;
@@ -366,22 +372,29 @@ struct ImmersiveAudioEngine::Impl {
                 tapGains[5] = 0.11f;
                 reflectionTapCount = 6;
                 damping = 0.57f;
+                reflectionWetGain = 1.18f;
+                reverbWetGain = 1.00f;
                 break;
             case RoomSimulationPreset::Subway:
-                tapDelaysMs[0] = 18.0f;
-                tapDelaysMs[1] = 33.0f;
-                tapDelaysMs[2] = 56.0f;
-                tapDelaysMs[3] = 84.0f;
-                tapDelaysMs[4] = 119.0f;
-                tapDelaysMs[5] = 158.0f;
-                tapGains[0] = 0.36f;
-                tapGains[1] = 0.29f;
-                tapGains[2] = 0.22f;
-                tapGains[3] = 0.17f;
-                tapGains[4] = 0.12f;
-                tapGains[5] = 0.08f;
+                // A tunnel needs audible wall-return spacing, not a small-room
+                // flutter echo. These taps model the near wall, opposite wall,
+                // and progressively longer tunnel returns.
+                tapDelaysMs[0] = 32.0f;
+                tapDelaysMs[1] = 67.0f;
+                tapDelaysMs[2] = 118.0f;
+                tapDelaysMs[3] = 191.0f;
+                tapDelaysMs[4] = 289.0f;
+                tapDelaysMs[5] = 421.0f;
+                tapGains[0] = 0.42f;
+                tapGains[1] = 0.34f;
+                tapGains[2] = 0.27f;
+                tapGains[3] = 0.21f;
+                tapGains[4] = 0.16f;
+                tapGains[5] = 0.12f;
                 reflectionTapCount = 6;
-                damping = 0.48f;
+                damping = 0.38f;
+                reflectionWetGain = 1.35f;
+                reverbWetGain = 1.12f;
                 break;
             case RoomSimulationPreset::ClosedCar:
                 // Compact cabin: four virtual speaker positions (front L/R and
@@ -474,9 +487,10 @@ struct ImmersiveAudioEngine::Impl {
     void initializeRoomBuffers() noexcept {
         if (sampleRate <= 0) return;
 
-        // Keep memory bounded: reflection ring up to 240 ms, reverb ring up to 1.5 s.
-        const int reflectionRing = std::max(2, static_cast<int>(static_cast<float>(sampleRate) * 0.240f));
-        const int reverbRing = std::max(2, static_cast<int>(static_cast<float>(sampleRate) * 1.5f));
+        // Keep enough history for the long Subway/tunnel returns while staying
+        // small enough for mobile: reflection ring up to 700 ms, reverb ring 3 s.
+        const int reflectionRing = std::max(2, static_cast<int>(static_cast<float>(sampleRate) * 0.700f));
+        const int reverbRing = std::max(2, static_cast<int>(static_cast<float>(sampleRate) * 3.0f));
 
         reflectionDelayLeft.assign(static_cast<std::size_t>(reflectionRing), 0.0f);
         reflectionDelayRight.assign(static_cast<std::size_t>(reflectionRing), 0.0f);
@@ -633,8 +647,8 @@ struct ImmersiveAudioEngine::Impl {
         // as their contribution to the reverb tank. Previously it only affected
         // the tank input, making the Reflection control appear ineffective when
         // the reverb tail was quiet.
-        float wetL = (reflectionAmount * reflectionL) + (0.70f * reverbLowpassL);
-        float wetR = (reflectionAmount * reflectionR) + (0.70f * reverbLowpassR);
+        float wetL = (reflectionAmount * reflectionWetGain * reflectionL) + (reverbWetGain * reverbLowpassL);
+        float wetR = (reflectionAmount * reflectionWetGain * reflectionR) + (reverbWetGain * reverbLowpassR);
 
         if (roomPreset == RoomSimulationPreset::ClosedCar) {
             // Explicit four-speaker cabin field. The front pair is coherent and
