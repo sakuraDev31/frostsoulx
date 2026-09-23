@@ -9,7 +9,7 @@
 #include <limits>
 #include <memory>
 
-#include "frostsoulx/ImmersiveAudioEngine.h"
+#include "frostsoulx/immersive_audio_engine.h"
 
 namespace {
 // 384 frames is the low-latency default. The engine internally subdivides larger
@@ -91,6 +91,13 @@ struct Diagnostics {
 struct Handle {
     frostsoulx::ImmersiveAudioEngine engine;
     std::atomic<bool> enabled{false};
+    std::atomic<float> bassGainDb{0.0f};
+    std::atomic<float> trebleGainDb{0.0f};
+    std::atomic<float> outputGainDb{0.0f};
+    std::atomic<int> roomPreset{2};
+    std::atomic<float> roomMix{0.18f};
+    std::atomic<float> reflectionAmount{0.28f};
+    std::atomic<float> carFader{0.0f};
     int sampleRate = 0;
     int encoding = 0;
     std::atomic<int> lastHostCallbackFrames{0};
@@ -103,6 +110,8 @@ struct Handle {
     float previousOutputL = 0.0f;
     float previousOutputR = 0.0f;
     bool hasPreviousSample = false;
+    float toneLowL = 0.0f;
+    float toneLowR = 0.0f;
 };
 
 void atomicAdd(std::atomic<double>& target, double value) noexcept {
@@ -215,6 +224,71 @@ int resultCode(frostsoulx::ImmersiveProcessResult result) noexcept {
     return static_cast<int>(result);
 }
 
+void applyPhysicalPreset(Handle& handle, int preset) noexcept {
+    using Preset = frostsoulx::spatial::SpaceProfile::Preset;
+    handle.roomPreset.store(preset, std::memory_order_relaxed);
+    switch (preset) {
+        case 1:
+            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
+            handle.engine.setSpacePreset(Preset::Bathroom);
+            break;
+        case 2:
+            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
+            handle.engine.setSpacePreset(Preset::LivingRoom);
+            break;
+        case 3:
+            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
+            handle.engine.setSpacePreset(Preset::ConcertHall);
+            break;
+        case 4:
+            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
+            handle.engine.setSpacePreset(Preset::LargeHall);
+            break;
+        case 5:
+            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
+            handle.engine.setSpacePreset(Preset::LongSubwayTunnel);
+            break;
+        case 6:
+            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
+            handle.engine.setSpacePreset(Preset::ClosedCar);
+            break;
+        case 0:
+        default:
+            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::Native);
+            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Off);
+            break;
+    }
+}
+
+void applyCarFader(Handle& handle, float fader) noexcept {
+    const float safe = std::isfinite(fader) ? std::clamp(fader, -1.0f, 1.0f) : 0.0f;
+    handle.carFader.store(safe, std::memory_order_relaxed);
+    if (handle.roomPreset.load(std::memory_order_relaxed) == 6) {
+        // The canonical ClosedCar profile uses front/back Z geometry. Keep the
+        // existing UI fader meaningful by moving the virtual source between the
+        // front and rear cabin positions while retaining the physical BRIR path.
+        handle.engine.setSourcePosition(0.4f, -0.3f, 0.6f + 0.4f * safe);
+    }
+}
+
+void applyTone(Handle& handle, float* interleavedStereo, int frames) noexcept {
+    const float bass = std::pow(10.0f, handle.bassGainDb.load(std::memory_order_relaxed) / 20.0f);
+    const float treble = std::pow(10.0f, handle.trebleGainDb.load(std::memory_order_relaxed) / 20.0f);
+    const float output = std::pow(10.0f, handle.outputGainDb.load(std::memory_order_relaxed) / 20.0f);
+    const float lowAlpha = std::clamp(120.0f / std::max(8000.0f, static_cast<float>(handle.sampleRate)),
+                                      0.005f, 0.03f);
+    for (int frame = 0; frame < frames; ++frame) {
+        float& left = interleavedStereo[frame * 2];
+        float& right = interleavedStereo[frame * 2 + 1];
+        handle.toneLowL += lowAlpha * (left - handle.toneLowL);
+        handle.toneLowR += lowAlpha * (right - handle.toneLowR);
+        const float highL = left - handle.toneLowL;
+        const float highR = right - handle.toneLowR;
+        left = (left + (bass - 1.0f) * handle.toneLowL + (treble - 1.0f) * highL) * output;
+        right = (right + (bass - 1.0f) * handle.toneLowR + (treble - 1.0f) * highR) * output;
+    }
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -224,6 +298,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeCreate(
     handle->sampleRate = sampleRate;
     handle->encoding = encoding;
     if (!handle->engine.prepare(sampleRate, kMaxQuantumFrames)) return 0L;
+    applyPhysicalPreset(*handle, 2);
     handle->engine.setEnabled(false);
     handle->engine.setSpatialBlend(0.0f);
     handle->diagnostics.nativeStatus.store(resultCode(handle->engine.lastProcessResult()), std::memory_order_relaxed);
@@ -258,6 +333,8 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReset(
         handle->previousOutputL = 0.0f;
         handle->previousOutputR = 0.0f;
         handle->hasPreviousSample = false;
+        handle->toneLowL = 0.0f;
+        handle->toneLowR = 0.0f;
     }
 }
 
@@ -310,8 +387,8 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomPreset(
     JNIEnv*, jclass, jlong address, jint preset) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         const int safePreset = std::clamp(static_cast<int>(preset), 0, 6);
-        handle->engine.setRoomSimulationPreset(
-            static_cast<frostsoulx::RoomSimulationPreset>(safePreset));
+        applyPhysicalPreset(*handle, safePreset);
+        applyCarFader(*handle, handle->carFader.load(std::memory_order_relaxed));
     }
 }
 
@@ -319,7 +396,10 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomMix(
     JNIEnv*, jclass, jlong address, jfloat wetMix) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        handle->engine.setRoomMix(std::isfinite(wetMix) ? std::clamp(wetMix, 0.0f, 1.0f) : 0.0f);
+        const float safe = std::isfinite(wetMix) ? std::clamp(wetMix, 0.0f, 1.0f) : 0.0f;
+        handle->roomMix.store(safe, std::memory_order_relaxed);
+        handle->engine.setReflectionDensity(
+            0.5f * safe + 0.5f * handle->reflectionAmount.load(std::memory_order_relaxed));
     }
 }
 
@@ -327,7 +407,10 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetReflectionAmount(
     JNIEnv*, jclass, jlong address, jfloat amount) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        handle->engine.setReflectionAmount(std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.0f);
+        const float safe = std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.0f;
+        handle->reflectionAmount.store(safe, std::memory_order_relaxed);
+        handle->engine.setReflectionDensity(
+            0.5f * safe + 0.5f * handle->roomMix.load(std::memory_order_relaxed));
     }
 }
 
@@ -336,7 +419,8 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetReverbTimeSeco
     JNIEnv*, jclass, jlong address, jfloat seconds) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         const float safeSeconds = std::isfinite(seconds) ? std::clamp(seconds, 0.2f, 8.0f) : 1.35f;
-        handle->engine.setReverbTimeSeconds(safeSeconds);
+        const auto taps = static_cast<std::size_t>(std::lround(2048.0f + (safeSeconds / 8.0f) * 30720.0f));
+        handle->engine.setIrLength(taps);
     }
 }
 
@@ -368,7 +452,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetCarFader(
     JNIEnv*, jclass, jlong address, jfloat fader) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        handle->engine.setCarFader(std::isfinite(fader) ? std::clamp(fader, -1.0f, 1.0f) : 0.0f);
+        applyCarFader(*handle, fader);
     }
 }
 
@@ -376,7 +460,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetBassGainDb(
     JNIEnv*, jclass, jlong address, jfloat gainDb) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        handle->engine.setBassGainDb(std::isfinite(gainDb) ? std::clamp(gainDb, -12.0f, 12.0f) : 0.0f);
+        handle->bassGainDb.store(std::isfinite(gainDb) ? std::clamp(gainDb, -12.0f, 12.0f) : 0.0f,
+                                 std::memory_order_relaxed);
     }
 }
 
@@ -384,7 +469,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetTrebleGainDb(
     JNIEnv*, jclass, jlong address, jfloat gainDb) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        handle->engine.setTrebleGainDb(std::isfinite(gainDb) ? std::clamp(gainDb, -12.0f, 12.0f) : 0.0f);
+        handle->trebleGainDb.store(std::isfinite(gainDb) ? std::clamp(gainDb, -12.0f, 12.0f) : 0.0f,
+                                   std::memory_order_relaxed);
     }
 }
 
@@ -392,7 +478,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetOutputGainDb(
     JNIEnv*, jclass, jlong address, jfloat gainDb) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        handle->engine.setOutputGainDb(std::isfinite(gainDb) ? std::clamp(gainDb, -24.0f, 12.0f) : 0.0f);
+        handle->outputGainDb.store(std::isfinite(gainDb) ? std::clamp(gainDb, -24.0f, 12.0f) : 0.0f,
+                                   std::memory_order_relaxed);
     }
 }
 
@@ -474,6 +561,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
             auto* samplesFloat = reinterpret_cast<float*>(bytes) + sampleOffset;
             std::copy(samplesFloat, samplesFloat + samples, handle->inputSnapshot.begin());
             std::copy(samplesFloat, samplesFloat + samples, handle->scratch.begin());
+            applyTone(*handle, handle->scratch.data(), chunkFrames);
             const auto started = std::chrono::steady_clock::now();
             const bool processed = handle->enabled.load(std::memory_order_relaxed) && handle->engine.process(handle->scratch.data(), chunkFrames);
             const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count();
@@ -500,6 +588,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                 handle->scratch[frame * 2 + 1] = readPcm16(samples16[frame * 2 + 1]);
             }
             std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, handle->inputSnapshot.begin());
+            applyTone(*handle, handle->scratch.data(), chunkFrames);
             const auto started = std::chrono::steady_clock::now();
             const bool processed = handle->enabled.load(std::memory_order_relaxed) && handle->engine.process(handle->scratch.data(), chunkFrames);
             const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count();
