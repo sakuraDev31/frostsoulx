@@ -48,10 +48,18 @@ android {
 
     defaultConfig {
     applicationId = "dev.vxs.frostsoulx"
-        minSdk = 26
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-std=c++17 -fno-exceptions -fno-rtti"
+            }
+        }
+        // Android 7.0/API 24. Newer platform-only features are guarded at
+        // runtime and use compatibility fallbacks where available.
+        minSdk = 24
         targetSdk = 37
-        versionCode = 144
-        versionName = "14.0.5" // Release provenance: lyrics compiler fix c52f0f955
+        versionCode = 146
+        versionName = "14.0.7" // Release provenance: low-latency audio and UI polish
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -94,6 +102,13 @@ android {
         buildConfigField("String", "NIGHTLY_BUILD_HASH", "\"$nightlyBuildHash\"")
         buildConfigField("String", "DISTRIBUTION", "\"gms\"")
         buildConfigField("boolean", "UPDATER_AVAILABLE", "true")
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     flavorDimensions += listOf("distribution", "device", "abi")
@@ -189,7 +204,7 @@ android {
     }
 
     compileOptions {
-        isCoreLibraryDesugaringEnabled = false
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
@@ -253,6 +268,9 @@ dependencies {
     implementation(libs.datastore)
     implementation(libs.work.runtime)
     implementation("androidx.browser:browser:1.10.0")
+    implementation("com.github.Dimezis:BlurView:version-3.2.0")
+    implementation("dev.chrisbanes.haze:haze:2.0.0-beta02")
+    implementation("dev.chrisbanes.haze:haze-blur:2.0.0-beta02")
 
     implementation(libs.compose.runtime)
     implementation(libs.compose.foundation)
@@ -294,6 +312,7 @@ dependencies {
     implementation("androidx.glance:glance-material3:1.1.1")
 
     implementation(libs.media3)
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)

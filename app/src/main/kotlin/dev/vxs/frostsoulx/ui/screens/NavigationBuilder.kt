@@ -7,6 +7,7 @@
 
 package dev.vxs.frostsoulx.ui.screens
 
+import dev.vxs.frostsoulx.ui.screens.settings.FrostSoulSettingsPage
 import android.net.Uri
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -15,6 +16,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.runtime.remember
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -55,6 +58,7 @@ import dev.vxs.frostsoulx.ui.screens.settings.AppearanceSettings
 import dev.vxs.frostsoulx.ui.screens.settings.BackupAndRestore
 import dev.vxs.frostsoulx.ui.screens.settings.ChangelogScreen
 import dev.vxs.frostsoulx.ui.screens.settings.ChiperSettings
+import dev.vxs.frostsoulx.ui.screens.settings.TasteProfileScreen
 import dev.vxs.frostsoulx.ui.screens.settings.ContentSettings
 import dev.vxs.frostsoulx.ui.screens.settings.CustomizeBackground
 import dev.vxs.frostsoulx.ui.screens.settings.DebugSettings
@@ -74,6 +78,7 @@ import dev.vxs.frostsoulx.ui.screens.settings.PoTokenScreen
 import dev.vxs.frostsoulx.ui.screens.settings.PrivacySettings
 import dev.vxs.frostsoulx.ui.screens.settings.SettingsScreen
 import dev.vxs.frostsoulx.ui.screens.settings.StorageSettings
+import dev.vxs.frostsoulx.ui.screens.settings.StereoSurroundScreen
 import dev.vxs.frostsoulx.ui.screens.settings.UpdateScreen
 import dev.vxs.frostsoulx.viewmodels.OnlineSearchSort
 
@@ -113,20 +118,22 @@ fun NavGraphBuilder.navigationBuilder(
     composable("history") {
         HistoryScreen(navController)
     }
+    composable(
+        route = "home_collection/{kind}",
+        arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+    ) { backStackEntry ->
+        val homeEntry = remember(backStackEntry) {
+            // Reuse Home's ranked shelves instead of starting another load/sync cycle.
+            runCatching { navController.getBackStackEntry(Screens.Home.route) }.getOrDefault(backStackEntry)
+        }
+        FrostSoulHomeCollectionScreen(
+            navController = navController,
+            kind = backStackEntry.arguments?.getString("kind").orEmpty(),
+            viewModel = hiltViewModel(homeEntry),
+        )
+    }
     composable("stats") {
         StatsScreen(navController)
-    }
-    composable("news") {
-        NewsScreen(navController)
-    }
-    composable(
-        route = "view_news/{newsId}",
-        arguments =
-            listOf(
-                navArgument("newsId") { type = NavType.StringType },
-            ),
-    ) {
-        ViewNewsScreen(navController)
     }
     composable(
         route = "year_in_music?year={year}",
@@ -374,75 +381,82 @@ fun NavGraphBuilder.navigationBuilder(
         YouTubeBrowseScreen(navController)
     }
     composable("settings") {
-        SettingsScreen(navController, latestVersionName())
+        FrostSoulSettingsPage { SettingsScreen(navController, latestVersionName()) }
     }
     composable("settings/account") {
-        AccountSettings(navController, latestVersionName())
+        FrostSoulSettingsPage { AccountSettings(navController, latestVersionName()) }
     }
     composable("settings/hidden_playlists") {
-        HiddenPlaylistsScreen(navController)
+        FrostSoulSettingsPage { HiddenPlaylistsScreen(navController) }
     }
     composable("settings/appearance") {
-        AppearanceSettings(navController)
+        FrostSoulSettingsPage { AppearanceSettings(navController) }
     }
     composable("settings/appearance/icon") {
-        IconScreen(navController)
+        FrostSoulSettingsPage { IconScreen(navController) }
     }
     composable("settings/appearance/lyrics_animations") {
-        LyricsAnimationSettings(navController)
+        FrostSoulSettingsPage { LyricsAnimationSettings(navController) }
     }
     composable("settings/content") {
-        ContentSettings(navController)
+        FrostSoulSettingsPage { ContentSettings(navController) }
     }
     composable("settings/lyrics") {
-        LyricsSettings(navController)
+        FrostSoulSettingsPage { LyricsSettings(navController) }
     }
     composable("settings/internet") {
-        InternetSettings(navController)
+        FrostSoulSettingsPage { InternetSettings(navController) }
     }
     composable("settings/player") {
-        PlayerSettings(navController)
+        FrostSoulSettingsPage { PlayerSettings(navController) }
     }
     composable("settings/player/chiper") {
-        ChiperSettings(navController)
+        FrostSoulSettingsPage { ChiperSettings(navController) }
     }
     composable("settings/storage") {
-        StorageSettings(navController)
+        FrostSoulSettingsPage { StorageSettings(navController) }
     }
     composable("settings/privacy") {
-        PrivacySettings(navController)
+        FrostSoulSettingsPage { PrivacySettings(navController) }
     }
     composable("settings/backup_restore") {
-        BackupAndRestore(navController)
+        FrostSoulSettingsPage { BackupAndRestore(navController) }
     }
     composable("settings/discord") {
-        DiscordSettings(navController)
+        FrostSoulSettingsPage { DiscordSettings(navController) }
     }
     composable("settings/integration") {
-        IntegrationScreen(navController)
+        FrostSoulSettingsPage { IntegrationScreen(navController) }
     }
     composable("settings/ai_integration") {
-        AiIntegrationSettings(navController)
+        FrostSoulSettingsPage { AiIntegrationSettings(navController) }
     }
     composable("settings/music_together") {
-        MusicTogetherScreen(navController)
+        FrostSoulSettingsPage { MusicTogetherScreen(navController) }
+    }
+    composable("settings/surround") {
+        FrostSoulSettingsPage { StereoSurroundScreen(navController) }
     }
     composable("settings/lastfm") {
-        LastFMSettings(navController)
+        FrostSoulSettingsPage { LastFMSettings(navController) }
+    }
+    composable("settings/taste_profile") {
+        FrostSoulSettingsPage { TasteProfileScreen(navController) }
     }
     composable("settings/discord/experimental") {
-        dev.vxs.frostsoulx.ui.screens.settings
-            .DiscordExperimental(navController)
+        FrostSoulSettingsPage {
+            dev.vxs.frostsoulx.ui.screens.settings.DiscordExperimental(navController)
+        }
     }
     composable("settings/misc") {
-        DebugSettings(navController)
+        FrostSoulSettingsPage { DebugSettings(navController) }
     }
     composable("settings/logcat") {
-        LogcatScreen(navController)
+        FrostSoulSettingsPage { LogcatScreen(navController) }
     }
     if (BuildConfig.UPDATER_AVAILABLE) {
         composable("settings/update") {
-            UpdateScreen(navController, onUpToDate = onClearUpdateBadge)
+            FrostSoulSettingsPage { UpdateScreen(navController, onUpToDate = onClearUpdateBadge) }
         }
     }
     composable(
@@ -458,16 +472,16 @@ fun NavGraphBuilder.navigationBuilder(
     ) { backStackEntry ->
         val channelName = backStackEntry.arguments?.getString("channel")
         val channel = UpdateChannel.fromStoredName(channelName, defaultUpdateChannel)
-        ChangelogScreen(navController, channel = channel)
+        FrostSoulSettingsPage { ChangelogScreen(navController, channel = channel) }
     }
     composable("settings/about") {
-        AboutScreen(navController)
+        FrostSoulSettingsPage { AboutScreen(navController) }
     }
     composable(PO_TOKEN_ROUTE) {
-        PoTokenScreen(navController)
+        FrostSoulSettingsPage { PoTokenScreen(navController) }
     }
     composable("customize_background") {
-        CustomizeBackground(navController)
+        FrostSoulSettingsPage { CustomizeBackground(navController) }
     }
     composable(
         route = "$LOGIN_ROUTE?$LOGIN_URL_ARGUMENT={$LOGIN_URL_ARGUMENT}",

@@ -698,6 +698,16 @@ interface DatabaseDao {
     @Query("SELECT * FROM song")
     fun allSongs(): Flow<List<Song>>
 
+    // Bound Room relation hydration: Home must not load the complete downloaded library.
+    @Transaction
+    @Query("SELECT * FROM song ORDER BY RANDOM() LIMIT :limit")
+    suspend fun homeRecommendationCandidates(limit: Int = 240): List<Song>
+
+    @Transaction
+    @Query("SELECT song.* FROM song INNER JOIN related_song_map ON song.id = related_song_map.relatedSongId WHERE related_song_map.songId = :songId LIMIT :limit")
+    suspend fun homeRelatedSongs(songId: String, limit: Int = 32): List<Song>
+
+
     @Transaction
     @SuppressWarnings(RoomWarnings.QUERY_MISMATCH)
     @Query("SELECT * FROM album ORDER BY rowId")
@@ -1286,6 +1296,23 @@ interface DatabaseDao {
         """,
     )
     fun playlistPlayCounts(): Flow<List<PlaylistPlayCount>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT playlist.*, (SELECT COUNT(*) FROM playlist_song_map WHERE playlistId = playlist.id) AS songCount
+        FROM playlist
+        JOIN (
+            SELECT playlist_song_map.playlistId AS playlistId, MAX(event.rowId) AS latestRowId
+            FROM event
+            JOIN playlist_song_map ON playlist_song_map.songId = event.songId
+            GROUP BY playlist_song_map.playlistId
+        ) recent ON playlist.id = recent.playlistId
+        ORDER BY recent.latestRowId DESC
+        LIMIT :limit
+        """,
+    )
+    fun recentlyPlayedPlaylists(limit: Int = 20): Flow<List<Playlist>>
 
     @Transaction
     @Query(

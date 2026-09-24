@@ -46,6 +46,15 @@ fun buildSettingsGroups(
             accentColor = MaterialTheme.colorScheme.primary,
             onClick = { navController.navigate("stats") },
         )
+    val tasteProfile =
+        SettingsItem(
+            key = "taste_profile",
+            icon = painterResource(R.drawable.graphic_eq),
+            title = stringResource(R.string.settings_taste_profile_title),
+            subtitle = stringResource(R.string.settings_taste_profile_subtitle),
+            accentColor = MaterialTheme.colorScheme.tertiary,
+            onClick = { navController.navigate("settings/taste_profile") },
+        )
     val appearance =
         SettingsItem(
             key = "appearance",
@@ -238,7 +247,7 @@ fun buildSettingsGroups(
     return listOf(
         SettingsGroup(
             title = stringResource(R.string.settings),
-            items = listOf(account, stats),
+            items = listOf(account, stats, tasteProfile),
         ),
         SettingsGroup(
             title = stringResource(R.string.settings_section_player_content),

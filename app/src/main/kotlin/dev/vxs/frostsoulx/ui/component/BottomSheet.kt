@@ -68,9 +68,19 @@ fun BottomSheet(
     backgroundColor: Color,
     onDismiss: (() -> Unit)? = null,
     collapsedContentHeight: Dp? = null,
+    sharedArtworkKey: String? = null,
+    immersiveArtwork: Boolean = false,
     collapsedContent: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    if (sharedArtworkKey != null) {
+        PlayerArtworkBottomSheet(
+            state, sharedArtworkKey, modifier, backgroundColor, onDismiss,
+            collapsedContentHeight, collapsedContent, content,
+            immersive = immersiveArtwork,
+        )
+        return
+    }
     val sheetDragModifier =
         if (!state.isCollapsed && !state.isDismissed) {
             Modifier.bottomSheetDraggable(state, onDismiss)

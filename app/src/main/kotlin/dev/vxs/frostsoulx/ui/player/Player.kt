@@ -1003,6 +1003,8 @@ fun BottomSheetPlayer(
         onDismiss = {
             playerConnection.service.stopAndClearPlayback(clearPersistentState = true)
         },
+        sharedArtworkKey = mediaMetadata?.id.takeUnless { aodModeEnabled },
+        immersiveArtwork = playerDesignStyle == PlayerDesignStyle.ARTWORK_BLUR,
         collapsedContentHeight = MiniPlayerHeight,
         collapsedContent = {
             MiniPlayer(
@@ -1083,7 +1085,11 @@ fun BottomSheetPlayer(
                 !aodModeEnabled
         val shouldUseArtworkCanvas =
             archiveTuneCanvasEnabled &&
-                (playerDesignStyle == PlayerDesignStyle.V8 || playerDesignStyle == PlayerDesignStyle.V9) &&
+                (
+                    playerDesignStyle == PlayerDesignStyle.V8 ||
+                        playerDesignStyle == PlayerDesignStyle.V9 ||
+                        playerDesignStyle == PlayerDesignStyle.FROSTSOUL
+                ) &&
                 !aodModeEnabled
         val shouldFetchV7Canvas = shouldUseV7Canvas && !lowDataModeActive
         val shouldFetchArtworkCanvas = shouldUseArtworkCanvas && !lowDataModeActive
@@ -1249,6 +1255,9 @@ if (!aodModeEnabled) {
                     playerDesignStyle = playerDesignStyle,
                     playerBackgroundStyle = playerBackground,
                     blurRadius = if (disableBlur) 0f else blurRadius,
+                    canvasStaticUrl = artworkCanvas?.static,
+                    canvasPrimaryUrl = artworkCanvas?.animated,
+                    canvasFallbackUrl = artworkCanvas?.videoUrl,
                     positionMs = sliderPosition ?: position,
                     durationMs = duration,
                     isPlaying = isPlaying,
@@ -1275,6 +1284,7 @@ if (!aodModeEnabled) {
                         }
                     },
                     sleepTimerActive = sleepTimerEnabled,
+                    sleepTimerRemainingMs = sleepTimerTimeLeft,
                     onOpenSleepTimer = {
                         if (sleepTimerEnabled) {
                             playerConnection.service.sleepTimer.clear()

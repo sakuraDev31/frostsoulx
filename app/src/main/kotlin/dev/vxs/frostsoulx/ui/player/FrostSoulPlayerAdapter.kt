@@ -9,6 +9,8 @@ package dev.vxs.frostsoulx.ui.player
 
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.media3.exoplayer.offline.Download
+import dev.vxs.frostsoulx.LocalDatabase
+import dev.vxs.frostsoulx.LocalSyncUtils
 import dev.vxs.frostsoulx.LocalDownloadUtil
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -64,6 +66,10 @@ internal fun FrostSoulPlayerAdapter(
     onCollapse: () -> Unit,
     onOpenOptions: () -> Unit = {},
     sleepTimerActive: Boolean = false,
+    sleepTimerRemainingMs: Long = 0L,
+    canvasStaticUrl: String? = null,
+    canvasPrimaryUrl: String? = null,
+    canvasFallbackUrl: String? = null,
     onOpenSleepTimer: () -> Unit = {},
     onSearchTrack: () -> Unit = {},
     onOpenAlbum: () -> Unit = {},
@@ -73,6 +79,10 @@ internal fun FrostSoulPlayerAdapter(
     val palette = rememberFrostSoulPalette(mediaMetadata.thumbnailUrl)
     val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
     val isRefetchingLyrics by lyricsMenuViewModel.isRefetching.collectAsStateWithLifecycle()
+    val database = LocalDatabase.current
+    val syncUtils = LocalSyncUtils.current
+    val likedSongs by remember(database) { database.likedSongsByRowIdAsc() }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val likedIds = remember(likedSongs) { likedSongs.map { it.song.id }.toSet() }
     val downloadUtil = LocalDownloadUtil.current
     val downloads by downloadUtil.downloads.collectAsStateWithLifecycle()
     val downloadProgress =
@@ -110,6 +120,7 @@ internal fun FrostSoulPlayerAdapter(
         }
     }
     val repeatMode by playerConnection.repeatMode.collectAsState()
+    val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsState()
     val currentFormat by playerConnection.currentFormat.collectAsState(initial = null)
     val outputDevice by playerConnection.service.activeAudioDevice.collectAsStateWithLifecycle()
     val audioQualityBadge =
@@ -127,7 +138,7 @@ internal fun FrostSoulPlayerAdapter(
             }
         }
     val queue =
-        remember(queueWindows, currentQueueIndex) {
+        remember(queueWindows, currentQueueIndex, likedIds) {
             queueWindows.mapIndexedNotNull { index, window ->
                 val item = window.mediaItem.metadata ?: return@mapIndexedNotNull null
                 FrostSoulQueueItem(
@@ -140,6 +151,7 @@ internal fun FrostSoulPlayerAdapter(
                     albumTitle = item.album?.title,
                     durationMs = item.duration.coerceAtLeast(0).toLong() * 1_000L,
                     isCurrent = index == currentQueueIndex,
+                    isLiked = item.id in likedIds,
                 )
             }
         }
@@ -169,10 +181,15 @@ internal fun FrostSoulPlayerAdapter(
             downloadProgress,
             isRefetchingLyrics,
             sleepTimerActive,
+            sleepTimerRemainingMs,
             repeatMode,
+            shuffleModeEnabled,
             blurRadius,
             palette,
             playerBackgroundStyle,
+            canvasStaticUrl,
+            canvasPrimaryUrl,
+            canvasFallbackUrl,
         ) {
             FrostSoulPlayerUiState(
                 track = FrostSoulTrack.from(mediaMetadata, isLiked),
@@ -197,22 +214,31 @@ internal fun FrostSoulPlayerAdapter(
                 outputDevice = outputDevice,
                 downloadProgress = downloadProgress,
                 sleepTimerActive = sleepTimerActive,
+                sleepTimerRemainingMs = sleepTimerRemainingMs,
                 repeatMode = repeatMode,
+                shuffleModeEnabled = shuffleModeEnabled,
                 blurRadius = blurRadius,
                 palette = palette,
                 playerBackgroundStyle = playerBackgroundStyle,
+                canvasStaticUrl = canvasStaticUrl,
+                canvasPrimaryUrl = canvasPrimaryUrl,
+                canvasFallbackUrl = canvasFallbackUrl,
             )
         }
     val actions =
-        remember(playerConnection, queueWindows, onCollapse, applicationContext, mediaMetadata, isRefetchingLyrics, downloads, onOpenSleepTimer) {
+        remember(playerConnection, queueWindows, onCollapse, applicationContext, mediaMetadata, isRefetchingLyrics, downloads, onOpenSleepTimer, onOpenOptions, onOpenAlbum, database, syncUtils) {
             FrostSoulPlayerActions(
                 onDismiss = onCollapse,
                 onTogglePlayPause = { playerConnection.player.togglePlayPause() },
                 onSkipPrevious = playerConnection::seekToPrevious,
                 onSkipNext = playerConnection::seekToNext,
                 onToggleRepeat = { playerConnection.player.toggleRepeatMode() },
+                onToggleShuffle = {
+                    playerConnection.player.shuffleModeEnabled = !playerConnection.player.shuffleModeEnabled
+                },
                 onSeek = { targetPosition -> playerConnection.player.seekTo(targetPosition) },
                 onToggleLike = playerConnection::toggleLike,
+                onToggleDislike = playerConnection::toggleDislike,
                 onOpenAudioOutput = {
                     SystemMediaControlResolver.openMediaOutputSwitcher(applicationContext)
                 },
@@ -227,18 +253,42 @@ internal fun FrostSoulPlayerAdapter(
                 onOpenSleepTimer = onOpenSleepTimer,
                 onOpenAlbum = onOpenAlbum,
                 onRefetchLyrics = { lyricsMenuViewModel.refetchLyrics(mediaMetadata) },
-                                isRefetchingLyrics = isRefetchingLyrics,
+                isRefetchingLyrics = isRefetchingLyrics,
+                onRemoveQueueItem = { index ->
+                    // Match the exact occurrence; duplicate tracks must not target the first copy.
+                    val expected = queueWindows.getOrNull(index)?.mediaItem
+                    if (expected != null && index < playerConnection.player.mediaItemCount &&
+                        playerConnection.player.getMediaItemAt(index).mediaId == expected.mediaId) {
+                        playerConnection.player.removeMediaItem(index)
+                    }
+                },
+                onToggleQueueLike = { index ->
+                    queueWindows.getOrNull(index)?.mediaItem?.metadata?.let { metadata ->
+                        database.transaction {
+                            insert(metadata)
+                            getSongByIdBlocking(metadata.id)?.song?.toggleLike()?.let { song ->
+                                update(song)
+                                syncUtils.likeSong(song)
+                            }
+                        }
+                    }
+                },
+                onDownloadQueue = {
+                    sendAddMissingDownloads(
+                        context = applicationContext,
+                        songs = queueWindows.mapNotNull { it.mediaItem.metadata }
+                            .distinctBy { it.id }.map { HeaderDownloadItem(id = it.id, title = it.title) },
+                        downloads = downloads,
+                    )
+                },
                 onSelectQueueItem = { queueIndex ->
 
                     val targetWindow = queueWindows.getOrNull(queueIndex)
-                    if (targetWindow != null) {
-                        val targetMediaId = targetWindow.mediaItem.mediaId
-                        val mediaIndex = playerConnection.player.mediaItems.indexOfFirst { it.mediaId == targetMediaId }
-                        if (mediaIndex >= 0) {
-                            playerConnection.player.seekToDefaultPosition(mediaIndex)
-                            playerConnection.player.prepare()
-                            playerConnection.player.play()
-                        }
+                    if (targetWindow != null && queueIndex < playerConnection.player.mediaItemCount &&
+                        playerConnection.player.getMediaItemAt(queueIndex).mediaId == targetWindow.mediaItem.mediaId) {
+                        playerConnection.player.seekToDefaultPosition(queueIndex)
+                        playerConnection.player.prepare()
+                        playerConnection.player.play()
                     }
                 },
             )

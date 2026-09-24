@@ -7,7 +7,8 @@
 
 package dev.vxs.frostsoulx.ui.component
 
-import androidx.compose.animation.animateContentSize
+import androidx.compose.ui.graphics.Color
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -51,11 +52,13 @@ fun Material3SettingsGroup(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .animateContentSize(),
+                    .clip(RoundedCornerShape(24.dp))
+                    .frostSoulGlass(RoundedCornerShape(24.dp)),
             shape = RoundedCornerShape(24.dp),
             colors =
                 CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {

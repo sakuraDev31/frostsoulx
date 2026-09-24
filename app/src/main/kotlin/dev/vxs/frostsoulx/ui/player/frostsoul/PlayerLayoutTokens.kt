@@ -16,8 +16,14 @@ import androidx.compose.ui.unit.sp
 /** Stable geometry and typography tokens for the full-screen FrostSoul player. */
 internal object PlayerLayoutTokens {
     val MasterHorizontalPadding = 22.dp
-    val VinylDiscSize = 310.dp
-    val CenterAlbumArtSize = 190.dp
+
+    /** Wider gutter used by the Immersive (artwork-blur) main page: title, lyrics, seekbar and controls share it. */
+    val ImmersiveHorizontalPadding = 28.dp
+
+    /** Space the Immersive page keeps free at the bottom of its scrolling content for the pinned seekbar + transport controls. */
+    val ImmersiveControlsReserve = 172.dp
+    val VinylDiscSize = 300.dp
+    val CenterAlbumArtSize = 184.dp
 
     /** Turntable geometry — the platter is inset inside the deck card, QQ-style.
      *
@@ -25,27 +31,27 @@ internal object PlayerLayoutTokens {
      * label, and the track artwork is clipped *inside* that circular label (never a floating
      * square). Tonearm parts are sized against the deck card so the whole assembly scales with
      * whatever width the player page hands to FSAlbumArt. */
-    val TurntableCardSize = 330.dp
-    val TurntablePlatterSize = 268.dp
+    val TurntableCardSize = 320.dp
+    val TurntablePlatterSize = 264.dp
 
-    /** White circular label pressed onto the record, and the circular artwork inside it. */
-    val TurntableLabelSize = 126.dp
-    val TurntableLabelArtSize = 114.dp
+    /** Reference proportions: artwork occupies a little over half the record diameter. */
+    val TurntableLabelSize = 150.dp
+    val TurntableLabelArtSize = 146.dp
 
     /** Tonearm assembly: pivot housing, counterweight barrel, headshell and the parking post. */
-    val TurntableTonearmMountSize = 30.dp
-    val TurntableTonearmBaseSize = 46.dp
-    val TurntableCounterweightSize = 15.dp
-    val TurntableHeadshellSize = 11.dp
-    val TurntableRestPegSize = 15.dp
+    val TurntableTonearmMountSize = 28.dp
+    val TurntableTonearmBaseSize = 42.dp
+    val TurntableCounterweightSize = 14.dp
+    val TurntableHeadshellSize = 10.dp
+    val TurntableRestPegSize = 13.dp
     val TurntableSpindleSize = 9.dp
 
     /** Artwork-blur header height, kept full-bleed so it melts into the page. Base dimension is
      * 342.dp; +42.dp accounts for the collapse-row height now reclaimed by the pager on the
      * Immersive main player page (see FrostSoulPlayer's isImmersiveArtworkMainPage), so the
-     * artwork's top edge extends to the true screen top. The extra 54.dp gives the immersive
-     * cover more vertical presence while the bottom content remains anchored below it. */
-    val ArtworkBlurHeaderHeight = 342.dp + 54.dp
+     * artwork's top edge extends to the true screen top while its bottom edge — and everything
+     * below it — stays exactly where it was before. */
+    val ArtworkBlurHeaderHeight = 364.dp + 42.dp
 
     /** Lyrics typography and rhythm, tuned against the QQ Music lyric sheet. */
     val LyricsActiveFontSize = 21.sp
@@ -57,24 +63,44 @@ internal object PlayerLayoutTokens {
     val LyricsBottomControlsReserve = 128.dp
 
     val TrackTitleStyle = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 22.sp,
-        letterSpacing = (-0.3).sp,
+        fontFamily = FontFamily.Serif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 25.sp,
+        letterSpacing = (-0.35).sp,
         color = Color.White,
     )
 
     val ArtistSubtitleStyle = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        letterSpacing = 0.08.sp,
+        color = Color.White.copy(alpha = 0.64f),
+    )
+
+    val ImmersiveTitleStyle = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 26.sp,
+        letterSpacing = 0.sp,
+        lineHeight = 32.sp,
+        color = Color.White,
+    )
+
+    val ImmersiveArtistStyle = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
-        color = Color.White.copy(alpha = 0.60f),
+        letterSpacing = 0.1.sp,
+        lineHeight = 20.sp,
+        color = Color.White.copy(alpha = 0.72f),
     )
 
     val TimelineTimeStyle = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 11.sp,
-        color = Color.White.copy(alpha = 0.40f),
+        fontSize = 12.sp,
+        letterSpacing = 0.06.sp,
+        color = Color.White.copy(alpha = 0.56f),
     )
 }

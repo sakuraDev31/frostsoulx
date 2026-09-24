@@ -9,6 +9,7 @@ package dev.vxs.frostsoulx.ui.frostsoul
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -41,6 +42,7 @@ fun FSText(
 ) {
     val resolvedStyle =
         style.copy(
+            fontFamily = style.fontFamily ?: MaterialTheme.typography.bodyLarge.fontFamily,
             color = if (color != Color.Unspecified) color else style.color,
             fontSize = if (fontSize != TextUnit.Unspecified) fontSize else style.fontSize,
             fontWeight = fontWeight ?: style.fontWeight,
@@ -77,6 +79,7 @@ fun FSText(
 ) {
     val resolvedStyle =
         style.copy(
+            fontFamily = style.fontFamily ?: MaterialTheme.typography.bodyLarge.fontFamily,
             color = if (color != Color.Unspecified) color else style.color,
             fontSize = if (fontSize != TextUnit.Unspecified) fontSize else style.fontSize,
             fontWeight = fontWeight ?: style.fontWeight,

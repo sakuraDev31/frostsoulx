@@ -9,12 +9,16 @@ package dev.vxs.frostsoulx.ui.component
 
 import android.os.SystemClock
 import android.view.ViewConfiguration
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
@@ -29,7 +33,7 @@ import dev.vxs.frostsoulx.ui.frostsoul.FSNavigationBar
 import dev.vxs.frostsoulx.ui.frostsoul.FSNavigationItem
 import dev.vxs.frostsoulx.ui.screens.Screens
 
-private val NavigationItemsMaxWidth = 360.dp
+private val NavigationItemsFixedWidth = 340.dp
 
 @Composable
 fun FloatingNavigationToolbar(
@@ -40,7 +44,8 @@ fun FloatingNavigationToolbar(
     isSelected: (Screens) -> Boolean,
     onItemClick: (Screens, Boolean) -> Unit,
     onSearchItemDoubleClick: (() -> Unit)? = null,
-    onCenterClick: (() -> Unit)? = null,
+    onMoreClick: (() -> Unit)? = null,
+    moreMenuContent: (@Composable () -> Unit)? = null,
 ) {
     val navigationItems =
         items.map { screen ->
@@ -61,26 +66,34 @@ fun FloatingNavigationToolbar(
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),
         contentAlignment = Alignment.Center,
     ) {
-        FSNavigationBar(
-            items = navigationItems,
-            selectedRoute = selectedRoute,
-            pairedWithMiniPlayer = isPairedWithMiniPlayer,
-            modifier = Modifier.widthIn(max = minOf(NavigationBarMaxWidth, NavigationItemsMaxWidth)).fillMaxWidth(),
-            onCenterClick = onCenterClick,
-            onItemClick = { item, selected ->
-                items.firstOrNull { it.route == item.route }?.let { screen ->
-                    val isSearchDoubleTap =
-                        screen == Screens.Search &&
-                            onSearchItemDoubleClick != null &&
-                            SystemClock.uptimeMillis() - lastSearchClickAt.longValue <= ViewConfiguration.getDoubleTapTimeout()
-                    lastSearchClickAt.longValue = if (isSearchDoubleTap) 0L else SystemClock.uptimeMillis()
-                    if (isSearchDoubleTap) {
-                        onSearchItemDoubleClick.invoke()
-                    } else {
-                        onItemClick(screen, selected)
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            FSNavigationBar(
+                items = navigationItems,
+                selectedRoute = selectedRoute,
+                pureBlack = pureBlack,
+                pairedWithMiniPlayer = isPairedWithMiniPlayer,
+                modifier = Modifier.fillMaxWidth().widthIn(min = 280.dp, max = NavigationItemsFixedWidth).widthIn(max = NavigationBarMaxWidth),
+                onMoreClick = onMoreClick,
+                onItemClick = { item, selected ->
+                    items.firstOrNull { it.route == item.route }?.let { screen ->
+                        val isSearchDoubleTap =
+                            screen == Screens.Search &&
+                                onSearchItemDoubleClick != null &&
+                                SystemClock.uptimeMillis() - lastSearchClickAt.longValue <= ViewConfiguration.getDoubleTapTimeout()
+                        lastSearchClickAt.longValue = if (isSearchDoubleTap) 0L else SystemClock.uptimeMillis()
+                        if (isSearchDoubleTap) {
+                            onSearchItemDoubleClick.invoke()
+                        } else {
+                            onItemClick(screen, selected)
+                        }
                     }
-                }
-            },
-        )
+                },
+            )
+            moreMenuContent?.invoke()
+        }
     }
 }

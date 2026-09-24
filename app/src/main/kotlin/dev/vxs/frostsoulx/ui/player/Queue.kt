@@ -118,6 +118,10 @@ import dev.vxs.frostsoulx.ui.component.BottomSheetState
 import dev.vxs.frostsoulx.ui.component.LocalBottomSheetPageState
 import dev.vxs.frostsoulx.ui.component.LocalMenuState
 import dev.vxs.frostsoulx.ui.component.MediaMetadataListItem
+import dev.vxs.frostsoulx.db.entities.EventWithSong
+import dev.vxs.frostsoulx.db.entities.Playlist
+import dev.vxs.frostsoulx.playback.queues.ListQueue
+import dev.vxs.frostsoulx.extensions.toMediaItem
 import dev.vxs.frostsoulx.ui.component.TextFieldDialog
 import dev.vxs.frostsoulx.ui.menu.AddToPlaylistDialog
 import dev.vxs.frostsoulx.ui.menu.PlayerMenu
@@ -294,6 +298,19 @@ fun Queue(
                 }
             },
         )
+    }
+
+    var selectedQueueTab by rememberSaveable { mutableStateOf(0) }
+    var playedTracksEvents by remember { mutableStateOf<List<EventWithSong>>(emptyList()) }
+    var playedPlaylistsList by remember { mutableStateOf<List<Playlist>>(emptyList()) }
+
+    LaunchedEffect(state.isCollapsed) {
+        if (!state.isCollapsed && playedTracksEvents.isEmpty()) {
+            playedTracksEvents = database.events(limit = 50, offset = 0)
+        }
+    }
+    LaunchedEffect(Unit) {
+        database.recentlyPlayedPlaylists(limit = 20).collect { playedPlaylistsList = it }
     }
 
     val queueWindows by playerConnection.queueWindows.collectAsState()
@@ -699,7 +716,13 @@ fun Queue(
         }
 
         val headerItems = 1
-        val lazyListState = rememberLazyListState()
+        val initialQueueScrollIndex =
+            remember {
+                val activeIndex = queueWindows.getOrNull(currentWindowIndex)
+                val idx = activeIndex?.let { win -> queueWindows.indexOfFirst { it.uid == win.uid } } ?: -1
+                if (idx >= 0) idx + headerItems else 0
+            }
+        val lazyListState = rememberLazyListState(initialFirstVisibleItemIndex = initialQueueScrollIndex)
         var dragInfo by remember { mutableStateOf<QueueDragInfo?>(null) }
 
         val currentPlayingUid =
@@ -834,6 +857,15 @@ fun Queue(
                     .background(backgroundColor),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
+                QueueHandleBar(onTap = state::collapseSoft)
+                QueueTabRow(
+                    selectedTab = selectedQueueTab,
+                    playingCount = queueWindows.size,
+                    playedTracksCount = playedTracksEvents.size,
+                    playedPlaylistsCount = playedPlaylistsList.size,
+                    onTabSelected = { selectedQueueTab = it },
+                )
+                if (selectedQueueTab == 0) {
                 CurrentSongHeader(
                     sheetState = state,
                     mediaMetadata = mediaMetadata,
@@ -1122,6 +1154,43 @@ fun Queue(
                         }
                     }
                 }
+            } else if (selectedQueueTab == 1) {
+                PlayedTracksTabContent(
+                    events = playedTracksEvents,
+                    isPlaying = isPlaying,
+                    activeMediaId = mediaMetadata?.id,
+                    onSongClick = { index ->
+                        val event = playedTracksEvents.getOrNull(index)
+                        if (event != null) {
+                            if (event.song.id == mediaMetadata?.id) {
+                                playerConnection.player.togglePlayPause()
+                            } else {
+                                playerConnection.playQueue(
+                                    ListQueue(
+                                        title = "Recently played",
+                                        items = playedTracksEvents.map { it.song.toMediaItem() },
+                                        startIndex = index,
+                                    ),
+                                )
+                            }
+                        }
+                    },
+                    onSongMenu = { event ->
+                        playerConnection.player.addMediaItem(event.song.toMediaItem())
+                        Toast.makeText(context, "Added to queue", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                PlayedPlaylistsTabContent(
+                    playlists = playedPlaylistsList,
+                    onPlaylistClick = { playlist ->
+                        navController.navigate("local_playlist/${playlist.id}")
+                        state.collapseSoft()
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
             }
 
             Box(modifier = Modifier.fillMaxSize()) {

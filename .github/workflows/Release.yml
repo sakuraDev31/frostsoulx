@@ -42,8 +42,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Release APK
-        run: |
-          ./gradlew assembleGmsMobileArm64Release             --no-daemon             --build-cache
+        run: ./gradlew assembleGmsMobileArm64Release --no-daemon --build-cache --debug --stacktrace --console=plain
         env:
           PULL_REQUEST: 'false'
           GITHUB_EVENT_NAME: ${{ github.event_name }}
@@ -75,7 +74,15 @@ jobs:
           done
 
           FOUND_METADATA="$(
-            find app/build/outputs/apk -type f -name "output-metadata.json"               \(                 -path "*/gmsMobileArm64/release/output-metadata.json" -o                 -path "*/gms/mobile/arm64/release/output-metadata.json" -o                 -path "*/mobile/arm64/release/output-metadata.json" -o                 -path "*/mobileArm64/release/output-metadata.json"               \) | head -n 1 || true
+            find app/build/outputs/apk \
+              -type f \
+              -name "output-metadata.json" \
+              \( \
+                -path "*/gmsMobileArm64/release/output-metadata.json" -o \
+                -path "*/gms/mobile/arm64/release/output-metadata.json" -o \
+                -path "*/mobile/arm64/release/output-metadata.json" -o \
+                -path "*/mobileArm64/release/output-metadata.json" \
+              \) | head -n 1 || true
           )"
 
           if [ -n "${FOUND_METADATA:-}" ]; then
@@ -104,7 +111,7 @@ jobs:
           RELEASE_DIR="${{ steps.release_dir.outputs.release_dir }}"
           mkdir -p "$RELEASE_DIR/out"
 
-          SIGNED_APK=$(find "$RELEASE_DIR" -type f             \( -name "*-signed.apk" -o -name "*-unsigned-signed.apk" \) | head -n 1)
+          SIGNED_APK=$(find "$RELEASE_DIR" -type f \( -name "*-signed.apk" -o -name "*-unsigned-signed.apk" \) | head -n 1)
 
           if [ -z "${SIGNED_APK:-}" ]; then
             echo "Signed APK not found."

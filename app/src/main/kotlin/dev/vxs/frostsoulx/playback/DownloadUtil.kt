@@ -32,6 +32,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import dev.vxs.frostsoulx.constants.AudioQuality
 import dev.vxs.frostsoulx.constants.AudioQualityKey
 import dev.vxs.frostsoulx.db.MusicDatabase
@@ -69,6 +71,9 @@ class DownloadUtil
         private val audioQuality by enumPreference(context, AudioQualityKey, AudioQuality.AUTO)
         private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         private val songUrlCache = ConcurrentHashMap<String, AuthScopedCacheValue>()
+        // Prevent duplicate stream-resolution requests when multiple download workers open the same media item.
+        // This mirrors the upstream resolver's in-flight deduplication without changing stream selection.
+        private val songUrlResolutionLocks = ConcurrentHashMap<String, Mutex>()
         private val downloadExecutor = Executors.newFixedThreadPool(DEFAULT_MAX_PARALLEL_DOWNLOADS)
 
         private val mediaOkHttpClient: OkHttpClient by lazy {
@@ -138,36 +143,39 @@ class DownloadUtil
                 val requestedAudioQuality = resolveDownloadAudioQuality(lowDataModeActive)
                 val streamCacheKey = buildSongUrlCacheKey(mediaId, requestedAudioQuality)
                 val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
-                songUrlCache[streamCacheKey]
-                    ?.takeIf {
-                        it.isValidFor(
-                            authFingerprint = authFingerprint,
-                            minimumRemainingMs = YTPlayerUtils.STREAM_URL_EXPIRY_SAFETY_MS,
-                        )
-                    }?.let {
-                        return@Factory dataSpec.withUri(it.url.toUri())
-                    }
-                val playbackData =
+                val resolutionLock = songUrlResolutionLocks.getOrPut(streamCacheKey) { Mutex() }
+                val streamUrl =
                     runBlocking(Dispatchers.IO) {
-                        context.retryWithoutPlaybackLoginContext {
-                            YTPlayerUtils.playerResponseForDownload(
-                                mediaId,
-                                audioQuality = requestedAudioQuality,
-                                connectivityManager = connectivityManager,
-                                networkMetered = lowDataModeActive,
-                            )
+                        resolutionLock.withLock {
+                            songUrlCache[streamCacheKey]
+                                ?.takeIf {
+                                    it.isValidFor(
+                                        authFingerprint = authFingerprint,
+                                        minimumRemainingMs = YTPlayerUtils.STREAM_URL_EXPIRY_SAFETY_MS,
+                                    )
+                                }?.url
+                                ?: run {
+                                    val playbackData =
+                                        context.retryWithoutPlaybackLoginContext {
+                                            YTPlayerUtils.playerResponseForDownload(
+                                                mediaId,
+                                                audioQuality = requestedAudioQuality,
+                                                connectivityManager = connectivityManager,
+                                                networkMetered = lowDataModeActive,
+                                            )
+                                        }.getOrThrow()
+                                    persistPlaybackMetadata(mediaId, playbackData)
+                                    val resolvedUrl = playbackData.streamUrl
+                                    songUrlCache[streamCacheKey] =
+                                        AuthScopedCacheValue(
+                                            url = resolvedUrl,
+                                            expiresAtMs = System.currentTimeMillis() + (playbackData.streamExpiresInSeconds * 1000L),
+                                            authFingerprint = playbackData.authFingerprint,
+                                        )
+                                    resolvedUrl
+                                }
                         }
-                    }.getOrThrow()
-                persistPlaybackMetadata(mediaId, playbackData)
-
-                val streamUrl = playbackData.streamUrl
-
-                songUrlCache[streamCacheKey] =
-                    AuthScopedCacheValue(
-                        url = streamUrl,
-                        expiresAtMs = System.currentTimeMillis() + (playbackData.streamExpiresInSeconds * 1000L),
-                        authFingerprint = playbackData.authFingerprint,
-                    )
+                    }
                 dataSpec.withUri(streamUrl.toUri())
             }
 
@@ -224,6 +232,7 @@ class DownloadUtil
                     .collect { fingerprint ->
                         if (previousFingerprint != null && previousFingerprint != fingerprint) {
                             songUrlCache.clear()
+                            songUrlResolutionLocks.clear()
                         }
                         previousFingerprint = fingerprint
                     }

@@ -79,6 +79,8 @@ val AodAutoStartScreenOffKey = booleanPreferencesKey("aodAutoStartScreenOff")
 val SeekExtraSeconds = booleanPreferencesKey("seekExtraSeconds")
 val DisableBlurKey = booleanPreferencesKey("disableBlur")
 val BlurRadiusKey = floatPreferencesKey("blurRadius")
+/** Premium surface grain strength for the bottom navigation and mini-player glass. */
+val GlassGrainIntensityKey = floatPreferencesKey("glassGrainIntensity")
 
 // Backdrop blur for detail pages
 val BackdropEnabledKey = booleanPreferencesKey("backdropEnabled")
@@ -323,6 +325,7 @@ val EqualizerOutputGainEnabledKey = booleanPreferencesKey("equalizerOutputGainEn
 val EqualizerOutputGainMbKey = intPreferencesKey("equalizerOutputGainMb")
 val EqualizerBassBoostEnabledKey = booleanPreferencesKey("equalizerBassBoostEnabled")
 val EqualizerBassBoostStrengthKey = intPreferencesKey("equalizerBassBoostStrength")
+val EqualizerTrebleGainMbKey = intPreferencesKey("equalizerTrebleGainMb")
 val EqualizerVirtualizerEnabledKey = booleanPreferencesKey("equalizerVirtualizerEnabled")
 val EqualizerVirtualizerStrengthKey = intPreferencesKey("equalizerVirtualizerStrength")
 val EqualizerSelectedProfileIdKey = stringPreferencesKey("equalizerSelectedProfileId")
@@ -420,7 +423,6 @@ val AlbumViewTypeKey = stringPreferencesKey("albumViewType")
 val PlaylistEditLockKey = booleanPreferencesKey("playlistEditLock")
 val QuickPicksKey = stringPreferencesKey("discover")
 
-val NewsLastReadTimestampKey = longPreferencesKey("news_last_read_timestamp")
 val SpeedDialSongIdsKey = stringPreferencesKey("speedDialSongIds")
 val PreferredLyricsProviderKey = stringPreferencesKey("lyricsProvider")
 val LyricsProviderOrderKey = stringPreferencesKey("lyricsProviderOrder")
@@ -927,3 +929,18 @@ enum class UpdateChannel {
             }
     }
 }
+
+val StereoSurroundEnabledKey = booleanPreferencesKey("stereoSurroundEnabled")
+val StereoSurroundIntensityKey = floatPreferencesKey("stereoSurroundIntensity")
+val StereoSurroundRoomPresetKey = intPreferencesKey("stereoSurroundRoomPreset")
+val StereoSurroundRoomMixKey = floatPreferencesKey("stereoSurroundRoomMix")
+val StereoSurroundReflectionAmountKey = floatPreferencesKey("stereoSurroundReflectionAmount")
+val StereoSurroundReverbTimeKey = floatPreferencesKey("stereoSurroundReverbTime")
+val StereoSurroundRoomSizeKey = floatPreferencesKey("stereoSurroundRoomSize")
+val StereoSurroundDampeningKey = floatPreferencesKey("stereoSurroundDampening")
+val StereoSurroundStereoWidthKey = floatPreferencesKey("stereoSurroundStereoWidth")
+val StereoSurroundCarFaderKey = floatPreferencesKey("stereoSurroundCarFader")
+val ImmersiveDevelopmentWarningShownKey = booleanPreferencesKey("immersiveDevelopmentWarningShown")
+val StereoSurroundQuantumFramesKey = intPreferencesKey("stereoSurroundQuantumFrames")
+val StereoSurroundLimiterEnabledKey = booleanPreferencesKey("stereoSurroundLimiterEnabled")
+val StereoSurroundSavedPresetsKey = stringPreferencesKey("stereoSurroundSavedPresets")

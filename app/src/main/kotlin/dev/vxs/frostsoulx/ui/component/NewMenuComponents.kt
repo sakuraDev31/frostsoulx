@@ -55,6 +55,7 @@ fun NewActionButton(
     enabled: Boolean = true,
     backgroundColor: Color = Color.Unspecified,
     contentColor: Color = Color.Unspecified,
+    accentColor: Color = Color.Unspecified,
 ) {
     val containerColor = if (backgroundColor.isSpecified) backgroundColor else MaterialTheme.colorScheme.surfaceContainerHigh
     val actionContentColor = if (contentColor.isSpecified) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
@@ -83,7 +84,7 @@ fun NewActionButton(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(actionContentColor.copy(alpha = 0.12f)),
+                    .background((if (accentColor.isSpecified) accentColor else actionContentColor).copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center,
             ) {
                 icon()
@@ -94,9 +95,10 @@ fun NewActionButton(
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
+                // A marquee on a two-line label made the text scroll sideways and clip
+                // ("Surround (", "Add to pl"). Wrap instead.
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.basicMarquee(),
             )
         }
     }
@@ -160,6 +162,7 @@ fun NewActionGrid(
     actions: List<NewAction>,
     modifier: Modifier = Modifier,
     columns: Int = 3,
+    accentColor: Color = Color.Unspecified,
 ) {
     if (actions.isEmpty()) return
 
@@ -184,6 +187,7 @@ fun NewActionGrid(
                         enabled = action.enabled,
                         backgroundColor = action.backgroundColor,
                         contentColor = action.contentColor,
+                        accentColor = accentColor,
                     )
                 }
 
