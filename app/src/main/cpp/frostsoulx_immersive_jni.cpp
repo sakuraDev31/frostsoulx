@@ -112,6 +112,7 @@ struct Handle {
     bool hasPreviousSample = false;
     float toneLowL = 0.0f;
     float toneLowR = 0.0f;
+    float outputSafetyGain = 1.0f;
 };
 
 void atomicAdd(std::atomic<double>& target, double value) noexcept {
@@ -289,6 +290,27 @@ void applyTone(Handle& handle, float* interleavedStereo, int frames) noexcept {
     }
 }
 
+void applyOutputSafety(Handle& handle, float* interleavedStereo, int frames) noexcept {
+    constexpr float kCeiling = 0.96f;
+    float peak = 0.0f;
+    for (int i = 0; i < frames * 2; ++i) {
+        const float sample = interleavedStereo[i];
+        if (std::isfinite(sample)) peak = std::max(peak, std::fabs(sample));
+    }
+
+    const float requestedGain = peak > kCeiling ? kCeiling / peak : 1.0f;
+    // Attack immediately, release over several blocks. This is a safety ceiling,
+    // not a tone-shaping compressor, so unity-level material remains untouched.
+    const float gain = std::min(handle.outputSafetyGain, requestedGain);
+    handle.outputSafetyGain = std::min(1.0f, gain + 0.015f);
+    for (int i = 0; i < frames * 2; ++i) {
+        const float sample = interleavedStereo[i];
+        interleavedStereo[i] = std::isfinite(sample)
+            ? std::clamp(sample * gain, -kCeiling, kCeiling)
+            : 0.0f;
+    }
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -335,6 +357,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReset(
         handle->hasPreviousSample = false;
         handle->toneLowL = 0.0f;
         handle->toneLowR = 0.0f;
+        handle->outputSafetyGain = 1.0f;
     }
 }
 
@@ -566,7 +589,10 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
             const bool processed = handle->enabled.load(std::memory_order_relaxed) && handle->engine.process(handle->scratch.data(), chunkFrames);
             const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count();
             if (handle->enabled.load(std::memory_order_relaxed) && !processed) handle->diagnostics.nativeProcessFailures.fetch_add(1, std::memory_order_relaxed);
-            if (processed) std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, samplesFloat);
+            if (processed) {
+                applyOutputSafety(*handle, handle->scratch.data(), chunkFrames);
+                std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, samplesFloat);
+            }
             else std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, samplesFloat);
             handle->diagnostics.nativeStatus.store(handle->enabled.load() ? resultCode(handle->engine.lastProcessResult()) : resultCode(frostsoulx::ImmersiveProcessResult::Disabled), std::memory_order_relaxed);
             if (processed) {
@@ -593,7 +619,11 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
             const bool processed = handle->enabled.load(std::memory_order_relaxed) && handle->engine.process(handle->scratch.data(), chunkFrames);
             const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count();
             if (handle->enabled.load(std::memory_order_relaxed) && !processed) handle->diagnostics.nativeProcessFailures.fetch_add(1, std::memory_order_relaxed);
-            if (!processed) std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, handle->scratch.begin());
+            if (processed) {
+                applyOutputSafety(*handle, handle->scratch.data(), chunkFrames);
+            } else {
+                std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, handle->scratch.begin());
+            }
             handle->diagnostics.nativeStatus.store(handle->enabled.load() ? resultCode(handle->engine.lastProcessResult()) : resultCode(frostsoulx::ImmersiveProcessResult::Disabled), std::memory_order_relaxed);
             if (processed) {
                 handle->diagnostics.processingTimeNanos.fetch_add(static_cast<uint64_t>(elapsed), std::memory_order_relaxed);
