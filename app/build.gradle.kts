@@ -54,7 +54,9 @@ android {
                 cppFlags += "-std=c++17 -fno-exceptions -fno-rtti"
             }
         }
-        minSdk = 26
+        // Android 7.0/API 24. Newer platform-only features are guarded at
+        // runtime and use compatibility fallbacks where available.
+        minSdk = 24
         targetSdk = 37
         versionCode = 146
         versionName = "14.0.7" // Release provenance: low-latency audio and UI polish
@@ -202,7 +204,7 @@ android {
     }
 
     compileOptions {
-        isCoreLibraryDesugaringEnabled = false
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
