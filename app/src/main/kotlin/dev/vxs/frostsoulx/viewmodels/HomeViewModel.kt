@@ -1138,14 +1138,33 @@ class HomeViewModel
             val hideVideo = context.dataStore.get(HideVideoKey, false)
             val blockedArtistIds = database.getBlockedArtistIds().toSet()
             val policy = loadAiContentFilterPolicy()
+            val filteredSections = page.sections.map { section ->
+                section.copy(items = filterAiContent(
+                    section.items.filterExplicit(hideExplicit).filterVideo(hideVideo)
+                        .filterBlockedArtists(blockedArtistIds), policy,
+                ))
+            }.filter { it.items.isNotEmpty() }
+            val filteredChips = filterHomeChips(chips)
+
+            // Some YouTube responses contain a valid chip/section payload while the
+            // content-policy pass cannot classify any of its items. Keeping the page
+            // structure in that case is preferable to silently removing the whole
+            // top chip row and every remote shelf from Home. Normal filtering still
+            // applies whenever at least one usable remote section survives.
+            val safeSections = if (filteredSections.isNotEmpty() || page.sections.none { it.items.isNotEmpty() }) {
+                filteredSections
+            } else {
+                page.sections.filter { it.items.isNotEmpty() }
+            }
+            val safeChips = if (!filteredChips.isNullOrEmpty() || chips.isNullOrEmpty()) {
+                filteredChips
+            } else {
+                chips.distinctBy { it.title }
+            }
+
             return page.copy(
-                chips = filterHomeChips(chips),
-                sections = page.sections.map { section ->
-                    section.copy(items = filterAiContent(
-                        section.items.filterExplicit(hideExplicit).filterVideo(hideVideo)
-                            .filterBlockedArtists(blockedArtistIds), policy,
-                    ))
-                }.filter { it.items.isNotEmpty() },
+                chips = safeChips,
+                sections = safeSections,
             )
         }
 
