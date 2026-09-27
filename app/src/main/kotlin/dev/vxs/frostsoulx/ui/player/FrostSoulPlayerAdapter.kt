@@ -238,7 +238,6 @@ internal fun FrostSoulPlayerAdapter(
                 },
                 onSeek = { targetPosition -> playerConnection.player.seekTo(targetPosition) },
                 onToggleLike = playerConnection::toggleLike,
-                onToggleDislike = playerConnection::toggleDislike,
                 onOpenAudioOutput = {
                     SystemMediaControlResolver.openMediaOutputSwitcher(applicationContext)
                 },

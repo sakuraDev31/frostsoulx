@@ -1502,10 +1502,6 @@ private fun FrostSoulAlbumPage(
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp, end = 4.dp),
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FrostSoulFullPlayerDislikeButton(
-                        videoId = uiState.track.id,
-                        onClick = actions.onToggleDislike,
-                    )
                     FrostSoulFullPlayerLikeButton(
                         videoId = uiState.track.id,
                         isLiked = uiState.track.isLiked,
@@ -1738,11 +1734,6 @@ private fun FrostSoulArtworkBlurAlbumPage(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(start = 8.dp),
                 ) {
-                    FrostSoulFullPlayerDislikeButton(
-                        videoId = uiState.track.id,
-                        onClick = actions.onToggleDislike,
-                        flat = true,
-                    )
                     FrostSoulFullPlayerLikeButton(
                         videoId = uiState.track.id,
                         isLiked = uiState.track.isLiked,
@@ -1964,35 +1955,6 @@ private fun FrostSoulFullPlayerLikeButton(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun FrostSoulFullPlayerDislikeButton(
-    videoId: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    flat: Boolean = false,
-) {
-    var isDisliked by remember(videoId) { mutableStateOf(false) }
-    val tint = if (isDisliked) Color(0xFFFF6B6B) else if (flat) Color.White.copy(alpha = 0.92f) else {
-        if (FrostSoulTheme.colors.background.luminance() > 0.5f) Color.Black else Color(0xFFD7DBE0)
-    }
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .size(48.dp)
-            .clickable(role = Role.Button) {
-                isDisliked = !isDisliked
-                onClick()
-            },
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.favorite_dislike),
-            contentDescription = if (isDisliked) "Remove dislike" else "Dislike track",
-            tint = tint,
-            modifier = Modifier.size(25.dp),
-        )
     }
 }
 

@@ -5760,36 +5760,6 @@ class MusicService :
         }
     }
 
-    fun toggleDislike() {
-        val mediaMetadata = currentMediaMetadata.value ?: return
-        ioScope.launch {
-            try {
-                val song =
-                    database.withTransaction {
-                        getSongById(mediaMetadata.id)
-                            ?: run {
-                                insert(mediaMetadata) {
-                                    it.copy(isLocal = mediaMetadata.id.isLocalMediaId())
-                                }
-                                getSongById(mediaMetadata.id)
-                            }
-                    } ?: return@launch
-                val currentlyDisliked = dislikedMediaIds.remove(mediaMetadata.id)
-                val nowDisliked = !currentlyDisliked
-                if (nowDisliked) dislikedMediaIds.add(mediaMetadata.id)
-                recommendationBehaviorTracker.record(
-                    mediaMetadata.id,
-                    if (nowDisliked) RecommendationSignalType.Dislike else RecommendationSignalType.Unlike,
-                )
-                syncUtils.dislikeSong(song.song, nowDisliked)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                reportException(error)
-            }
-        }
-    }
-
     fun toggleLike() {
         val mediaMetadata = currentMediaMetadata.value ?: return
         ioScope.launch {
@@ -6610,8 +6580,6 @@ class MusicService :
             scheduleCrossfade()
         }
     }
-
-    private val dislikedMediaIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private fun isCurrentPlaybackItemLocal(currentMediaMetadata: MediaMetadata): Boolean =
         currentSong.value?.song?.isLocal == true ||

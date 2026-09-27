@@ -179,7 +179,6 @@ internal data class FrostSoulPlayerActions(
     val onToggleShuffle: () -> Unit = {},
     val onSeek: (Long) -> Unit,
     val onToggleLike: () -> Unit,
-    val onToggleDislike: () -> Unit = {},
     val onOpenAudioOutput: () -> Unit = {},
     val onDownload: () -> Unit = {},
     val onOpenSleepTimer: () -> Unit = {},
