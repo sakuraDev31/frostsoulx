@@ -83,6 +83,8 @@ import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.LocalDatabase
 import dev.vxs.frostsoulx.LocalPlayerConnection
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.db.entities.FormatEntity
+import dev.vxs.frostsoulx.db.entities.Song
 import dev.vxs.frostsoulx.innertube.YouTube
 import dev.vxs.frostsoulx.innertube.models.MediaInfo
 import dev.vxs.frostsoulx.ui.component.LocalBottomSheetPageState
@@ -119,8 +121,8 @@ fun ShowMediaInfo(videoId: String) {
     val database = LocalDatabase.current
     val bottomSheetPageState = LocalBottomSheetPageState.current
     val playerConnection = LocalPlayerConnection.current
-    val song by database.song(videoId).collectAsState(initial = null)
-    val currentFormat by database.format(videoId).collectAsState(initial = null)
+    val song by database.song(videoId).collectAsState<Song?>(initial = null)
+    val currentFormat by database.format(videoId).collectAsState<FormatEntity?>(initial = null)
     var info by remember(videoId) { mutableStateOf<MediaInfo?>(null) }
     var selectedTab by rememberSaveable(videoId) { mutableStateOf(MediaInfoTab.Information) }
 
