@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -55,6 +56,8 @@ import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlow
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulTexturedGlass
+import dev.vxs.frostsoulx.ui.player.frostsoul.artworkLightSecondaryTint
+import dev.vxs.frostsoulx.ui.player.frostsoul.artworkLightTint
 import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
 import dev.vxs.frostsoulx.utils.rememberPreference
 
@@ -173,8 +176,21 @@ fun PremiumCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
+    val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
+    val shadowModifier = if (isLight) {
+        Modifier.shadow(
+            elevation = 3.dp,
+            shape = shape,
+            clip = false,
+            spotColor = Color(0x18000000),
+            ambientColor = Color(0x0C000000),
+        )
+    } else {
+        Modifier
+    }
     Column(
         modifier = modifier
+            .then(shadowModifier)
             .clip(shape)
             .frostSoulTexturedGlass(grain = glassGrain, shape = shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
@@ -262,16 +278,46 @@ fun PremiumHeroBanner(
 ) {
     val palette = rememberFrostSoulPalette(artworkUrl)
     val colors = FrostSoulTheme.colors
-    val surface = lerp(colors.surface, palette.artworkPrimary, 0.18f)
-    val wash = remember(surface, palette.artworkSecondary) {
-        Brush.horizontalGradient(listOf(surface, lerp(surface, palette.artworkSecondary, 0.14f)))
+    val isLight = colors.background.luminance() > 0.5f
+    val (surfaceStart, surfaceEnd) = remember(isLight, colors.surface, colors.surfaceRaised, palette.artworkPrimary, palette.artworkSecondary) {
+        if (isLight) {
+            val lightPrimary = artworkLightTint(palette.artworkPrimary)
+            val lightSecondary = artworkLightSecondaryTint(palette.artworkSecondary, lightPrimary)
+            lerp(colors.surfaceRaised, lightPrimary, 0.40f) to lerp(colors.surfaceRaised, lightSecondary, 0.28f)
+        } else {
+            val base = lerp(colors.surface, palette.artworkPrimary, 0.18f)
+            base to lerp(base, palette.artworkSecondary, 0.14f)
+        }
+    }
+    val wash = remember(surfaceStart, surfaceEnd) {
+        Brush.horizontalGradient(listOf(surfaceStart, surfaceEnd))
     }
     val shape = FrostSoulTheme.shapes.large
+    val shadowModifier = if (isLight) {
+        Modifier.shadow(
+            elevation = 4.dp,
+            shape = shape,
+            clip = false,
+            spotColor = Color(0x18000000),
+            ambientColor = Color(0x0C000000),
+        )
+    } else {
+        Modifier
+    }
     // Color comes from the song, not a second blurred copy of its full-size cover.
     Column(
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = modifier.fillMaxWidth().clip(shape).background(wash)
-            .border(1.dp, colors.onSurface.copy(alpha = 0.10f), shape).padding(16.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(shadowModifier)
+            .clip(shape)
+            .background(wash)
+            .border(
+                1.dp,
+                if (isLight) Color.White.copy(alpha = 0.65f) else colors.onSurface.copy(alpha = 0.10f),
+                shape,
+            )
+            .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(

@@ -9,6 +9,7 @@ package dev.vxs.frostsoulx.ui.player.frostsoul
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.toArgb
 import dev.vxs.frostsoulx.models.ActiveOutputDevice
 import dev.vxs.frostsoulx.models.PlayerOutputDevice
 import androidx.compose.ui.graphics.Color
@@ -23,13 +24,51 @@ internal val FrostSoulOnSurfaceMuted = Color(0xFFA5A5A5)
 
 @Immutable
 internal data class FrostSoulPalette(
-    val artworkPrimary: Color = Color(0xFF8A8A8A),
-    val artworkSecondary: Color = Color(0xFF30262B),
+    val artworkPrimary: Color = Color(0xFF5A728A),
+    val artworkSecondary: Color = Color(0xFF3A4B5C),
     val accent: Color = Color.White,
 ) {
     companion object {
         val Default = FrostSoulPalette()
     }
+}
+
+internal fun artworkLightTint(color: Color): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(color.toArgb(), hsv)
+    val hue = hsv[0]
+    val sat = hsv[1]
+
+    if (sat < 0.08f) {
+        return Color(0xFFEFF1F5)
+    }
+
+    val tunedSat = (sat * 0.75f).coerceIn(0.20f, 0.40f)
+    val tunedVal = 0.97f
+
+    hsv[0] = hue
+    hsv[1] = tunedSat
+    hsv[2] = tunedVal
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
+internal fun artworkLightSecondaryTint(color: Color, primaryTint: Color): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(color.toArgb(), hsv)
+    val hue = hsv[0]
+    val sat = hsv[1]
+
+    if (sat < 0.08f) {
+        return Color(0xFFF7F8FA)
+    }
+
+    val tunedSat = (sat * 0.50f).coerceIn(0.12f, 0.26f)
+    val tunedVal = 0.985f
+
+    hsv[0] = hue
+    hsv[1] = tunedSat
+    hsv[2] = tunedVal
+    return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
 @Immutable

@@ -210,16 +210,16 @@ fun FrostSoulCalmTheme(content: @Composable () -> Unit) {
                 colors = parent.colors.copy(
                     background = Color.White,
                     surface = Color.White,
-                    surfaceRaised = Color(0xFFF5F5F5),
-                    surfaceGlass = Color.White.copy(alpha = 0.96f),
-                    surfaceGlassStrong = Color.White,
+                    surfaceRaised = Color(0xFFECEFF3),
+                    surfaceGlass = Color(0xEBF0F3F7),
+                    surfaceGlassStrong = Color(0xF5F2F5F8),
                     accent = Color.Black,
                     accentBright = Color.Black,
                     accentMuted = Color(0xFF555555),
                     onBackground = Color.Black,
                     onSurface = Color.Black,
                     onSurfaceMuted = Color(0xFF666666),
-                    outline = Color(0x1A000000),
+                    outline = Color(0x24000000),
                     scrim = Color.Black.copy(alpha = 0.48f),
                 ),
                 effects = parent.effects.copy(
@@ -262,10 +262,10 @@ fun FrostSoulCalmTheme(content: @Composable () -> Unit) {
                 surfaceVariant = calmTokens.colors.surfaceRaised,
                 onSurfaceVariant = calmTokens.colors.onSurfaceMuted,
                 surfaceContainerLowest = Color.White,
-                surfaceContainerLow = Color(0xFFFAFAFA),
+                surfaceContainerLow = Color(0xFFF5F7FA),
                 surfaceContainer = calmTokens.colors.surfaceRaised,
-                surfaceContainerHigh = Color(0xFFEFEFEF),
-                surfaceContainerHighest = Color(0xFFE5E5E5),
+                surfaceContainerHigh = Color(0xFFE4E8EE),
+                surfaceContainerHighest = Color(0xFFDCE1E8),
                 primary = Color.Black,
                 onPrimary = Color.White,
                 primaryContainer = calmTokens.colors.surfaceRaised,
@@ -327,16 +327,16 @@ fun FrostSoulDesignSystem(
                 colors = DefaultFrostSoulTokens.colors.copy(
                     background = Color.White,
                     surface = Color.White,
-                    surfaceRaised = Color(0xFFF5F5F5),
-                    surfaceGlass = Color.White.copy(alpha = 0.96f),
-                    surfaceGlassStrong = Color.White,
+                    surfaceRaised = Color(0xFFECEFF3),
+                    surfaceGlass = Color(0xEBF0F3F7),
+                    surfaceGlassStrong = Color(0xF5F2F5F8),
                     accent = Color.Black,
                     accentBright = Color.Black,
                     accentMuted = Color(0xFF555555),
                     onBackground = Color.Black,
                     onSurface = Color.Black,
                     onSurfaceMuted = Color(0xFF666666),
-                    outline = Color(0x1A000000),
+                    outline = Color(0x24000000),
                     scrim = Color.Black.copy(alpha = 0.48f),
                 ),
             )
@@ -352,23 +352,45 @@ fun Modifier.frostSoulGlass(
     tint: Color = FrostSoulTheme.colors.accent,
 ): Modifier {
     val colors = FrostSoulTheme.colors
-    val fill = remember(colors, tint) {
-        Brush.linearGradient(
-            listOf(
-                lerp(colors.surfaceGlassStrong, tint, 0.08f),
-                colors.surfaceGlass,
-                lerp(colors.surfaceGlass, tint, 0.025f),
-            ),
-        )
+    val isLight = colors.background.luminance() > 0.5f
+    val fill = remember(colors, tint, isLight) {
+        if (isLight) {
+            val baseTint = if (tint == colors.accent || tint == Color.Black) colors.surfaceRaised else tint
+            Brush.linearGradient(
+                listOf(
+                    lerp(colors.surfaceGlassStrong, baseTint, 0.25f),
+                    colors.surfaceGlass,
+                    lerp(colors.surfaceGlass, baseTint, 0.12f),
+                ),
+            )
+        } else {
+            Brush.linearGradient(
+                listOf(
+                    lerp(colors.surfaceGlassStrong, tint, 0.08f),
+                    colors.surfaceGlass,
+                    lerp(colors.surfaceGlass, tint, 0.025f),
+                ),
+            )
+        }
     }
-    val edge = remember(colors) {
-        Brush.linearGradient(
-            listOf(
-                colors.onSurface.copy(alpha = 0.20f),
-                colors.onSurface.copy(alpha = 0.04f),
-                colors.onSurface.copy(alpha = 0.09f),
-            ),
-        )
+    val edge = remember(colors, isLight) {
+        if (isLight) {
+            Brush.linearGradient(
+                listOf(
+                    Color.Black.copy(alpha = 0.09f),
+                    Color.Black.copy(alpha = 0.03f),
+                    Color.Black.copy(alpha = 0.06f),
+                ),
+            )
+        } else {
+            Brush.linearGradient(
+                listOf(
+                    colors.onSurface.copy(alpha = 0.20f),
+                    colors.onSurface.copy(alpha = 0.04f),
+                    colors.onSurface.copy(alpha = 0.09f),
+                ),
+            )
+        }
     }
     return background(fill, shape).border(0.5.dp, edge, shape)
 }
@@ -385,28 +407,31 @@ fun Modifier.frostSoulTexturedGlass(
     tint: Color = FrostSoulTheme.colors.accent,
 ): Modifier {
     val colors = FrostSoulTheme.colors
+    val isLight = colors.background.luminance() > 0.5f
     val safeGrain = grain.coerceIn(0f, 1f)
     return frostSoulGlass(shape = shape, tint = tint).drawWithCache {
         val speckCount = (12f + safeGrain * 96f).roundToInt()
         val speckAlpha = (0.018f + safeGrain * 0.075f).coerceIn(0.018f, 0.095f)
-        val baseWash = if (tint.luminance() < 0.5f) {
+        val baseWash = if (isLight) {
+            Color.White.copy(alpha = 0.25f)
+        } else if (tint.luminance() < 0.5f) {
             Color.White.copy(alpha = 0.105f)
         } else {
             Color.Black.copy(alpha = 0.065f)
         }
         val glassWash = Brush.linearGradient(
             colors = listOf(
-                Color.White.copy(alpha = 0.075f),
+                Color.White.copy(alpha = if (isLight) 0.18f else 0.075f),
                 tint.copy(alpha = 0.035f),
-                Color.Black.copy(alpha = 0.105f),
+                Color.Black.copy(alpha = if (isLight) 0.04f else 0.105f),
             ),
             start = Offset(0f, 0f),
             end = Offset(size.width, size.height),
         )
         val topReflection = Brush.verticalGradient(
             colors = listOf(
-                Color.White.copy(alpha = 0.11f),
-                Color.White.copy(alpha = 0.025f),
+                Color.White.copy(alpha = if (isLight) 0.35f else 0.11f),
+                Color.White.copy(alpha = if (isLight) 0.08f else 0.025f),
                 Color.Transparent,
             ),
             startY = 0f,
@@ -414,8 +439,8 @@ fun Modifier.frostSoulTexturedGlass(
         )
         val atmosphere = Brush.radialGradient(
             colors = listOf(
-                colors.accentBright.copy(alpha = 0.065f),
-                tint.copy(alpha = 0.022f),
+                (if (isLight) Color.White.copy(alpha = 0.14f) else colors.accentBright.copy(alpha = 0.065f)),
+                tint.copy(alpha = if (isLight) 0.04f else 0.022f),
                 Color.Transparent,
             ),
             center = Offset(size.width * 0.72f, size.height * 0.82f),

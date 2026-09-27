@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
@@ -39,11 +40,16 @@ fun FrostSoulBackdropSurface(
     val safeGrain = grain.coerceIn(0f, 1f)
     val safeBlur = blurRadius.coerceIn(0f, 64f)
     val hazeState = LocalFrostSoulHazeState.current
+    val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
     val blurStyle = HazeBlurStyle {
         blurRadius(safeBlur.dp)
         noiseFactor((safeGrain * 0.16f).coerceIn(0f, 0.16f))
         backgroundColor(Color.Transparent)
-        fallbackColorEffect(HazeColorEffect.tint(tint.copy(alpha = 0.065f)))
+        fallbackColorEffect(
+            HazeColorEffect.tint(
+                if (isLight) tint.copy(alpha = 0.50f) else tint.copy(alpha = 0.065f),
+            ),
+        )
     }
 
     Box(
@@ -60,19 +66,31 @@ fun FrostSoulBackdropSurface(
                 .drawWithCache {
                     val noiseCount = (24f + safeGrain * 120f).roundToInt()
                     val noiseAlpha = (0.012f + safeGrain * 0.05f).coerceIn(0.012f, 0.062f)
-                    val tintWash = Brush.linearGradient(
-                        colors = listOf(
-                            tint.copy(alpha = 0.055f),
-                            Color.White.copy(alpha = 0.022f),
-                            tint.copy(alpha = 0.035f),
-                        ),
-                        start = Offset.Zero,
-                        end = Offset(size.width, size.height),
-                    )
+                    val tintWash = if (isLight) {
+                        Brush.linearGradient(
+                            colors = listOf(
+                                tint.copy(alpha = 0.55f),
+                                Color.White.copy(alpha = 0.50f),
+                                tint.copy(alpha = 0.38f),
+                            ),
+                            start = Offset.Zero,
+                            end = Offset(size.width, size.height),
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            colors = listOf(
+                                tint.copy(alpha = 0.055f),
+                                Color.White.copy(alpha = 0.022f),
+                                tint.copy(alpha = 0.035f),
+                            ),
+                            start = Offset.Zero,
+                            end = Offset(size.width, size.height),
+                        )
+                    }
                     val refractionHighlight = Brush.horizontalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color.White.copy(alpha = 0.035f),
+                            Color.White.copy(alpha = if (isLight) 0.18f else 0.035f),
                             Color.Transparent,
                         ),
                         startX = size.width * 0.18f,
@@ -80,8 +98,8 @@ fun FrostSoulBackdropSurface(
                     )
                     val upperHighlight = Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.13f),
-                            Color.White.copy(alpha = 0.025f),
+                            Color.White.copy(alpha = if (isLight) 0.45f else 0.13f),
+                            Color.White.copy(alpha = if (isLight) 0.10f else 0.025f),
                             Color.Transparent,
                         ),
                         startY = 0f,
@@ -89,13 +107,13 @@ fun FrostSoulBackdropSurface(
                     )
                     onDrawWithContent {
                         drawRect(brush = tintWash, blendMode = BlendMode.SrcOver)
-                        drawRect(brush = refractionHighlight, blendMode = BlendMode.Screen)
-                        drawRect(brush = upperHighlight, blendMode = BlendMode.Screen)
+                        drawRect(brush = refractionHighlight, blendMode = if (isLight) BlendMode.SrcOver else BlendMode.Screen)
+                        drawRect(brush = upperHighlight, blendMode = if (isLight) BlendMode.SrcOver else BlendMode.Screen)
                         repeat(noiseCount) { index ->
                             val x = ((index * 83 + 17) % 101) / 100f * size.width
                             val y = ((index * 47 + 29) % 97) / 96f * size.height
                             drawCircle(
-                                color = Color.White.copy(
+                                color = (if (isLight) Color.Black else Color.White).copy(
                                     alpha = if (index % 3 == 0) noiseAlpha else noiseAlpha * 0.42f,
                                 ),
                                 radius = 0.35f + ((index % 3) * 0.24f),
@@ -111,5 +129,23 @@ fun FrostSoulBackdropSurface(
     }
 }
 
-fun Modifier.frostSoulBackdropBorder(shape: Shape): Modifier =
-    border(1.dp, Color.White.copy(alpha = 0.16f), shape)
+@Composable
+fun Modifier.frostSoulBackdropBorder(shape: Shape): Modifier {
+    val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
+    val borderBrush = if (isLight) {
+        Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.80f),
+                Color.Black.copy(alpha = 0.08f),
+            ),
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.16f),
+                Color.White.copy(alpha = 0.10f),
+            ),
+        )
+    }
+    return border(1.dp, borderBrush, shape)
+}

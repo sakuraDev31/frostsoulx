@@ -32,8 +32,16 @@ import coil3.compose.rememberAsyncImagePainter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import dev.vxs.frostsoulx.constants.DisableBlurKey
+import dev.vxs.frostsoulx.constants.BlurRadiusKey
+import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
 import dev.vxs.frostsoulx.utils.rememberPreference
+import dev.vxs.frostsoulx.ui.frostsoul.LocalFrostSoulHazeState
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulGlass
+import androidx.compose.ui.draw.shadow
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
@@ -597,35 +605,116 @@ internal fun FSMiniPlayer(
         label = "frostsoul-mini-player-progress",
     )
     val isLightTheme = FrostSoulTheme.colors.background.luminance() > 0.5f
-    val backgroundColor = FrostSoulTheme.colors.surface
+    val lightTintPrimary = remember(palette.artworkPrimary) { artworkLightTint(palette.artworkPrimary) }
+    val lightTintSecondary = remember(palette.artworkSecondary, lightTintPrimary) {
+        artworkLightSecondaryTint(palette.artworkSecondary, lightTintPrimary)
+    }
     val primaryTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurface else FrostSoulOnSurface
     val mutedTextColor = FrostSoulTheme.colors.onSurfaceMuted
     // Keep the arc contrast stable; artwork-derived colors remain on the mini-player surface.
     val progressColor = if (isLightTheme) Color.Black else Color.White
     val progressTrackColor = progressColor.copy(alpha = 0.22f)
 
+    val hazeState = LocalFrostSoulHazeState.current
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
+    val (glassBlurRadius) = rememberPreference(BlurRadiusKey, defaultValue = 32f)
+    val safeGrain = glassGrain.coerceIn(0f, 1f)
+    val safeBlur = glassBlurRadius.coerceIn(0f, 64f)
+
+    val shadowElevation = if (isLightTheme) {
+        if (isPlaying) 10.dp else 5.dp
+    } else {
+        if (isPlaying) 6.dp else 2.dp
+    }
+    val shadowModifier = if (isLightTheme) {
+        Modifier.shadow(
+            elevation = shadowElevation,
+            shape = shape,
+            clip = false,
+            spotColor = Color(0x22000000),
+            ambientColor = Color(0x0E000000),
+        )
+    } else {
+        Modifier.graphicsLayer {
+            this.shadowElevation = shadowElevation.toPx()
+            this.shape = shape
+            clip = false
+        }
+    }
+
     Box(
         modifier =
             modifier
                 .fillMaxWidth()
                 .height(height)
-                .graphicsLayer {
-                    shadowElevation = if (isPlaying) 6.dp.toPx() else 2.dp.toPx()
-                    this.shape = shape
-                    clip = false
-                }
+                .then(shadowModifier)
                 .clip(shape)
-                .background(backgroundColor)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            palette.artworkPrimary.copy(alpha = 0.26f),
-                            palette.artworkSecondary.copy(alpha = 0.18f),
-                            Color.Transparent,
-                        ),
-                    ),
+                .hazeBlur(
+                    input = HazeInput.Sources(hazeState),
+                    style = HazeBlurStyle {
+                        blurRadius(safeBlur.dp)
+                        noiseFactor((safeGrain * 0.14f).coerceIn(0f, 0.14f))
+                        backgroundColor(Color.Transparent)
+                        fallbackColorEffect(
+                            HazeColorEffect.tint(
+                                if (isLightTheme) lightTintPrimary.copy(alpha = 0.65f)
+                                else FrostSoulTheme.colors.surface.copy(alpha = 0.88f),
+                            ),
+                        )
+                    },
                 )
-                .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.65f), shape)
+                .then(
+                    if (isLightTheme) {
+                        Modifier
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        lightTintPrimary.copy(alpha = 0.72f),
+                                        lightTintSecondary.copy(alpha = 0.58f),
+                                        Color.White.copy(alpha = 0.62f),
+                                    ),
+                                ),
+                            )
+                            .drawWithCache {
+                                val specularHighlight = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.55f),
+                                        Color.White.copy(alpha = 0.12f),
+                                        Color.Transparent,
+                                    ),
+                                    startY = 0f,
+                                    endY = size.height * 0.45f,
+                                )
+                                onDrawWithContent {
+                                    drawContent()
+                                    drawRect(brush = specularHighlight)
+                                }
+                            }
+                            .border(
+                                width = 1.dp,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.85f),
+                                        Color.Black.copy(alpha = 0.08f),
+                                    ),
+                                ),
+                                shape = shape,
+                            )
+                    } else {
+                        Modifier
+                            .background(FrostSoulTheme.colors.surface)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        palette.artworkPrimary.copy(alpha = 0.26f),
+                                        palette.artworkSecondary.copy(alpha = 0.18f),
+                                        Color.Transparent,
+                                    ),
+                                ),
+                            )
+                            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.65f), shape)
+                    },
+                )
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = null,
@@ -2664,11 +2753,18 @@ private val FrostSoulQueueFallbackAccent = Color(0xFF20B486)
 /** Select actual artwork swatches, not hue-shifted gradient filler colors. Runs off-main. */
 private fun extractGlowColors(palette: Palette): List<Color> {
     val swatches = palette.swatches.sortedByDescending { it.population }
-    // Prefer a real artwork pigment over a populous black/gray background.
-    val primary = (palette.vibrantSwatch ?: palette.darkVibrantSwatch ?: swatches.firstOrNull())
-        ?.let { Color(it.rgb) } ?: Color.DarkGray
+    // Prefer vibrant/dominant swatches with real chroma over a dark/muted background
+    val candidateSwatches = listOfNotNull(
+        palette.vibrantSwatch,
+        palette.lightVibrantSwatch,
+        palette.dominantSwatch,
+        palette.darkVibrantSwatch,
+    )
+    val bestChromatic = candidateSwatches.maxByOrNull { it.hsl[1] }
+    val primary = (bestChromatic ?: swatches.maxByOrNull { it.hsl[1] } ?: swatches.firstOrNull())
+        ?.let { Color(it.rgb) } ?: Color(0xFF5A728A)
     // Prefer the next populous, visibly distinct color over another quantization of the first.
-    val secondary = swatches.sortedByDescending { it.hsl[1] * it.hsl[2] }.firstOrNull { swatch ->
+    val secondary = swatches.sortedByDescending { it.hsl[1] * (1f - kotlin.math.abs(it.hsl[2] - 0.5f)) }.firstOrNull { swatch ->
         val candidate = Color(swatch.rgb)
         val r = candidate.red - primary.red
         val g = candidate.green - primary.green

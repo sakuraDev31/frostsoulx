@@ -20,6 +20,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -182,9 +183,22 @@ fun FSGlassCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
+    val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
+    val shadowModifier = if (isLight) {
+        Modifier.shadow(
+            elevation = 3.dp,
+            shape = shape,
+            clip = false,
+            spotColor = Color(0x18000000),
+            ambientColor = Color(0x0C000000),
+        )
+    } else {
+        Modifier
+    }
     Column(
         modifier =
             modifier
+                .then(shadowModifier)
                 .clip(shape)
                 .frostSoulTexturedGlass(grain = glassGrain, shape = shape)
                 .then(
@@ -605,7 +619,19 @@ fun FSNavigationBar(
     val homeSelected = selectedRoute == "home"
     val selectedTint = if (pureBlack) Color.White else Color.Black
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
-    val navSurface = if (pureBlack) Color.Black else Color.White
+    val isLight = !pureBlack && FrostSoulTheme.colors.background.luminance() > 0.5f
+    val navSurface = if (pureBlack) Color.Black else if (isLight) Color(0xFFF2F4F7) else Color.White
+    val shadowModifier = if (isLight) {
+        Modifier.shadow(
+            elevation = 8.dp,
+            shape = shape,
+            clip = false,
+            spotColor = Color(0x1C000000),
+            ambientColor = Color(0x0E000000),
+        )
+    } else {
+        Modifier
+    }
     val displayItems =
         if (onMoreClick != null) {
             items + FSNavigationItem(
@@ -618,7 +644,7 @@ fun FSNavigationBar(
             items
         }
     FrostSoulBackdropSurface(
-        modifier = modifier.height(56.dp).frostSoulBackdropBorder(shape),
+        modifier = modifier.then(shadowModifier).height(56.dp).frostSoulBackdropBorder(shape),
         shape = shape,
         grain = glassGrain,
         blurRadius = glassBlurRadius.coerceIn(0f, 64f),

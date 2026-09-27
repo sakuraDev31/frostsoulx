@@ -37,8 +37,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -569,17 +571,27 @@ private fun FrostSoulSpotifyQuickGrid(
                         (mediaMetadata != null && item.title == mediaMetadata.title)
                     val activePlaying = isCurrent && isPlaying
 
+                    val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
+                    val cardShape = RoundedCornerShape(8.dp)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .shadow(
+                                elevation = if (isLight) 3.dp else 0.dp,
+                                shape = cardShape,
+                                clip = false,
+                                spotColor = Color(0x18000000),
+                                ambientColor = Color(0x0C000000),
+                            )
+                            .clip(cardShape)
                             .background(FrostSoulTheme.colors.surfaceRaised)
                             .border(
                                 width = 1.dp,
                                 color = if (isCurrent) FrostSoulTheme.colors.accent.copy(alpha = 0.40f)
+                                else if (isLight) FrostSoulTheme.colors.outline.copy(alpha = 0.16f)
                                 else FrostSoulTheme.colors.outline.copy(alpha = 0.08f),
-                                shape = RoundedCornerShape(8.dp),
+                                shape = cardShape,
                             )
                             .clickable {
                                 if (item is Song && item.id == mediaMetadata?.id) {
@@ -816,17 +828,21 @@ private fun FrostSoulEveryoneListening(
         FSSectionHeader(title = "Everyone is listening", actionLabel = "Play all", onAction = {
             playerConnection.playQueue(ListQueue(items = songs.map { it.toMediaItem() }))
         })
-        songs.forEach { song ->
-            PremiumListRow(
-                title = song.title,
-                subtitle = song.artists.joinToString(" • ") { it.name },
-                artworkUrl = song.song.thumbnailUrl,
-                isActive = song.id == mediaMetadata?.id && isPlaying,
-                onClick = {
-                    if (song.id == mediaMetadata?.id) playerConnection.player.togglePlayPause()
-                    else playerConnection.playQueue(ListQueue(items = listOf(song.toMediaItem())))
-                },
-            )
+        PremiumCard(
+            contentPadding = PaddingValues(vertical = FrostSoulTheme.spacing.small),
+        ) {
+            songs.forEach { song ->
+                PremiumListRow(
+                    title = song.title,
+                    subtitle = song.artists.joinToString(" • ") { it.name },
+                    artworkUrl = song.song.thumbnailUrl,
+                    isActive = song.id == mediaMetadata?.id && isPlaying,
+                    onClick = {
+                        if (song.id == mediaMetadata?.id) playerConnection.player.togglePlayPause()
+                        else playerConnection.playQueue(ListQueue(items = listOf(song.toMediaItem())))
+                    },
+                )
+            }
         }
     }
 }
