@@ -61,11 +61,20 @@ std::vector<GeometricReflectionPath> RirGenerator::calculateReflectionPaths(cons
         }
     }
 
-    for (int mx = -maxOrder; mx <= maxOrder; ++mx) {
-        for (int my = -maxOrder; my <= maxOrder; ++my) {
-            for (int mz = -maxOrder; mz <= maxOrder; ++mz) {
+    // Adaptive ISM reflection orders:
+    // Narrow dimensions (e.g. Tunnel width/height, Car cabin) produce rapid transversal
+    // bounces before longitudinal sound travels far. We scale maximum order adaptively per axis
+    // to capture true waveguide flutter without calculating millions of redundant paths.
+    const int maxOrderX = std::clamp(static_cast<int>(80.0f / std::max(dims.x, 2.0f)), 1, 3);
+    const int maxOrderY = std::clamp(static_cast<int>(50.0f / std::max(dims.y, 1.2f)), 1, 5);
+    const int maxOrderZ = std::clamp(static_cast<int>(40.0f / std::max(dims.z, 1.0f)), 1, 4);
+    const int maxOrderTotal = std::max({maxOrderX, maxOrderY, maxOrderZ, cfg_.maxIsmOrder});
+
+    for (int mx = -maxOrderX; mx <= maxOrderX; ++mx) {
+        for (int my = -maxOrderY; my <= maxOrderY; ++my) {
+            for (int mz = -maxOrderZ; mz <= maxOrderZ; ++mz) {
                 const int order = std::abs(mx) + std::abs(my) + std::abs(mz);
-                if (order == 0 || order > maxOrder) continue;
+                if (order == 0 || order > maxOrderTotal) continue;
 
                 // Image source coordinates in room space
                 const float sx_rel = src.x + dims.x * 0.5f;
@@ -191,6 +200,22 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
         // Spatialise via anechoic HRTF matching angle of arrival
         hrtf.render(path.arrivalDirection, hrirL.data(), hrirR.data());
 
+        // Apply physical material frequency damping to the HRIR taps:
+        // High-frequency absorption (carpet, upholstery, air attenuation over distance)
+        // softly rolls off reflection treble; hard ceramic tile / glass maintains pristine sparkle.
+        const float lowGain = 0.5f * (path.bandGains[0] + path.bandGains[1]);
+        const float highGain = 0.5f * (path.bandGains[4] + path.bandGains[5]);
+        const float hfDamp = std::clamp(1.0f - (highGain / std::max(lowGain, 1.0e-3f)), 0.0f, 0.85f);
+        if (hfDamp > 0.03f) {
+            float yL = 0.0f, yR = 0.0f;
+            for (std::size_t t = 0; t < hrirTaps; ++t) {
+                yL += (1.0f - hfDamp) * (hrirL[t] - yL);
+                yR += (1.0f - hfDamp) * (hrirR[t] - yR);
+                hrirL[t] = yL;
+                hrirR[t] = yR;
+            }
+        }
+
         const std::size_t baseIdx = static_cast<std::size_t>(delaySamples);
         const float frac = delaySamples - static_cast<float>(baseIdx);
         const float gain = path.broadbandGain;
@@ -217,13 +242,15 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
         const float tMix = std::clamp(std::sqrt(V) / c, 0.012f, 0.120f);
         const std::size_t startSample = static_cast<std::size_t>(tMix * fs);
 
-        // Sabine/Eyring T60 per band
+        // Sabine/Eyring T60 per band (Low: 125-250Hz, Mid: 500-1000Hz, High: 2000-4000Hz)
         const auto t60Bands = space.reverberationTimeT60();
-        const float t60Mid = 0.5f * (t60Bands[2] + t60Bands[3]);
-        const float t60High = 0.5f * (t60Bands[4] + t60Bands[5]);
+        const float t60Low = std::clamp(0.5f * (t60Bands[0] + t60Bands[1]), 0.10f, 15.0f);
+        const float t60Mid = std::clamp(0.5f * (t60Bands[2] + t60Bands[3]), 0.10f, 15.0f);
+        const float t60High = std::clamp(0.5f * (t60Bands[4] + t60Bands[5]), 0.05f, 10.0f);
 
-        const float decayRateMid = 6.907755f / std::max(t60Mid, 0.1f);
-        const float decayRateHigh = 6.907755f / std::max(t60High, 0.05f);
+        const float decayRateLow = 6.907755f / t60Low;
+        const float decayRateMid = 6.907755f / t60Mid;
+        const float decayRateHigh = 6.907755f / t60High;
 
         // Diffuse energy density scaling based on volume and mean absorption
         const float diffuseScale = (cfg_.diffuseEnergyRatio * 0.12f) / std::sqrt(std::max(V, 10.0f));
@@ -231,25 +258,32 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
         std::mt19937 rng(1337);
         std::normal_distribution<float> dist(0.0f, 1.0f);
 
+        // Dynamic frequency-dependent damping based on physical T60 high-to-mid ratio
+        const float hfRatio = std::clamp(t60High / t60Mid, 0.10f, 1.0f);
+        const float dampCoeff = std::clamp(std::exp(-1.0f / (0.003f * hfRatio * fs)), 0.05f, 0.98f);
+
         float lpL = 0.0f;
         float lpR = 0.0f;
-        const float dampCoeff = std::clamp(std::exp(-1.0f / (0.005f * fs)), 0.1f, 0.95f);
 
         for (std::size_t n = startSample; n < cfg_.maxTaps; ++n) {
             const float t = static_cast<float>(n) / fs;
             const float dt = t - tMix;
 
+            const float envLow = std::exp(-decayRateLow * dt);
             const float envMid = std::exp(-decayRateMid * dt);
             const float envHigh = std::exp(-decayRateHigh * dt);
-            const float env = 0.7f * envMid + 0.3f * envHigh;
+
+            // Multi-band envelope weighting captures bass ratio and high air decay
+            const float env = 0.25f * envLow + 0.50f * envMid + 0.25f * envHigh;
 
             const float fadeIn = std::min(1.0f, dt / 0.010f);
 
             const float wL = dist(rng);
             const float wR = dist(rng);
 
-            const float diffL = (wL * 0.85f + wR * 0.15f) * env * diffuseScale * fadeIn;
-            const float diffR = (wR * 0.85f + wL * 0.15f) * env * diffuseScale * fadeIn;
+            // 3D Binaural Decorrelation & Envelopment
+            const float diffL = (wL * 0.80f + wR * 0.20f) * env * diffuseScale * fadeIn;
+            const float diffR = (wR * 0.80f + wL * 0.20f) * env * diffuseScale * fadeIn;
 
             lpL += (1.0f - dampCoeff) * (diffL - lpL);
             lpR += (1.0f - dampCoeff) * (diffR - lpR);

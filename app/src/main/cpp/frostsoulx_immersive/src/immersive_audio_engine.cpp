@@ -790,21 +790,27 @@ void ImmersiveAudioEngine::setRoomSimulationPreset(RoomSimulationPreset preset) 
     if (impl_->fullConvolutionReady) {
         switch (preset) {
             case RoomSimulationPreset::Off:
+                impl_->irLengthTaps = 8192;
                 impl_->activeSpace = spatial::SpaceProfile::createAnechoic();
                 break;
             case RoomSimulationPreset::SmallRoom:
+                impl_->irLengthTaps = 16384;
                 impl_->activeSpace = spatial::SpaceProfile::createBathroom();
                 break;
             case RoomSimulationPreset::Studio:
+                impl_->irLengthTaps = 16384;
                 impl_->activeSpace = spatial::SpaceProfile::createLivingRoom();
                 break;
             case RoomSimulationPreset::ConcertHall:
+                impl_->irLengthTaps = 32768;
                 impl_->activeSpace = spatial::SpaceProfile::createConcertHall();
                 break;
             case RoomSimulationPreset::Cathedral:
+                impl_->irLengthTaps = 32768;
                 impl_->activeSpace = spatial::SpaceProfile::createLargeHall();
                 break;
             case RoomSimulationPreset::Subway:
+                impl_->irLengthTaps = 32768;
                 impl_->activeSpace = spatial::SpaceProfile::createLongSubwayTunnel();
                 break;
         }
@@ -1024,6 +1030,19 @@ void ImmersiveAudioEngine::setSpatialBackendPreference(SpatialBackend backend) n
 
 void ImmersiveAudioEngine::setSpacePreset(spatial::SpaceProfile::Preset preset) noexcept {
     impl_->activeSpace = spatial::SpaceProfile::createPreset(preset);
+    switch (preset) {
+        case spatial::SpaceProfile::Preset::Anechoic:
+        case spatial::SpaceProfile::Preset::ClosedCar:
+            impl_->irLengthTaps = 8192;
+            break;
+        case spatial::SpaceProfile::Preset::Bathroom:
+        case spatial::SpaceProfile::Preset::LivingRoom:
+            impl_->irLengthTaps = 16384;
+            break;
+        default:
+            impl_->irLengthTaps = 32768;
+            break;
+    }
     impl_->reloadBrir();
 }
 
