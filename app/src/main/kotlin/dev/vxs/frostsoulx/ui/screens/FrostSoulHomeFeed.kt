@@ -262,11 +262,19 @@ internal fun FrostSoulHomeFeed(
             }
         }
 
-        if (!isMoodSelected) {
+        if (!uiState.isChipLoading && !uiState.chipLoadFailed) {
             // 1. TOP HEADER / GREETING
             item(key = "frostsoul_greeting") {
-                FrostSoulGreetingHeader(accountName = uiState.accountName)
+                FrostSoulGreetingHeader(
+                    accountName = uiState.accountName,
+                    selectedChip = uiState.selectedChip,
+                    mediaMetadata = mediaMetadata,
+                    isPlaying = isPlaying,
+                )
             }
+        }
+
+        if (!isMoodSelected) {
 
             // 2. HERO CAROUSEL (3 to 5 items with pagination dots)
             if (heroSongs.isNotEmpty()) {
@@ -514,26 +522,112 @@ internal fun FrostSoulHomeFeed(
 @Composable
 private fun FrostSoulGreetingHeader(
     accountName: String,
+    selectedChip: HomePage.Chip?,
+    mediaMetadata: MediaMetadata?,
+    isPlaying: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val currentHour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
-    val (greeting, symbol, subtitle) = remember(currentHour) {
+    val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    val (greetingTitle, symbol, defaultOverline) = remember(currentHour) {
         when (currentHour) {
-            in 5..11 -> Triple("GOOD MORNING", "☀️", "Music tuned for your morning flow")
-            in 12..16 -> Triple("GOOD AFTERNOON", "⛅", "Soundtracks for your afternoon flow")
-            in 17..21 -> Triple("GOOD EVENING", "🌅", "Wind down with your favorites")
-            else -> Triple("GOOD NIGHT", "🌙", "Late night vibes & deep listening")
+            in 0..4 -> Triple("Good Night", "🌙", "LATE NIGHT")
+            in 5..11 -> Triple("Good Morning", "☀️", "MORNING FLOW")
+            in 12..16 -> Triple("Good Afternoon", "⛅", "AFTERNOON FLOW")
+            in 17..20 -> Triple("Good Evening", "🌅", "EVENING UNWIND")
+            else -> Triple("Good Night", "🌙", "NIGHT VIBES")
         }
     }
 
     val resolvedName = remember(accountName) {
         val raw = accountName.trim()
-        if (raw.isNotBlank()) {
+        if (raw.isNotBlank() && !raw.equals("Shivam", ignoreCase = true)) {
             raw.split("\\s+".toRegex()).firstOrNull()?.replaceFirstChar {
                 if (it.isLowerCase()) it.titlecase() else it.toString()
-            } ?: "Shivam"
+            }.orEmpty()
         } else {
-            "Shivam"
+            ""
+        }
+    }
+
+    val displayTitle = remember(greetingTitle, resolvedName) {
+        if (resolvedName.isNotBlank()) {
+            "$greetingTitle, $resolvedName"
+        } else {
+            greetingTitle
+        }
+    }
+
+    val overline = remember(selectedChip, isPlaying, defaultOverline) {
+        when {
+            selectedChip != null -> "${selectedChip.title.uppercase()} SESSION"
+            isPlaying -> "NOW LISTENING"
+            else -> defaultOverline
+        }
+    }
+
+    val subtitle = remember(currentHour, selectedChip, isPlaying, mediaMetadata) {
+        if (selectedChip != null) {
+            val chipName = selectedChip.title
+            when {
+                chipName.contains("relax", ignoreCase = true) ->
+                    if (currentHour in 21..23 || currentHour in 0..4) {
+                        "Relaxation session • Calming ambient tones for winding down"
+                    } else {
+                        "Relaxation session • Peaceful melodies to clear your mind"
+                    }
+                chipName.contains("workout", ignoreCase = true) ->
+                    if (currentHour in 5..11) {
+                        "Morning workout • High-energy beats to power your day"
+                    } else {
+                        "Workout session • Heavy bass & high-tempo momentum"
+                    }
+                chipName.contains("focus", ignoreCase = true) ->
+                    if (currentHour in 0..4) {
+                        "Midnight focus • Deep instrumental concentration"
+                    } else {
+                        "Focus session • Ambient flow & distraction-free listening"
+                    }
+                chipName.contains("energ", ignoreCase = true) ->
+                    "Energy session • Uplifting tracks & fast-paced rhythms"
+                chipName.contains("commute", ignoreCase = true) ->
+                    if (currentHour in 5..11) {
+                        "Morning commute • Fresh soundtracks for your journey"
+                    } else if (currentHour in 17..21) {
+                        "Evening commute • Unwind on your way home"
+                    } else {
+                        "On the move • Handpicked tracks for the road"
+                    }
+                chipName.contains("party", ignoreCase = true) ->
+                    "Party session • Crowd favorites & high-voltage jams"
+                chipName.contains("sleep", ignoreCase = true) ->
+                    "Sleep session • Soothing soundscapes for deep rest"
+                chipName.contains("romance", ignoreCase = true) ->
+                    "Romance session • Intimate acoustics & soulful ballads"
+                chipName.contains("feel good", ignoreCase = true) ->
+                    "Feel good session • Bright melodies & mood-lifting vibes"
+                else ->
+                    "$chipName session • Curated music for your current flow"
+            }
+        } else if (isPlaying && mediaMetadata != null) {
+            val trackTitle = mediaMetadata.title.take(30)
+            val artist = mediaMetadata.artists.firstOrNull()?.name ?: mediaMetadata.artist
+            val trackInfo = if (!artist.isNullOrBlank()) "$trackTitle • $artist" else trackTitle
+            when (currentHour) {
+                in 0..4 -> "Late night session • Listening to $trackInfo"
+                in 5..11 -> "Morning session • Listening to $trackInfo"
+                in 12..16 -> "Afternoon flow • Listening to $trackInfo"
+                in 17..20 -> "Evening session • Listening to $trackInfo"
+                else -> "Night session • Listening to $trackInfo"
+            }
+        } else {
+            when (currentHour) {
+                in 0..4 -> "Late night vibes • Ambient tones & deep listening"
+                in 5..8 -> "Early morning vibes • Gentle acoustics & sunrise melodies"
+                in 9..11 -> "Morning vibes • Uplifting rhythms tuned for your day"
+                in 12..16 -> "Afternoon flow • Soundtracks for focus & daytime momentum"
+                in 17..20 -> "Evening vibes • Wind down with smooth melodies & favorites"
+                else -> "Night vibes • Chill beats, mellow acoustic & calm listening"
+            }
         }
     }
 
@@ -545,7 +639,7 @@ private fun FrostSoulGreetingHeader(
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         FSText(
-            text = greeting,
+            text = overline,
             color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.85f),
             style = FrostSoulTheme.typography.overline.copy(
                 fontSize = 11.5.sp,
@@ -558,13 +652,16 @@ private fun FrostSoulGreetingHeader(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             FSText(
-                text = resolvedName,
+                text = displayTitle,
                 color = FrostSoulTheme.colors.onSurface,
                 style = FrostSoulTheme.typography.title.copy(
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.5).sp,
                 ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
             FSText(
                 text = symbol,
@@ -580,6 +677,8 @@ private fun FrostSoulGreetingHeader(
                 fontSize = 13.5.sp,
                 lineHeight = 18.sp,
             ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
