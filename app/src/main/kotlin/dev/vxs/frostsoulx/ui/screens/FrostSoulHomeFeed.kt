@@ -112,7 +112,11 @@ internal fun FrostSoulHomeFeed(
     val quickGridItems = remember(uiState.speedDialItems, uiState.recentlyPlayed, uiState.keepListening) {
         (uiState.speedDialItems + uiState.recentlyPlayed + uiState.keepListening)
             .distinctBy { it.id }
-            .take(6)
+            .take(18)
+    }
+    val quickGridIds = remember(quickGridItems) { quickGridItems.mapTo(HashSet()) { it.id } }
+    val featuredForYou = remember(uiState.featuredForYou, quickGridIds) {
+        uiState.featuredForYou.filterNot { it.id in quickGridIds }
     }
     val isMoodSelected = uiState.selectedChip != null
     val pageSections = if (uiState.isChipLoading || uiState.chipLoadFailed) emptyList()
@@ -179,10 +183,10 @@ internal fun FrostSoulHomeFeed(
                 }
             }
 
-            if (uiState.featuredForYou.isNotEmpty()) {
+            if (featuredForYou.isNotEmpty()) {
                 item(key = "frostsoul_featured_for_you_top") {
                     FrostSoulBannerCarousel(
-                        songs = uiState.featuredForYou.take(6),
+                        songs = featuredForYou.take(8),
                         mediaMetadata = mediaMetadata,
                         playerConnection = playerConnection,
                         isPlaying = isPlaying,
@@ -541,28 +545,33 @@ private fun FrostSoulSpotifyQuickGrid(
 ) {
     if (items.isEmpty()) return
 
-    val displayItems = remember(items) { items.take(6) }
-    val itemPairs = remember(displayItems) { displayItems.chunked(2) }
+    val displayItems = remember(items) { items.take(18) }
+    val itemColumns = remember(displayItems) { displayItems.chunked(3) }
 
-    Column(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = FrostSoulTheme.spacing.page),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        itemPairs.forEach { pair ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                pair.forEach { item ->
+        val cardWidth = ((maxWidth - 8.dp) / 2).coerceAtLeast(132.dp)
+        LazyRow(
+            contentPadding = PaddingValues(0.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            items(itemColumns, key = { column -> "quick_column_${column.firstOrNull()?.id.orEmpty()}" }) { column ->
+                Column(
+                    modifier = Modifier.width(cardWidth),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    column.forEach { item ->
                     val isCurrent = (item is Song && item.id == mediaMetadata?.id) ||
                         (mediaMetadata != null && item.title == mediaMetadata.title)
                     val activePlaying = isCurrent && isPlaying
 
                     Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxWidth()
                             .height(56.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(FrostSoulTheme.colors.surfaceRaised)
@@ -643,9 +652,7 @@ private fun FrostSoulSpotifyQuickGrid(
                             }
                         }
                     }
-                }
-                if (pair.size == 1) {
-                    Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
             }
         }

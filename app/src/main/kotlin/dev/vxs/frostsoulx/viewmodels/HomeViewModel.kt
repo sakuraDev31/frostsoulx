@@ -545,12 +545,24 @@ class HomeViewModel
             }
 
             val fresh = ranked.filter { it.first.song.id !in historyIds }.map { it.first }
-            val discoveryPicks = diversify(fresh).take(8).mapTo(HashSet()) { it.id }
-            // Reserve most of the banner for discovery, but keep familiar/offline fallbacks.
+            val listened = ranked.filter { it.first.song.id in historyIds }.map { it.first }
+            val featuredSize = 8
+            // The Made for you banner is intentionally discovery-led: seven of eight slots
+            // are unseen, taste-matched tracks and one slot is a familiar track. If one source
+            // is unavailable, fill only the missing slots from the other source rather than
+            // blocking the shelf on a small library.
+            val newTarget = kotlin.math.ceil(featuredSize * 0.85f).toInt().coerceAtLeast(1)
+            val listenedTarget = featuredSize - newTarget
+            val newFeatured = diversify(fresh).take(newTarget)
+            val listenedFeatured = diversify(listened)
+                .filterNot { song -> song.id in newFeatured.mapTo(HashSet()) { it.id } }
+                .take(listenedTarget)
             val featured = diversify(
-                ranked.filter { it.first.song.id in discoveryPicks }.map { it.first } +
-                    ranked.filterNot { it.first.song.id in discoveryPicks }.map { it.first },
-            ).take(8)
+                (newFeatured + listenedFeatured).map { song -> HomeCandidate(song, HomeCandidateSource.DISCOVERY) } +
+                    ranked.map { it.first }.filterNot { candidate ->
+                        candidate.song.id in (newFeatured + listenedFeatured).mapTo(HashSet()) { it.id }
+                    },
+            ).take(featuredSize)
             val featuredIds = featured.mapTo(HashSet()) { it.id }
             val moment = diversify(
                 (fresh + ranked.map { it.first }).distinctBy { it.song.id }
