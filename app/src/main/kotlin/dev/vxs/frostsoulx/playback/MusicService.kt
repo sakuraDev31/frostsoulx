@@ -189,6 +189,9 @@ import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
 import dev.vxs.frostsoulx.constants.StereoSurroundCarFaderKey
 import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
 import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
+import dev.vxs.frostsoulx.constants.StereoSurroundBassGainDbKey
+import dev.vxs.frostsoulx.constants.StereoSurroundTrebleGainDbKey
+import dev.vxs.frostsoulx.constants.StereoSurroundOutputGainDbKey
 import dev.vxs.frostsoulx.constants.PlayerStreamClient
 import dev.vxs.frostsoulx.constants.PlayerStreamClientKey
 import dev.vxs.frostsoulx.constants.PlayerVolumeKey
@@ -1095,21 +1098,13 @@ class MusicService :
         )
         ImmersiveAudioRuntime.setLimiterEnabled(dataStore.get(StereoSurroundLimiterEnabledKey, true))
         ImmersiveAudioRuntime.setBassGainDb(
-            if (dataStore.get(EqualizerBassBoostEnabledKey, false)) {
-                dataStore.get(EqualizerBassBoostStrengthKey, 0).coerceIn(0, 1000) / 1000f * 12f
-            } else {
-                0f
-            },
+            dataStore.get(StereoSurroundBassGainDbKey, 0f),
         )
         ImmersiveAudioRuntime.setTrebleGainDb(
-            dataStore.get(EqualizerTrebleGainMbKey, 0).coerceIn(-1500, 1500) / 1500f * 12f,
+            dataStore.get(StereoSurroundTrebleGainDbKey, 0f),
         )
         ImmersiveAudioRuntime.setOutputGainDb(
-            if (dataStore.get(EqualizerOutputGainEnabledKey, false)) {
-                (dataStore.get(EqualizerOutputGainMbKey, 0).coerceIn(-1500, 1500) / 1500f * 12f).coerceIn(-24f, 12f)
-            } else {
-                0f
-            },
+            dataStore.get(StereoSurroundOutputGainDbKey, 0f),
         )
         ImmersiveAudioRuntime.setEnabled(dataStore.get(StereoSurroundEnabledKey, false))
         equalizerPlaybackController.attach(this)
@@ -1456,6 +1451,13 @@ class MusicService :
                     // enabled=false.
                     closeAudioEffectSession()
                 }
+            }
+
+        dataStore.data
+            .map { it[StereoSurroundEnabledKey] ?: false }
+            .distinctUntilChanged()
+            .collectLatest(scope) { enabled ->
+                ImmersiveAudioRuntime.setEnabled(enabled)
             }
 
         combine(

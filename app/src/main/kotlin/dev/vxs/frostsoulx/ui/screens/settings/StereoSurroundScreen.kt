@@ -3,11 +3,25 @@ package dev.vxs.frostsoulx.ui.screens.settings
 import android.media.AudioManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,26 +33,39 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,74 +73,76 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.ImmersiveDevelopmentWarningShownKey
+import dev.vxs.frostsoulx.constants.MiniPlayerHeight
+import dev.vxs.frostsoulx.constants.StereoSurroundBassGainDbKey
+import dev.vxs.frostsoulx.constants.StereoSurroundCarFaderKey
+import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
 import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
-import dev.vxs.frostsoulx.constants.StereoSurroundRoomPresetKey
-import dev.vxs.frostsoulx.constants.StereoSurroundRoomMixKey
+import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
+import dev.vxs.frostsoulx.constants.StereoSurroundOutputGainDbKey
+import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
 import dev.vxs.frostsoulx.constants.StereoSurroundReflectionAmountKey
 import dev.vxs.frostsoulx.constants.StereoSurroundReverbTimeKey
+import dev.vxs.frostsoulx.constants.StereoSurroundRoomMixKey
+import dev.vxs.frostsoulx.constants.StereoSurroundRoomPresetKey
 import dev.vxs.frostsoulx.constants.StereoSurroundRoomSizeKey
-import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
-import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
-import dev.vxs.frostsoulx.constants.StereoSurroundCarFaderKey
-import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
 import dev.vxs.frostsoulx.constants.StereoSurroundSavedPresetsKey
-import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
-import dev.vxs.frostsoulx.constants.EqualizerEnabledKey
-import dev.vxs.frostsoulx.constants.EqualizerBassBoostEnabledKey
-import dev.vxs.frostsoulx.constants.EqualizerBassBoostStrengthKey
-import dev.vxs.frostsoulx.constants.EqualizerTrebleGainMbKey
-import dev.vxs.frostsoulx.constants.EqualizerOutputGainEnabledKey
-import dev.vxs.frostsoulx.constants.EqualizerOutputGainMbKey
-import dev.vxs.frostsoulx.constants.ImmersiveDevelopmentWarningShownKey
-import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
-import dev.vxs.frostsoulx.playback.ImmersiveRoomPreset
-import dev.vxs.frostsoulx.playback.ImmersiveAudioProcessor
-import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
-import dev.vxs.frostsoulx.utils.rememberPreference
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
-import java.util.Locale
+import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
+import dev.vxs.frostsoulx.constants.StereoSurroundTrebleGainDbKey
+import dev.vxs.frostsoulx.playback.ImmersiveActiveCapture
 import dev.vxs.frostsoulx.playback.ImmersiveAudioDiagnostics
 import dev.vxs.frostsoulx.playback.ImmersiveAudioPreset
-import dev.vxs.frostsoulx.playback.ImmersiveActiveCapture
+import dev.vxs.frostsoulx.playback.ImmersiveAudioProcessor
+import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.playback.ImmersiveDiagnosticCapture
 import dev.vxs.frostsoulx.playback.ImmersiveDiagnosticSample
+import dev.vxs.frostsoulx.playback.ImmersiveRoomPreset
 import dev.vxs.frostsoulx.playback.defaultAndroidDescription
 import dev.vxs.frostsoulx.playback.defaultDeviceDescription
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
+import dev.vxs.frostsoulx.utils.rememberPreference
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.Locale
+import kotlin.math.log10
+import kotlin.math.roundToInt
 
-private enum class ImmersiveSettingsPage { Default, Advanced, Diagnostic }
+private enum class ImmersiveCategory(val label: String) {
+    Acoustics("Acoustics"),
+    Soundstage("Soundstage"),
+    StudioLab("Studio Lab"),
+}
 
 @Composable
 fun StereoSurroundScreen(navController: NavController) {
     val enabledPreference = rememberPreference(StereoSurroundEnabledKey, defaultValue = false)
     val intensityPreference = rememberPreference(StereoSurroundIntensityKey, defaultValue = 0.5f)
-    val enabled by enabledPreference
-    val persistedIntensity by intensityPreference
     val roomPresetPreference = rememberPreference(StereoSurroundRoomPresetKey, defaultValue = ImmersiveRoomPreset.STUDIO.nativeValue)
     val roomMixPreference = rememberPreference(StereoSurroundRoomMixKey, defaultValue = 0.18f)
     val reflectionPreference = rememberPreference(StereoSurroundReflectionAmountKey, defaultValue = 0.28f)
@@ -124,14 +153,14 @@ fun StereoSurroundScreen(navController: NavController) {
     val carFaderPreference = rememberPreference(StereoSurroundCarFaderKey, defaultValue = 0f)
     val quantumPreference = rememberPreference(StereoSurroundQuantumFramesKey, defaultValue = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES)
     val limiterPreference = rememberPreference(StereoSurroundLimiterEnabledKey, defaultValue = true)
-    val eqEnabledPreference = rememberPreference(EqualizerEnabledKey, defaultValue = false)
-    val bassEnabledPreference = rememberPreference(EqualizerBassBoostEnabledKey, defaultValue = false)
-    val bassStrengthPreference = rememberPreference(EqualizerBassBoostStrengthKey, defaultValue = 0)
-    val trebleGainPreference = rememberPreference(EqualizerTrebleGainMbKey, defaultValue = 0)
-    val outputGainEnabledPreference = rememberPreference(EqualizerOutputGainEnabledKey, defaultValue = false)
-    val outputGainPreference = rememberPreference(EqualizerOutputGainMbKey, defaultValue = 0)
+    val bassGainDbPreference = rememberPreference(StereoSurroundBassGainDbKey, defaultValue = 0f)
+    val trebleGainDbPreference = rememberPreference(StereoSurroundTrebleGainDbKey, defaultValue = 0f)
+    val outputGainDbPreference = rememberPreference(StereoSurroundOutputGainDbKey, defaultValue = 0f)
     val savedPresetsPreference = rememberPreference(StereoSurroundSavedPresetsKey, defaultValue = "")
     val developmentWarningPreference = rememberPreference(ImmersiveDevelopmentWarningShownKey, defaultValue = false)
+
+    val enabled by enabledPreference
+    val persistedIntensity by intensityPreference
     val persistedRoomPreset by roomPresetPreference
     val persistedRoomMix by roomMixPreference
     val persistedReflectionAmount by reflectionPreference
@@ -142,15 +171,13 @@ fun StereoSurroundScreen(navController: NavController) {
     val persistedCarFader by carFaderPreference
     val persistedQuantum by quantumPreference
     val limiterEnabled by limiterPreference
-    val bassEnabled by bassEnabledPreference
-    val bassStrength by bassStrengthPreference
-    val trebleGainMb by trebleGainPreference
-    val outputGainEnabled by outputGainEnabledPreference
-    val outputGainMb by outputGainPreference
+    val persistedBassGainDb by bassGainDbPreference
+    val persistedTrebleGainDb by trebleGainDbPreference
+    val persistedOutputGainDb by outputGainDbPreference
     val savedPresetsRaw by savedPresetsPreference
     val developmentWarningShown by developmentWarningPreference
 
-    var selectedPage by remember { mutableStateOf(ImmersiveSettingsPage.Default) }
+    var selectedCategory by remember { mutableStateOf(ImmersiveCategory.Acoustics) }
     var draftIntensity by remember { mutableFloatStateOf(persistedIntensity.coerceIn(0f, 1f)) }
     var draftRoomMix by remember { mutableFloatStateOf(persistedRoomMix.coerceIn(0f, 1f)) }
     var draftReflectionAmount by remember { mutableFloatStateOf(persistedReflectionAmount.coerceIn(0f, 1f)) }
@@ -159,10 +186,15 @@ fun StereoSurroundScreen(navController: NavController) {
     var draftDampening by remember { mutableFloatStateOf(persistedDampening.coerceIn(0f, 1f)) }
     var draftStereoWidth by remember { mutableFloatStateOf(persistedStereoWidth.coerceIn(0f, 1f)) }
     var draftCarFader by remember { mutableFloatStateOf(persistedCarFader.coerceIn(-1f, 1f)) }
-    var draftQuantum by remember { mutableStateOf(persistedQuantum.coerceAtLeast(1)) }
+    var draftQuantum by remember { mutableIntStateOf(persistedQuantum.coerceIn(ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES, ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES)) }
+    var draftBassGainDb by remember { mutableFloatStateOf(persistedBassGainDb.coerceIn(-12f, 12f)) }
+    var draftTrebleGainDb by remember { mutableFloatStateOf(persistedTrebleGainDb.coerceIn(-12f, 12f)) }
+    var draftOutputGainDb by remember { mutableFloatStateOf(persistedOutputGainDb.coerceIn(-24f, 12f)) }
+
     var isDragging by remember { mutableStateOf(false) }
     var diagnostics by remember { mutableStateOf(ImmersiveAudioDiagnostics()) }
     var showSavePreset by remember { mutableStateOf(false) }
+    var showInfoDialog by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
     val savedPresets = remember(savedPresetsRaw) { ImmersiveAudioPreset.decodeAll(savedPresetsRaw) }
     val context = LocalContext.current
@@ -170,6 +202,7 @@ fun StereoSurroundScreen(navController: NavController) {
     var activeCapture by remember { mutableStateOf<ImmersiveActiveCapture?>(null) }
     var latestCapture by remember { mutableStateOf<ImmersiveDiagnosticCapture?>(null) }
     var captureJob by remember { mutableStateOf<Job?>(null) }
+
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         val report = latestCapture
         if (uri != null && report != null) {
@@ -179,8 +212,9 @@ fun StereoSurroundScreen(navController: NavController) {
                         report.toText(
                             device = defaultDeviceDescription(),
                             androidVersion = defaultAndroidDescription(),
-                            audioRoute = "AudioManager output",
-                            hostBufferFrames = context.getSystemService(AudioManager::class.java)?.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)?.toIntOrNull() ?: 0,
+                            audioRoute = "AudioTrack Stereo Output",
+                            hostBufferFrames = context.getSystemService(AudioManager::class.java)
+                                ?.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)?.toIntOrNull() ?: 0,
                         ),
                     )
                 }
@@ -241,7 +275,17 @@ fun StereoSurroundScreen(navController: NavController) {
         }
     }
 
-    LaunchedEffect(persistedRoomPreset, persistedRoomMix, persistedReflectionAmount, persistedReverbTime, persistedRoomSize, persistedDampening, persistedStereoWidth, persistedCarFader, persistedQuantum) {
+    LaunchedEffect(
+        persistedRoomPreset,
+        persistedRoomMix,
+        persistedReflectionAmount,
+        persistedReverbTime,
+        persistedRoomSize,
+        persistedDampening,
+        persistedStereoWidth,
+        persistedCarFader,
+        persistedQuantum,
+    ) {
         ImmersiveAudioRuntime.setRoomPreset(ImmersiveRoomPreset.fromNative(persistedRoomPreset))
         draftRoomMix = persistedRoomMix.coerceIn(0f, 1f)
         draftReflectionAmount = persistedReflectionAmount.coerceIn(0f, 1f)
@@ -257,7 +301,7 @@ fun StereoSurroundScreen(navController: NavController) {
         ImmersiveAudioRuntime.setStereoWidth(draftStereoWidth)
         draftCarFader = persistedCarFader.coerceIn(-1f, 1f)
         ImmersiveAudioRuntime.setCarFader(draftCarFader)
-        draftQuantum = persistedQuantum.coerceAtLeast(1)
+        draftQuantum = persistedQuantum.coerceIn(ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES, ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES)
         ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
     }
 
@@ -269,22 +313,19 @@ fun StereoSurroundScreen(navController: NavController) {
         ImmersiveAudioRuntime.setLimiterEnabled(limiterEnabled)
     }
 
-    LaunchedEffect(bassEnabled, bassStrength, trebleGainMb, outputGainEnabled, outputGainMb) {
-        // The immersive engine uses dB controls. Keep the existing preference units
-        // (millibel for treble/output and 0..1000 strength for bass) at the UI boundary.
-        ImmersiveAudioRuntime.setBassGainDb(
-            if (bassEnabled) (bassStrength / 1000f * 12f) else 0f,
-        )
-        ImmersiveAudioRuntime.setTrebleGainDb(trebleGainMb / 1500f * 12f)
-        ImmersiveAudioRuntime.setOutputGainDb(
-            if (outputGainEnabled) (outputGainMb / 1500f * 12f).coerceIn(-24f, 12f) else 0f,
-        )
+    LaunchedEffect(persistedBassGainDb, persistedTrebleGainDb, persistedOutputGainDb) {
+        draftBassGainDb = persistedBassGainDb.coerceIn(-12f, 12f)
+        draftTrebleGainDb = persistedTrebleGainDb.coerceIn(-12f, 12f)
+        draftOutputGainDb = persistedOutputGainDb.coerceIn(-24f, 12f)
+        ImmersiveAudioRuntime.setBassGainDb(draftBassGainDb)
+        ImmersiveAudioRuntime.setTrebleGainDb(draftTrebleGainDb)
+        ImmersiveAudioRuntime.setOutputGainDb(draftOutputGainDb)
     }
 
     LaunchedEffect(Unit) {
         while (true) {
             diagnostics = ImmersiveAudioRuntime.readDiagnostics()
-            delay(500)
+            delay(400)
         }
     }
 
@@ -295,14 +336,16 @@ fun StereoSurroundScreen(navController: NavController) {
                 title = {
                     Column {
                         Text(
-                            text = "Immersive audio",
+                            text = "Immersive Audio",
                             color = FrostSoulTheme.colors.onSurface,
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 19.sp,
                         )
                         Text(
-                            text = "Steam Audio HRTF",
-                            color = FrostSoulTheme.colors.onSurfaceMuted,
+                            text = if (enabled) "Steam Audio HRTF · Active" else "Engine Bypassed",
+                            color = if (enabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
                             fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
                         )
                     }
                 },
@@ -312,6 +355,15 @@ fun StereoSurroundScreen(navController: NavController) {
                             painter = painterResource(R.drawable.arrow_back),
                             contentDescription = "Back",
                             tint = FrostSoulTheme.colors.onSurface,
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showInfoDialog = true }) {
+                        Icon(
+                            painter = painterResource(R.drawable.info),
+                            contentDescription = "About Engine",
+                            tint = FrostSoulTheme.colors.onSurfaceMuted,
                         )
                     }
                 },
@@ -325,139 +377,198 @@ fun StereoSurroundScreen(navController: NavController) {
                 .background(FrostSoulTheme.colors.background)
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 8.dp),
+                .padding(horizontal = 20.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            ImmersivePageTabs(
-                selectedPage = selectedPage,
-                onPageSelected = { selectedPage = it },
+            // 1. Hero Acoustic Stage Visualizer
+            AcousticStageHero(
+                enabled = enabled,
+                intensity = draftIntensity,
+                roomPreset = ImmersiveRoomPreset.fromNative(persistedRoomPreset),
+                stereoWidth = draftStereoWidth,
+                carFader = draftCarFader,
+                roomSize = draftRoomSize,
             )
-            Spacer(Modifier.height(28.dp))
 
-            when (selectedPage) {
-                ImmersiveSettingsPage.Default -> DefaultImmersivePage(
-                    enabled = enabled,
-                    intensity = draftIntensity,
-                    onEnabledChange = { enabledPreference.value = it },
-                    onIntensityChange = { value ->
-                        isDragging = true
-                        draftIntensity = value.coerceIn(0f, 1f)
-                        ImmersiveAudioRuntime.setIntensity(draftIntensity)
-                    },
-                    onIntensityFinished = {
-                        isDragging = false
-                        intensityPreference.value = draftIntensity
-                    },
-                )
-                ImmersiveSettingsPage.Advanced -> AdvancedImmersivePage(
-                    enabled = enabled,
-                    intensity = draftIntensity,
-                    onEnabledChange = { enabledPreference.value = it },
-                    onIntensityChange = { value ->
-                        isDragging = true
-                        draftIntensity = value.coerceIn(0f, 1f)
-                        ImmersiveAudioRuntime.setIntensity(draftIntensity)
-                    },
-                    onIntensityFinished = {
-                        isDragging = false
-                        intensityPreference.value = draftIntensity
-                    },
-                    roomPreset = ImmersiveRoomPreset.fromNative(persistedRoomPreset),
-                    roomMix = draftRoomMix,
-                    reflectionAmount = draftReflectionAmount,
-                    reverbTimeSeconds = draftReverbTime,
-                    roomSize = draftRoomSize,
-                    dampening = draftDampening,
-                    stereoWidth = draftStereoWidth,
-                    carFader = draftCarFader,
-                    quantumFrames = draftQuantum,
-                    limiterEnabled = limiterEnabled,
-                    bassEnabled = bassEnabled,
-                    bassStrength = bassStrength,
-                    trebleGainMb = trebleGainMb,
-                    outputGainEnabled = outputGainEnabled,
-                    outputGainMb = outputGainMb,
-                    savedPresets = savedPresets,
-                    onRoomPresetChange = { roomPresetPreference.value = it.nativeValue },
-                    onRoomMixChange = { draftRoomMix = it; roomMixPreference.value = it; ImmersiveAudioRuntime.setRoomMix(it) },
-                    onReflectionChange = { draftReflectionAmount = it; reflectionPreference.value = it; ImmersiveAudioRuntime.setReflectionAmount(it) },
-                    onReverbTimeChange = { draftReverbTime = it; reverbTimePreference.value = it; ImmersiveAudioRuntime.setReverbTimeSeconds(it) },
-                    onRoomSizeChange = { draftRoomSize = it; roomSizePreference.value = it; ImmersiveAudioRuntime.setRoomSize(it) },
-                    onDampeningChange = { draftDampening = it; dampeningPreference.value = it; ImmersiveAudioRuntime.setDampening(it) },
-                    onStereoWidthChange = { draftStereoWidth = it; stereoWidthPreference.value = it; ImmersiveAudioRuntime.setStereoWidth(it) },
-                    onCarFaderChange = { draftCarFader = it; carFaderPreference.value = it; ImmersiveAudioRuntime.setCarFader(it) },
-                    onQuantumChange = { value ->
-                        draftQuantum = value.coerceAtLeast(1)
-                        quantumPreference.value = draftQuantum
-                        ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
-                    },
-                    onLimiterChange = { limiterPreference.value = it },
-                    onBassEnabledChange = { bassEnabledPreference.value = it; eqEnabledPreference.value = true },
-                    onBassStrengthChange = { bassStrengthPreference.value = it.coerceIn(0, 1000); eqEnabledPreference.value = true },
-                    onTrebleGainChange = { trebleGainPreference.value = it.coerceIn(-1500, 1500); eqEnabledPreference.value = true },
-                    onOutputGainEnabledChange = { outputGainEnabledPreference.value = it; eqEnabledPreference.value = true },
-                    onOutputGainChange = { outputGainPreference.value = it.coerceIn(-1500, 1500); eqEnabledPreference.value = true },
-                    onPresetSelected = { preset ->
-                        enabledPreference.value = preset.enabled
-                        intensityPreference.value = preset.intensity
-                        roomPresetPreference.value = preset.roomPreset.nativeValue
-                        draftIntensity = preset.intensity.coerceIn(0f, 1f)
-                        roomMixPreference.value = preset.roomMix
-                        draftRoomMix = preset.roomMix.coerceIn(0f, 1f)
-                        reflectionPreference.value = preset.reflectionAmount
-                        draftReflectionAmount = preset.reflectionAmount.coerceIn(0f, 1f)
-                        reverbTimePreference.value = preset.reverbTimeSeconds
-                        draftReverbTime = preset.reverbTimeSeconds.coerceIn(0.2f, 8f)
-                        roomSizePreference.value = preset.roomSize
-                        draftRoomSize = preset.roomSize.coerceIn(0f, 1f)
-                        dampeningPreference.value = preset.dampening
-                        draftDampening = preset.dampening.coerceIn(0f, 1f)
-                        stereoWidthPreference.value = preset.stereoWidth
-                        draftStereoWidth = preset.stereoWidth.coerceIn(0f, 1f)
-                        carFaderPreference.value = preset.carFader
-                        draftCarFader = preset.carFader.coerceIn(-1f, 1f)
-                        quantumPreference.value = preset.quantumFrames
-                        draftQuantum = preset.quantumFrames.coerceAtLeast(1)
-                        ImmersiveAudioRuntime.setIntensity(draftIntensity)
-                        ImmersiveAudioRuntime.setRoomPreset(preset.roomPreset)
-                        ImmersiveAudioRuntime.setRoomMix(draftRoomMix)
-                        ImmersiveAudioRuntime.setReflectionAmount(draftReflectionAmount)
-                        ImmersiveAudioRuntime.setReverbTimeSeconds(draftReverbTime)
-                        ImmersiveAudioRuntime.setRoomSize(draftRoomSize)
-                        ImmersiveAudioRuntime.setDampening(draftDampening)
-                        ImmersiveAudioRuntime.setStereoWidth(draftStereoWidth)
-                        ImmersiveAudioRuntime.setCarFader(draftCarFader)
-                        ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
-                    },
-                    onSavePreset = { showSavePreset = true },
-                    onResetRoom = {
-                        roomPresetPreference.value = ImmersiveRoomPreset.STUDIO.nativeValue
-                        roomMixPreference.value = 0.18f
-                        reflectionPreference.value = 0.28f
-                        reverbTimePreference.value = 1.35f
-                        roomSizePreference.value = 0.5f
-                        dampeningPreference.value = 0.5f
-                        stereoWidthPreference.value = 0.5f
-                        carFaderPreference.value = 0f
-                        quantumPreference.value = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES
-                    },
-                    diagnostics = diagnostics,
-                )
-                ImmersiveSettingsPage.Diagnostic -> DiagnosticImmersivePage(
-                    diagnostics = diagnostics,
-                    activeCapture = activeCapture,
-                    latestCapture = latestCapture,
-                    onCapture = ::startCapture,
-                    onExport = { latestCapture?.let { exportLauncher.launch(it.fileName()) } },
-                    onReset = {
-                        captureJob?.cancel()
-                        activeCapture = null
-                        latestCapture = null
-                        ImmersiveAudioRuntime.resetDiagnostics()
-                        diagnostics = ImmersiveAudioRuntime.readDiagnostics()
-                    },
-                )
+            // 2. Master Immersion Card
+            MasterImmersionCard(
+                enabled = enabled,
+                intensity = draftIntensity,
+                onEnabledChange = { enabledPreference.value = it },
+                onIntensityChange = { value ->
+                    isDragging = true
+                    draftIntensity = value.coerceIn(0f, 1f)
+                    ImmersiveAudioRuntime.setIntensity(draftIntensity)
+                },
+                onIntensityFinished = {
+                    isDragging = false
+                    intensityPreference.value = draftIntensity
+                },
+            )
+
+            // 3. Category Selector Navigation
+            ImmersiveCategorySelector(
+                selected = selectedCategory,
+                onSelected = { selectedCategory = it },
+            )
+
+            // 4. Tab Content
+            when (selectedCategory) {
+                ImmersiveCategory.Acoustics -> {
+                    AcousticsTabContent(
+                        roomPreset = ImmersiveRoomPreset.fromNative(persistedRoomPreset),
+                        roomMix = draftRoomMix,
+                        reflectionAmount = draftReflectionAmount,
+                        reverbTime = draftReverbTime,
+                        roomSize = draftRoomSize,
+                        dampening = draftDampening,
+                        onRoomPresetChange = { preset ->
+                            roomPresetPreference.value = preset.nativeValue
+                            ImmersiveAudioRuntime.setRoomPreset(preset)
+                            // Apply smart defaults for the preset
+                            when (preset) {
+                                ImmersiveRoomPreset.OFF -> {
+                                    draftRoomMix = 0f
+                                    roomMixPreference.value = 0f
+                                }
+                                ImmersiveRoomPreset.SMALL_ROOM -> {
+                                    draftRoomMix = 0.16f
+                                    draftReverbTime = 0.8f
+                                    draftRoomSize = 0.35f
+                                    roomMixPreference.value = 0.16f
+                                    reverbTimePreference.value = 0.8f
+                                    roomSizePreference.value = 0.35f
+                                }
+                                ImmersiveRoomPreset.STUDIO -> {
+                                    draftRoomMix = 0.18f
+                                    draftReverbTime = 1.35f
+                                    draftRoomSize = 0.5f
+                                    roomMixPreference.value = 0.18f
+                                    reverbTimePreference.value = 1.35f
+                                    roomSizePreference.value = 0.5f
+                                }
+                                ImmersiveRoomPreset.CONCERT_HALL -> {
+                                    draftRoomMix = 0.32f
+                                    draftReverbTime = 3.2f
+                                    draftRoomSize = 0.85f
+                                    roomMixPreference.value = 0.32f
+                                    reverbTimePreference.value = 3.2f
+                                    roomSizePreference.value = 0.85f
+                                }
+                                ImmersiveRoomPreset.CATHEDRAL -> {
+                                    draftRoomMix = 0.40f
+                                    draftReverbTime = 4.8f
+                                    draftRoomSize = 0.95f
+                                    roomMixPreference.value = 0.40f
+                                    reverbTimePreference.value = 4.8f
+                                    roomSizePreference.value = 0.95f
+                                }
+                                ImmersiveRoomPreset.SUBWAY -> {
+                                    draftRoomMix = 0.30f
+                                    draftReverbTime = 2.4f
+                                    draftRoomSize = 0.70f
+                                    roomMixPreference.value = 0.30f
+                                    reverbTimePreference.value = 2.4f
+                                    roomSizePreference.value = 0.70f
+                                }
+                                ImmersiveRoomPreset.CLOSED_CAR -> {
+                                    draftRoomMix = 0.14f
+                                    draftReverbTime = 0.6f
+                                    draftRoomSize = 0.25f
+                                    roomMixPreference.value = 0.14f
+                                    reverbTimePreference.value = 0.6f
+                                    roomSizePreference.value = 0.25f
+                                }
+                            }
+                        },
+                        onRoomMixChange = { draftRoomMix = it; roomMixPreference.value = it; ImmersiveAudioRuntime.setRoomMix(it) },
+                        onReflectionChange = { draftReflectionAmount = it; reflectionPreference.value = it; ImmersiveAudioRuntime.setReflectionAmount(it) },
+                        onReverbTimeChange = { draftReverbTime = it; reverbTimePreference.value = it; ImmersiveAudioRuntime.setReverbTimeSeconds(it) },
+                        onRoomSizeChange = { draftRoomSize = it; roomSizePreference.value = it; ImmersiveAudioRuntime.setRoomSize(it) },
+                        onDampeningChange = { draftDampening = it; dampeningPreference.value = it; ImmersiveAudioRuntime.setDampening(it) },
+                        onResetAcoustics = {
+                            roomPresetPreference.value = ImmersiveRoomPreset.STUDIO.nativeValue
+                            draftRoomMix = 0.18f; roomMixPreference.value = 0.18f
+                            draftReflectionAmount = 0.28f; reflectionPreference.value = 0.28f
+                            draftReverbTime = 1.35f; reverbTimePreference.value = 1.35f
+                            draftRoomSize = 0.5f; roomSizePreference.value = 0.5f
+                            draftDampening = 0.5f; dampeningPreference.value = 0.5f
+                        },
+                    )
+                }
+                ImmersiveCategory.Soundstage -> {
+                    SoundstageTabContent(
+                        stereoWidth = draftStereoWidth,
+                        carFader = draftCarFader,
+                        quantumFrames = draftQuantum,
+                        savedPresets = savedPresets,
+                        onStereoWidthChange = { draftStereoWidth = it; stereoWidthPreference.value = it; ImmersiveAudioRuntime.setStereoWidth(it) },
+                        onCarFaderChange = { draftCarFader = it; carFaderPreference.value = it; ImmersiveAudioRuntime.setCarFader(it) },
+                        onQuantumChange = {
+                            val clamped = it.coerceIn(ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES, ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES)
+                            draftQuantum = clamped
+                            quantumPreference.value = clamped
+                            ImmersiveAudioRuntime.setQuantumFrames(clamped)
+                        },
+                        onPresetSelected = { preset ->
+                            enabledPreference.value = preset.enabled
+                            intensityPreference.value = preset.intensity
+                            draftIntensity = preset.intensity
+                            roomPresetPreference.value = preset.roomPreset.nativeValue
+                            draftRoomMix = preset.roomMix; roomMixPreference.value = preset.roomMix
+                            draftReflectionAmount = preset.reflectionAmount; reflectionPreference.value = preset.reflectionAmount
+                            draftReverbTime = preset.reverbTimeSeconds; reverbTimePreference.value = preset.reverbTimeSeconds
+                            draftRoomSize = preset.roomSize; roomSizePreference.value = preset.roomSize
+                            draftDampening = preset.dampening; dampeningPreference.value = preset.dampening
+                            draftStereoWidth = preset.stereoWidth; stereoWidthPreference.value = preset.stereoWidth
+                            draftCarFader = preset.carFader; carFaderPreference.value = preset.carFader
+                            draftQuantum = preset.quantumFrames.coerceIn(ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES, ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES)
+                            quantumPreference.value = draftQuantum
+                            ImmersiveAudioRuntime.setIntensity(draftIntensity)
+                            ImmersiveAudioRuntime.setRoomPreset(preset.roomPreset)
+                            ImmersiveAudioRuntime.setRoomMix(draftRoomMix)
+                            ImmersiveAudioRuntime.setReflectionAmount(draftReflectionAmount)
+                            ImmersiveAudioRuntime.setReverbTimeSeconds(draftReverbTime)
+                            ImmersiveAudioRuntime.setRoomSize(draftRoomSize)
+                            ImmersiveAudioRuntime.setDampening(draftDampening)
+                            ImmersiveAudioRuntime.setStereoWidth(draftStereoWidth)
+                            ImmersiveAudioRuntime.setCarFader(draftCarFader)
+                            ImmersiveAudioRuntime.setQuantumFrames(draftQuantum)
+                        },
+                        onSavePreset = { showSavePreset = true },
+                        onDeletePreset = { preset ->
+                            val updated = savedPresets.filterNot { it.name.equals(preset.name, ignoreCase = true) }
+                            savedPresetsPreference.value = ImmersiveAudioPreset.encodeAll(updated)
+                        },
+                    )
+                }
+                ImmersiveCategory.StudioLab -> {
+                    StudioLabTabContent(
+                        diagnostics = diagnostics,
+                        limiterEnabled = limiterEnabled,
+                        bassGainDb = draftBassGainDb,
+                        trebleGainDb = draftTrebleGainDb,
+                        outputGainDb = draftOutputGainDb,
+                        activeCapture = activeCapture,
+                        latestCapture = latestCapture,
+                        onLimiterChange = { limiterPreference.value = it; ImmersiveAudioRuntime.setLimiterEnabled(it) },
+                        onBassGainChange = { draftBassGainDb = it; bassGainDbPreference.value = it; ImmersiveAudioRuntime.setBassGainDb(it) },
+                        onTrebleGainChange = { draftTrebleGainDb = it; trebleGainDbPreference.value = it; ImmersiveAudioRuntime.setTrebleGainDb(it) },
+                        onOutputGainChange = { draftOutputGainDb = it; outputGainDbPreference.value = it; ImmersiveAudioRuntime.setOutputGainDb(it) },
+                        onCapture = ::startCapture,
+                        onExport = { latestCapture?.let { exportLauncher.launch(it.fileName()) } },
+                        onResetDiagnostics = {
+                            captureJob?.cancel()
+                            activeCapture = null
+                            latestCapture = null
+                            ImmersiveAudioRuntime.resetDiagnostics()
+                            diagnostics = ImmersiveAudioRuntime.readDiagnostics()
+                        },
+                    )
+                }
             }
-            Spacer(Modifier.height(dev.vxs.frostsoulx.constants.MiniPlayerHeight + 40.dp))
+
+            Spacer(Modifier.height(MiniPlayerHeight + 36.dp))
         }
     }
 
@@ -467,39 +578,108 @@ fun StereoSurroundScreen(navController: NavController) {
             icon = {
                 Icon(
                     painter = painterResource(R.drawable.error),
-                    contentDescription = "Warning",
-                    tint = FrostSoulTheme.colors.onSurface,
-                    modifier = Modifier.size(30.dp),
+                    contentDescription = null,
+                    tint = FrostSoulTheme.colors.accent,
+                    modifier = Modifier.size(28.dp),
                 )
             },
-            title = { Text("Immersive audio is in development") },
+            title = {
+                Text(
+                    "Immersive Audio Engine",
+                    fontWeight = FontWeight.Bold,
+                    color = FrostSoulTheme.colors.onSurface,
+                )
+            },
             text = {
                 Text(
-                    "This feature may produce distorted or clipped sound on some devices. " +
-                        "Turn it off if playback becomes unpleasant or unstable.",
+                    "Steam Audio HRTF delivers authentic 3D spatialization and physical room reflection modeling. " +
+                        "For optimal fidelity, use stereo headphones. Direct bit-perfect playback is preserved when toggled off.",
+                    color = FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 14.sp,
                 )
             },
             confirmButton = {
-                Button(onClick = { developmentWarningPreference.value = true }) {
-                    Text("Continue")
+                Button(
+                    onClick = { developmentWarningPreference.value = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = FrostSoulTheme.colors.accent),
+                ) {
+                    Text("Got It", color = FrostSoulTheme.colors.background, fontWeight = FontWeight.SemiBold)
                 }
             },
+            containerColor = FrostSoulTheme.colors.surfaceRaised,
         )
     }
+
+    if (showInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showInfoDialog = false },
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.info),
+                    contentDescription = null,
+                    tint = FrostSoulTheme.colors.accent,
+                    modifier = Modifier.size(28.dp),
+                )
+            },
+            title = {
+                Text(
+                    "Acoustic Engine Architecture",
+                    fontWeight = FontWeight.Bold,
+                    color = FrostSoulTheme.colors.onSurface,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "• Engine: Valve Steam Audio (Phonon) C++17 real-time DSP\n" +
+                            "• Binaural Pipeline: Media3 PCM → Spatial Partitioned Convolver → HRTF Binaural Synthesis → Physical BRIR Room Acoustics → Zero-overshoot Limiter\n" +
+                            "• Bit-Perfect Bypass: When disabled or bypassed, incoming audio passes directly to AudioTrack with zero re-quantization.",
+                        color = FrostSoulTheme.colors.onSurfaceMuted,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showInfoDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = FrostSoulTheme.colors.accent),
+                ) {
+                    Text("Close", color = FrostSoulTheme.colors.background)
+                }
+            },
+            containerColor = FrostSoulTheme.colors.surfaceRaised,
+        )
+    }
+
     if (showSavePreset) {
         AlertDialog(
             onDismissRequest = { showSavePreset = false },
-            title = { Text("Save engine preset") },
+            title = {
+                Text(
+                    "Save Custom Acoustic Space",
+                    fontWeight = FontWeight.Bold,
+                    color = FrostSoulTheme.colors.onSurface,
+                )
+            },
             text = {
                 TextField(
                     value = presetName,
-                    onValueChange = { presetName = it.take(64) },
+                    onValueChange = { presetName = it.take(32) },
                     singleLine = true,
-                    label = { Text("Preset name") },
+                    label = { Text("Preset name (e.g. My Studio)") },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = FrostSoulTheme.colors.surface,
+                        unfocusedContainerColor = FrostSoulTheme.colors.surface,
+                        focusedIndicatorColor = FrostSoulTheme.colors.accent,
+                        unfocusedIndicatorColor = FrostSoulTheme.colors.outline,
+                    ),
                 )
             },
             dismissButton = {
-                Button(onClick = { showSavePreset = false }) { Text("Cancel") }
+                OutlinedButton(onClick = { showSavePreset = false }) {
+                    Text("Cancel", color = FrostSoulTheme.colors.onSurfaceMuted)
+                }
             },
             confirmButton = {
                 Button(
@@ -524,600 +704,796 @@ fun StereoSurroundScreen(navController: NavController) {
                         presetName = ""
                         showSavePreset = false
                     },
-                ) { Text("Save") }
+                    colors = ButtonDefaults.buttonColors(containerColor = FrostSoulTheme.colors.accent),
+                ) {
+                    Text("Save", color = FrostSoulTheme.colors.background)
+                }
             },
+            containerColor = FrostSoulTheme.colors.surfaceRaised,
         )
     }
 }
 
+// -------------------------------------------------------------------------
+// 1. HERO 3D ACOUSTIC SOUNDSTAGE VISUALIZER
+// -------------------------------------------------------------------------
+
 @Composable
-private fun ImmersivePageTabs(
-    selectedPage: ImmersiveSettingsPage,
-    onPageSelected: (ImmersiveSettingsPage) -> Unit,
+private fun AcousticStageHero(
+    enabled: Boolean,
+    intensity: Float,
+    roomPreset: ImmersiveRoomPreset,
+    stereoWidth: Float,
+    carFader: Float,
+    roomSize: Float,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "pulseAlpha",
+    )
+
+    val animatedEnabledProgress by animateFloatAsState(
+        targetValue = if (enabled) 1f else 0.15f,
+        animationSpec = tween(500),
+        label = "enabledProgress",
+    )
+
+    val primaryColor = FrostSoulTheme.colors.accent
+    val surfaceColor = FrostSoulTheme.colors.surfaceRaised
+    val outlineColor = FrostSoulTheme.colors.outline
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+            .clip(RoundedCornerShape(26.dp))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        surfaceColor.copy(alpha = 0.95f),
+                        FrostSoulTheme.colors.surface.copy(alpha = 0.98f),
+                    ),
+                ),
+            )
+            .border(1.dp, outlineColor.copy(alpha = 0.6f), RoundedCornerShape(26.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val cx = w / 2f
+            val cy = h / 2f + 14.dp.toPx()
+
+            // 1. Draw Room Acoustics Boundary Box
+            val roomScaleFactor = 0.60f + roomSize * 0.35f
+            val roomW = w * 0.88f * roomScaleFactor
+            val roomH = h * 0.72f * roomScaleFactor
+            val roomLeft = cx - roomW / 2f
+            val roomTop = cy - roomH / 2f
+
+            drawRoundRect(
+                color = primaryColor.copy(alpha = 0.08f * animatedEnabledProgress),
+                topLeft = Offset(roomLeft, roomTop),
+                size = Size(roomW, roomH),
+                cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
+            )
+            drawRoundRect(
+                color = if (enabled) primaryColor.copy(alpha = 0.35f) else outlineColor.copy(alpha = 0.25f),
+                topLeft = Offset(roomLeft, roomTop),
+                size = Size(roomW, roomH),
+                cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
+                style = Stroke(
+                    width = 1.5f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f),
+                ),
+            )
+
+            // 2. Speaker Positions (modulated by stereoWidth and carFader)
+            val spread = 70.dp.toPx() * (0.6f + stereoWidth * 0.8f)
+            val faderY = -carFader * 28.dp.toPx()
+            val spkLeftX = cx - spread
+            val spkLeftY = cy - 35.dp.toPx() + faderY
+            val spkRightX = cx + spread
+            val spkRightY = cy - 35.dp.toPx() + faderY
+
+            // 3. Sound Wave Radiations (when active)
+            if (enabled) {
+                val waveRadii = floatArrayOf(24f, 44f, 66f, 90f)
+                waveRadii.forEachIndexed { idx, radius ->
+                    val r = radius * (0.8f + intensity * 0.4f)
+                    val alpha = (pulseAlpha * (1f - (idx / 4f))).coerceIn(0.05f, 0.65f)
+                    // Left wave arc toward listener
+                    drawCircle(
+                        color = primaryColor.copy(alpha = alpha * 0.45f),
+                        radius = r,
+                        center = Offset(spkLeftX, spkLeftY),
+                        style = Stroke(width = 1.8f),
+                    )
+                    // Right wave arc toward listener
+                    drawCircle(
+                        color = primaryColor.copy(alpha = alpha * 0.45f),
+                        radius = r,
+                        center = Offset(spkRightX, spkRightY),
+                        style = Stroke(width = 1.8f),
+                    )
+                }
+            }
+
+            // 4. Draw Left & Right Virtual Speakers
+            drawCircle(
+                color = if (enabled) primaryColor else Color.Gray.copy(alpha = 0.4f),
+                radius = 8.dp.toPx(),
+                center = Offset(spkLeftX, spkLeftY),
+            )
+            drawCircle(
+                color = Color.Black,
+                radius = 4.dp.toPx(),
+                center = Offset(spkLeftX, spkLeftY),
+            )
+            drawCircle(
+                color = if (enabled) primaryColor else Color.Gray.copy(alpha = 0.4f),
+                radius = 8.dp.toPx(),
+                center = Offset(spkRightX, spkRightY),
+            )
+            drawCircle(
+                color = Color.Black,
+                radius = 4.dp.toPx(),
+                center = Offset(spkRightX, spkRightY),
+            )
+
+            // Direct line-of-sight sound ray to listener
+            drawLine(
+                color = if (enabled) primaryColor.copy(alpha = 0.25f) else Color.Transparent,
+                start = Offset(spkLeftX, spkLeftY),
+                end = Offset(cx - 8.dp.toPx(), cy),
+                strokeWidth = 1.5f,
+            )
+            drawLine(
+                color = if (enabled) primaryColor.copy(alpha = 0.25f) else Color.Transparent,
+                start = Offset(spkRightX, spkRightY),
+                end = Offset(cx + 8.dp.toPx(), cy),
+                strokeWidth = 1.5f,
+            )
+
+            // 5. Draw Center Listener
+            // Headphone band
+            drawArc(
+                color = if (enabled) primaryColor else Color.Gray,
+                startAngle = 180f,
+                sweepAngle = 180f,
+                useCenter = false,
+                topLeft = Offset(cx - 16.dp.toPx(), cy - 16.dp.toPx()),
+                size = Size(32.dp.toPx(), 32.dp.toPx()),
+                style = Stroke(width = 3f),
+            )
+            // Head
+            drawCircle(
+                color = surfaceColor,
+                radius = 12.dp.toPx(),
+                center = Offset(cx, cy),
+            )
+            drawCircle(
+                color = if (enabled) primaryColor else Color.Gray,
+                radius = 12.dp.toPx(),
+                center = Offset(cx, cy),
+                style = Stroke(width = 2f),
+            )
+            // Left & Right Ear Cushions
+            drawRoundRect(
+                color = if (enabled) primaryColor else Color.Gray,
+                topLeft = Offset(cx - 18.dp.toPx(), cy - 6.dp.toPx()),
+                size = Size(5.dp.toPx(), 12.dp.toPx()),
+                cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
+            )
+            drawRoundRect(
+                color = if (enabled) primaryColor else Color.Gray,
+                topLeft = Offset(cx + 13.dp.toPx(), cy - 6.dp.toPx()),
+                size = Size(5.dp.toPx(), 12.dp.toPx()),
+                cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
+            )
+        }
+
+        // Top Badges
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+                .align(Alignment.TopCenter),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(FrostSoulTheme.colors.background.copy(alpha = 0.75f))
+                    .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.5f), CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    text = "Room · ${roomPreset.label}",
+                    color = FrostSoulTheme.colors.onSurface,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(
+                        if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.15f)
+                        else FrostSoulTheme.colors.surface.copy(alpha = 0.6f),
+                    )
+                    .border(
+                        1.dp,
+                        if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.4f)
+                        else FrostSoulTheme.colors.outline.copy(alpha = 0.4f),
+                        CircleShape,
+                    )
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    text = if (enabled) "Blend ${(intensity * 100).roundToInt()}%" else "Bypass",
+                    color = if (enabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
+// 2. MASTER IMMERSION CARD
+// -------------------------------------------------------------------------
+
+@Composable
+private fun MasterImmersionCard(
+    enabled: Boolean,
+    intensity: Float,
+    onEnabledChange: (Boolean) -> Unit,
+    onIntensityChange: (Float) -> Unit,
+    onIntensityFinished: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = FrostSoulTheme.colors.surface,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.35f) else FrostSoulTheme.colors.outline.copy(alpha = 0.4f),
+                RoundedCornerShape(22.dp),
+            ),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.16f)
+                            else FrostSoulTheme.colors.surfaceRaised,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.equalizer),
+                        contentDescription = null,
+                        tint = if (enabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 14.dp),
+                ) {
+                    Text(
+                        text = "Spatial Sound Engine",
+                        color = FrostSoulTheme.colors.onSurface,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = if (enabled) "Binaural Steam Audio HRTF & room convolution" else "Direct bit-perfect Media3 stream",
+                        color = FrostSoulTheme.colors.onSurfaceMuted,
+                        fontSize = 12.sp,
+                    )
+                }
+
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = FrostSoulTheme.colors.background,
+                        checkedTrackColor = FrostSoulTheme.colors.accent,
+                        uncheckedThumbColor = FrostSoulTheme.colors.onSurfaceMuted,
+                        uncheckedTrackColor = FrostSoulTheme.colors.surfaceRaised,
+                    ),
+                )
+            }
+
+            AnimatedVisibility(
+                visible = enabled,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.3f))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Spatial Blend",
+                            color = FrostSoulTheme.colors.onSurface,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "${(intensity * 100).roundToInt()}% Immersion",
+                            color = FrostSoulTheme.colors.accent,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+
+                    TechnicalSlider(
+                        value = intensity,
+                        onValueChange = onIntensityChange,
+                        onValueChangeFinished = onIntensityFinished,
+                        valueRange = 0f..1f,
+                        label = "Spatial blend slider",
+                    )
+
+                    // Quick blend snaps
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        listOf(0.25f to "Subtle", 0.50f to "Balanced", 0.75f to "Deep", 1.0f to "Full").forEach { (v, tag) ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(FrostSoulTheme.colors.surfaceRaised)
+                                    .clickable {
+                                        onIntensityChange(v)
+                                        onIntensityFinished()
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                            ) {
+                                Text(
+                                    text = tag,
+                                    color = if ((intensity - v).let { kotlin.math.abs(it) } < 0.08f) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
+// 3. CATEGORY SELECTOR TABS
+// -------------------------------------------------------------------------
+
+@Composable
+private fun ImmersiveCategorySelector(
+    selected: ImmersiveCategory,
+    onSelected: (ImmersiveCategory) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .background(FrostSoulTheme.colors.surface)
             .selectableGroup()
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        ImmersivePageTab(
-            label = "Default",
-            modifier = Modifier.weight(1f),
-            selected = selectedPage == ImmersiveSettingsPage.Default,
-            onClick = { onPageSelected(ImmersiveSettingsPage.Default) },
-        )
-        ImmersivePageTab(
-            label = "Advanced",
-            modifier = Modifier.weight(1f),
-            selected = selectedPage == ImmersiveSettingsPage.Advanced,
-            onClick = { onPageSelected(ImmersiveSettingsPage.Advanced) },
-        )
-        ImmersivePageTab(
-            label = "Diagnostic",
-            modifier = Modifier.weight(1f),
-            selected = selectedPage == ImmersiveSettingsPage.Diagnostic,
-            onClick = { onPageSelected(ImmersiveSettingsPage.Diagnostic) },
-        )
-    }
-}
-
-@Composable
-private fun ImmersivePageTab(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) FrostSoulTheme.colors.surfaceRaised else Color.Transparent)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
-            .padding(vertical = 15.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            color = if (selected) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
-            fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun DefaultImmersivePage(
-    enabled: Boolean,
-    intensity: Float,
-    onEnabledChange: (Boolean) -> Unit,
-    onIntensityChange: (Float) -> Unit,
-    onIntensityFinished: () -> Unit,
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
-            .background(FrostSoulTheme.colors.surface).padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
-    ) {
-        ImmersiveSectionLabel("SURROUND")
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.equalizer),
-                contentDescription = null,
-                tint = if (enabled) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
-                modifier = Modifier.size(25.dp),
+        ImmersiveCategory.entries.forEach { category ->
+            val isSelected = category == selected
+            val animatedColor by animateColorAsState(
+                targetValue = if (isSelected) FrostSoulTheme.colors.surfaceRaised else Color.Transparent,
+                label = "tabBg",
             )
-            Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
-                Text("Surround", color = FrostSoulTheme.colors.onSurface, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(animatedColor)
+                    .selectable(
+                        selected = isSelected,
+                        role = Role.Tab,
+                        onClick = { onSelected(category) },
+                    )
+                    .padding(vertical = 11.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
-                    if (enabled) "Steam Audio immersive processing" else "Steam Audio is bypassed",
-                    color = FrostSoulTheme.colors.onSurfaceMuted,
+                    text = category.label,
+                    color = if (isSelected) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
                     fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                 )
             }
-            Switch(checked = enabled, onCheckedChange = onEnabledChange)
-        }
-        HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
-        ImmersiveSectionLabel("SPATIAL BLEND")
-        SpatialBlendControl(
-            enabled = enabled,
-            intensity = intensity,
-            onValueChange = onIntensityChange,
-            onValueChangeFinished = onIntensityFinished,
-        )
-        HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
-        StatusLine(
-            title = "HRTF binaural processing",
-            detail = if (enabled) "Default Steam Audio HRTF is active for stereo PCM." else "Audio follows the original Media3 path.",
-        )
-    }
-}
-
-@Composable
-private fun DiagnosticImmersivePage(
-    diagnostics: ImmersiveAudioDiagnostics,
-    activeCapture: ImmersiveActiveCapture?,
-    latestCapture: ImmersiveDiagnosticCapture?,
-    onCapture: (Int) -> Unit,
-    onExport: () -> Unit,
-    onReset: () -> Unit,
-) {
-    val stateOn = diagnostics.processorEnabled
-    val truePeakWarningSource = diagnostics.truePeakWarningSource()
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                .background(if (stateOn) FrostSoulTheme.colors.accent.copy(alpha = 0.16f) else FrostSoulTheme.colors.surface)
-                .border(1.dp, if (stateOn) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.outline, RoundedCornerShape(18.dp))
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("PROCESSOR ${if (stateOn) "ON" else "OFF"}", color = FrostSoulTheme.colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("Input → ${if (stateOn) "Native DSP" else "Bypass"} → Output", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
-            }
-            Text(if (diagnostics.processCallCount > 0) "Receiving PCM" else "Waiting for audio", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-        }
-
-        StageTelemetryCard(diagnostics)
-
-        Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                .background(FrostSoulTheme.colors.surface).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("SIGNAL MONITOR", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("", modifier = Modifier.weight(1.2f))
-                Text("INPUT", modifier = Modifier.weight(1f), color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text("OUTPUT", modifier = Modifier.weight(1f), color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            }
-            DiagnosticRow("L RMS", formatDb(diagnostics.inputRmsL), formatDb(diagnostics.outputRmsL))
-            DiagnosticRow("R RMS", formatDb(diagnostics.inputRmsR), formatDb(diagnostics.outputRmsR))
-            DiagnosticRow("L Peak", formatDb(diagnostics.inputPeakL), formatDb(diagnostics.outputPeakL))
-            DiagnosticRow("R Peak", formatDb(diagnostics.inputPeakR), formatDb(diagnostics.outputPeakR))
-            DiagnosticRow("L True peak", formatDb(diagnostics.inputTruePeakL) + "TP", formatDb(diagnostics.outputTruePeakL) + "TP")
-            DiagnosticRow("R True peak", formatDb(diagnostics.inputTruePeakR) + "TP", formatDb(diagnostics.outputTruePeakR) + "TP")
-            DiagnosticRow("NaN", diagnostics.nanCount.toString(), diagnostics.nanCount.toString())
-            DiagnosticRow("Inf", diagnostics.infCount.toString(), diagnostics.infCount.toString())
-            DiagnosticRow("Clipped", diagnostics.clippedInput.toString(), diagnostics.clippedOutput.toString())
-            HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.14f))
-            StatusLine("Difference", "max ${formatRaw(diagnostics.maxAbsDifference)} · average ${formatRaw(diagnostics.averageAbsDifference)} · changed ${String.format(Locale.US, "%.2f", diagnostics.changedPercentage)}%")
-            StatusLine("Clipping source", diagnostics.clippingSource())
-            if (truePeakWarningSource != "NONE") {
-                Text("True peak above -0.1 dBTP · $truePeakWarningSource · ${if (stateOn) "ON" else "OFF"} capture", color = Color(0xFFFFB4AB), fontSize = 12.sp)
-            }
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                .background(FrostSoulTheme.colors.surface).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("CAPTURE", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
-            if (activeCapture != null) {
-                Text("CAPTURING ${String.format(Locale.US, "%.1f", activeCapture.elapsedSeconds)} / ${activeCapture.durationSeconds}.0s", color = FrostSoulTheme.colors.onSurface, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-                Text("Playback continues; compact samples are collected every 200 ms.", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onCapture(10) }) { Text("Capture 10s") }
-                    Button(onClick = { onCapture(20) }) { Text("Capture 20s") }
-                }
-            }
-            if (latestCapture != null) {
-                Text("Last capture: ${if (latestCapture.processorOn) "PROCESSOR ON" else "PROCESSOR OFF"} · ${latestCapture.samples.size} time-series samples", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
-                Button(onClick = onExport) { Text("Export TXT") }
-            }
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                .background(FrostSoulTheme.colors.surface).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("ENGINE TELEMETRY", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
-            StatusLine("Format", "${diagnostics.sampleRate} Hz · stereo · ${if (diagnostics.pcmEncoding == 4) "PCM float" else if (diagnostics.pcmEncoding == 2) "PCM 16-bit" else "unknown PCM"}")
-            StatusLine("Quantum / callback", "${diagnostics.quantumFrames} / ${diagnostics.hostCallbackFrames} frames")
-            StatusLine("Processing", "${diagnostics.totalBlocks} blocks · ${diagnostics.processedFrames} frames · ${String.format(Locale.US, "%.2f", diagnostics.averageProcessingTimeMs)} ms average")
-            StatusLine("Realtime safety", "${diagnostics.deadlineMisses} deadline misses · ${diagnostics.nativeProcessFailures} native failures")
-            Button(onClick = onReset) { Text("Reset diagnostics") }
         }
     }
 }
 
-@Composable
-private fun StageTelemetryCard(diagnostics: ImmersiveAudioDiagnostics) {
-    val on = diagnostics.processorEnabled
-    val b1 = diagnostics.b1AfterSilenceSkipping
-    val b2 = diagnostics.b2AfterSonic
-    Column(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-            .background(FrostSoulTheme.colors.surface).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("SIGNAL PATH BOUNDARIES", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
-        Text("Real PCM measurements · ${if (on) "processor ON" else "processor OFF / bypass"}", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
-        StageRow("B1 · after silence skip", b1.available, b1)
-        StageRow("B2 · after Sonic", b2.available, b2)
-        StageRow("B3 · native DSP input", diagnostics.processCallCount > 0, stageFromNative(diagnostics, input = true))
-        StageRow("B4 · native DSP output", diagnostics.processCallCount > 0, stageFromNative(diagnostics, input = false))
-        StageRow("B5 · AudioTrack/device", false, null)
-        Text(
-            if (on) "DSP-only controls and processing metrics are active." else "DSP parameters, DSP processing time and input→output difference: N/A while OFF.",
-            color = FrostSoulTheme.colors.onSurfaceMuted,
-            fontSize = 11.sp,
-        )
-    }
-}
+// -------------------------------------------------------------------------
+// 4. ACOUSTICS TAB
+// -------------------------------------------------------------------------
 
 @Composable
-private fun StageRow(label: String, available: Boolean, stage: dev.vxs.frostsoulx.playback.ImmersiveStageDiagnostics?) {
-    val value = if (!available || stage == null) "N/A" else "RMS ${formatDb(stage.rms)} · peak ${formatDb(stage.peak)} · TP ${formatDb(stage.truePeak)} · clip ${stage.clippedSamples}"
-    StatusLine(label, value)
-}
-
-private fun stageFromNative(diagnostics: ImmersiveAudioDiagnostics, input: Boolean): dev.vxs.frostsoulx.playback.ImmersiveStageDiagnostics =
-    if (input) dev.vxs.frostsoulx.playback.ImmersiveStageDiagnostics(
-        available = diagnostics.processedFrames > 0,
-        rms = diagnostics.inputRms,
-        peak = diagnostics.inputPeak,
-        truePeak = maxOf(diagnostics.inputTruePeakL, diagnostics.inputTruePeakR),
-        clippedSamples = diagnostics.clippedInput,
-        nanCount = diagnostics.nanCount,
-        infCount = diagnostics.infCount,
-        frames = diagnostics.processedFrames,
-        sampleRate = diagnostics.sampleRate,
-        encoding = diagnostics.pcmEncoding,
-    ) else dev.vxs.frostsoulx.playback.ImmersiveStageDiagnostics(
-        available = diagnostics.processedFrames > 0,
-        rms = diagnostics.outputRms,
-        peak = diagnostics.outputPeak,
-        truePeak = maxOf(diagnostics.outputTruePeakL, diagnostics.outputTruePeakR),
-        clippedSamples = diagnostics.clippedOutput,
-        nanCount = diagnostics.nanCount,
-        infCount = diagnostics.infCount,
-        frames = diagnostics.processedFrames,
-        sampleRate = diagnostics.sampleRate,
-        encoding = diagnostics.pcmEncoding,
-    )
-
-@Composable
-private fun DiagnosticRow(label: String, input: String, output: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.weight(1.2f), color = FrostSoulTheme.colors.onSurface, fontSize = 12.sp)
-        Text(input, modifier = Modifier.weight(1f), color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-        Text(output, modifier = Modifier.weight(1f), color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-    }
-}
-
-private fun formatDb(value: Float): String = if (!value.isFinite() || value <= 1.0e-9f) "-inf dB" else String.format(Locale.US, "%.2f dB", 20.0 * kotlin.math.log10(value.toDouble()))
-private fun formatRaw(value: Float): String = String.format(Locale.US, "%.6f", value)
-
-@Composable
-private fun AdvancedImmersivePage(
-    enabled: Boolean,
-    intensity: Float,
+private fun AcousticsTabContent(
     roomPreset: ImmersiveRoomPreset,
     roomMix: Float,
     reflectionAmount: Float,
-    reverbTimeSeconds: Float,
+    reverbTime: Float,
     roomSize: Float,
     dampening: Float,
-    stereoWidth: Float,
-    carFader: Float,
-    quantumFrames: Int,
-    limiterEnabled: Boolean,
-    bassEnabled: Boolean,
-    bassStrength: Int,
-    trebleGainMb: Int,
-    outputGainEnabled: Boolean,
-    outputGainMb: Int,
-    savedPresets: List<ImmersiveAudioPreset>,
-    diagnostics: ImmersiveAudioDiagnostics,
-    onEnabledChange: (Boolean) -> Unit,
-    onIntensityChange: (Float) -> Unit,
-    onIntensityFinished: () -> Unit,
     onRoomPresetChange: (ImmersiveRoomPreset) -> Unit,
     onRoomMixChange: (Float) -> Unit,
     onReflectionChange: (Float) -> Unit,
     onReverbTimeChange: (Float) -> Unit,
     onRoomSizeChange: (Float) -> Unit,
     onDampeningChange: (Float) -> Unit,
-    onStereoWidthChange: (Float) -> Unit,
-    onCarFaderChange: (Float) -> Unit,
-    onQuantumChange: (Int) -> Unit,
-    onLimiterChange: (Boolean) -> Unit,
-    onBassEnabledChange: (Boolean) -> Unit,
-    onBassStrengthChange: (Int) -> Unit,
-    onTrebleGainChange: (Int) -> Unit,
-    onOutputGainEnabledChange: (Boolean) -> Unit,
-    onOutputGainChange: (Int) -> Unit,
-    onPresetSelected: (ImmersiveAudioPreset) -> Unit,
-    onSavePreset: () -> Unit,
-    onResetRoom: () -> Unit,
+    onResetAcoustics: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        ImmersiveSectionLabel("HRTF")
+        SectionTitleHeader("ACOUSTIC ENVIRONMENTS", "Physics-based room impulse simulation")
+
+        // Environment Preset Cards Carousel/Grid
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("HRTF binaural processing", color = FrostSoulTheme.colors.onSurface, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-                Text("Default Steam Audio profile", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp)
+            ImmersiveRoomPreset.entries.forEach { preset ->
+                val isSelected = preset == roomPreset
+                AcousticPresetCard(
+                    preset = preset,
+                    selected = isSelected,
+                    onClick = { onRoomPresetChange(preset) },
+                )
             }
-            Switch(checked = enabled, onCheckedChange = onEnabledChange)
         }
-        SpatialBlendControl(
-            enabled = enabled,
-            intensity = intensity,
-            onValueChange = onIntensityChange,
-            onValueChangeFinished = onIntensityFinished,
-            technical = true,
+
+        Spacer(Modifier.height(4.dp))
+        SectionTitleHeader("ACOUSTIC SCULPTING", "Tailor room dynamics and physical materials")
+
+        AcousticParamSliderCard(
+            label = "Room Reverberation Mix",
+            hint = "Direct dry signal vs reflected acoustic energy",
+            value = roomMix,
+            range = 0f..1f,
+            displayValue = "${(roomMix * 100).roundToInt()}%",
+            onValueChange = onRoomMixChange,
         )
-        StatusLine("Interpolation", "Bilinear is fixed by the current native engine.")
-        StatusLine("Source direction", "Forward-facing source at (0, 0, 1). Runtime direction control is not connected.")
-        HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
-        ImmersiveSectionLabel("ROOM MODEL")
-        Text("Preset", color = FrostSoulTheme.colors.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        ImmersiveRoomPresetSelector(roomPreset, onRoomPresetChange)
-        RoomParameterSlider("Room mix", roomMix, 0f..1f, "${(roomMix * 100).roundToInt()}%", onRoomMixChange)
-        RoomParameterSlider("Reflections", reflectionAmount, 0f..1f, "${(reflectionAmount * 100).roundToInt()}%", onReflectionChange)
-        RoomParameterSlider("Reverb time", reverbTimeSeconds, 0.2f..8f, String.format(Locale.US, "%.1fs", reverbTimeSeconds), onReverbTimeChange)
-        HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
-        ImmersiveSectionLabel("SPACE DESIGN")
-        RoomParameterSlider("Room size", roomSize, 0f..1f, "${(roomSize * 100).roundToInt()}%", onRoomSizeChange)
-        RoomParameterSlider("Dampening", dampening, 0f..1f, "${(dampening * 100).roundToInt()}%", onDampeningChange)
-        RoomParameterSlider("Stereo width", stereoWidth, 0f..1f, "${(stereoWidth * 100).roundToInt()}%", onStereoWidthChange)
-        RoomParameterSlider(
-            "Front / rear fader",
-            carFader,
-            -1f..1f,
-            when {
-                carFader < -0.05f -> "Front ${((-carFader) * 100).roundToInt()}%"
-                carFader > 0.05f -> "Rear ${(carFader * 100).roundToInt()}%"
-                else -> "Center"
-            },
-            onCarFaderChange,
+
+        AcousticParamSliderCard(
+            label = "Early Reflection Density",
+            hint = "First-order wall and ceiling reflection energy",
+            value = reflectionAmount,
+            range = 0f..1f,
+            displayValue = "${(reflectionAmount * 100).roundToInt()}%",
+            onValueChange = onReflectionChange,
         )
-        QuantumSlider(quantumFrames, onQuantumChange)
-        ToneOutputControls(
-            limiterEnabled = limiterEnabled,
-            bassEnabled = bassEnabled,
-            bassStrength = bassStrength,
-            trebleGainMb = trebleGainMb,
-            outputGainEnabled = outputGainEnabled,
-            outputGainMb = outputGainMb,
-            onLimiterChange = onLimiterChange,
-            onBassEnabledChange = onBassEnabledChange,
-            onBassStrengthChange = onBassStrengthChange,
-            onTrebleGainChange = onTrebleGainChange,
-            onOutputGainEnabledChange = onOutputGainEnabledChange,
-            onOutputGainChange = onOutputGainChange,
+
+        AcousticParamSliderCard(
+            label = "Reverb Decay Time (T60)",
+            hint = "Time for acoustic energy to attenuate by 60 dB",
+            value = reverbTime,
+            range = 0.2f..8.0f,
+            displayValue = String.format(Locale.US, "%.2f s", reverbTime),
+            onValueChange = onReverbTimeChange,
         )
-        SavedPresetSection(savedPresets, onPresetSelected, onSavePreset)
-        StatusLine("Space design", "Room size scales delay/reverb; dampening shapes decay; width controls decorrelation.")
+
+        AcousticParamSliderCard(
+            label = "Room Dimensions & Scale",
+            hint = "Expands virtual room volume and flight delay",
+            value = roomSize,
+            range = 0f..1f,
+            displayValue = "${(roomSize * 100).roundToInt()}%",
+            onValueChange = onRoomSizeChange,
+        )
+
+        AcousticParamSliderCard(
+            label = "Surface Absorption & Dampening",
+            hint = "High-frequency material damping across surfaces",
+            value = dampening,
+            range = 0f..1f,
+            displayValue = "${(dampening * 100).roundToInt()}%",
+            onValueChange = onDampeningChange,
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
         ) {
-            Button(onClick = onResetRoom) { Text("Reset room") }
+            OutlinedButton(
+                onClick = onResetAcoustics,
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text("Reset Room Parameters", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
+            }
         }
-        StatusLine("Active room", roomPreset.label)
-        HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
-        ImmersiveSectionLabel("SAFETY")
-        StatusLine("OFF behavior", "Native processing is bypassed and the Media3 PCM buffer remains unchanged.")
-        StatusLine("Supported input", "Stereo PCM 16-bit and PCM float.")
-        HorizontalDivider(color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.18f))
-        ImmersiveDiagnosticsSection(diagnostics)
     }
 }
 
 @Composable
-private fun ToneOutputControls(
-    limiterEnabled: Boolean,
-    bassEnabled: Boolean,
-    bassStrength: Int,
-    trebleGainMb: Int,
-    outputGainEnabled: Boolean,
-    outputGainMb: Int,
-    onLimiterChange: (Boolean) -> Unit,
-    onBassEnabledChange: (Boolean) -> Unit,
-    onBassStrengthChange: (Int) -> Unit,
-    onTrebleGainChange: (Int) -> Unit,
-    onOutputGainEnabledChange: (Boolean) -> Unit,
-    onOutputGainChange: (Int) -> Unit,
+private fun AcousticPresetCard(
+    preset: ImmersiveRoomPreset,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(FrostSoulTheme.colors.surface).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        ImmersiveSectionLabel("TONE & OUTPUT")
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Limiter", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Text("Native peak protection", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-            }
-            Switch(checked = limiterEnabled, onCheckedChange = onLimiterChange)
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Bass", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp)
-                Text("Android BassBoost effect", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-            }
-            Switch(checked = bassEnabled, onCheckedChange = onBassEnabledChange)
-        }
-        TechnicalSlider(
-            value = (bassStrength / 1000f).coerceIn(0f, 1f),
-            onValueChange = { onBassStrengthChange((it * 1000f).roundToInt()) },
-            valueRange = 0f..1f,
-            enabled = bassEnabled,
-            label = "Bass strength",
-        )
-        Text("${bassStrength / 10}%", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-        RoomParameterSlider("Treble", trebleGainMb / 1500f, -1f..1f, "${trebleGainMb} mB", { onTrebleGainChange((it * 1500f).roundToInt()) })
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Output gain", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp)
-                Text("Android output gain effect", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-            }
-            Switch(checked = outputGainEnabled, onCheckedChange = onOutputGainEnabledChange)
-        }
-        RoomParameterSlider("Gain", outputGainMb / 1500f, -1f..1f, "${outputGainMb} mB", { onOutputGainChange((it * 1500f).roundToInt()) })
-    }
-}
+    val borderColor by animateColorAsState(
+        targetValue = if (selected) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.outline.copy(alpha = 0.4f),
+        label = "presetBorder",
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) FrostSoulTheme.colors.accent.copy(alpha = 0.12f) else FrostSoulTheme.colors.surface,
+        label = "presetBg",
+    )
 
-@Composable
-private fun RoomParameterSlider(
-    label: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    valueLabel: String,
-    onValueChange: (Float) -> Unit,
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(FrostSoulTheme.colors.surface).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        modifier = Modifier
+            .width(135.dp)
+            .border(1.5.dp, borderColor, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(label, color = FrostSoulTheme.colors.onSurface, fontSize = 13.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = preset.label,
+                    color = FrostSoulTheme.colors.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                )
+                if (selected) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(FrostSoulTheme.colors.accent, CircleShape),
+                    )
+                }
+            }
+
             Text(
-                valueLabel,
-                color = FrostSoulTheme.colors.accent,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.background(FrostSoulTheme.colors.accent.copy(alpha = 0.09f), CircleShape)
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                text = when (preset) {
+                    ImmersiveRoomPreset.OFF -> "Pure HRTF\nno room model"
+                    ImmersiveRoomPreset.SMALL_ROOM -> "Compact space\nfast diffusion"
+                    ImmersiveRoomPreset.STUDIO -> "Balanced control\nclean acoustic decay"
+                    ImmersiveRoomPreset.CONCERT_HALL -> "Orchestral stage\nlush reverberation"
+                    ImmersiveRoomPreset.CATHEDRAL -> "Monumental volume\nethereal sustain"
+                    ImmersiveRoomPreset.SUBWAY -> "Tunnel acoustics\nhigh reflections"
+                    ImmersiveRoomPreset.CLOSED_CAR -> "Cabin enclosure\nfront/rear stage"
+                },
+                color = FrostSoulTheme.colors.onSurfaceMuted,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+                minLines = 2,
             )
         }
-        TechnicalSlider(
-            value = value.coerceIn(range.start, range.endInclusive),
-            onValueChange = { onValueChange(it.coerceIn(range.start, range.endInclusive)) },
-            valueRange = range,
-            label = label,
+    }
+}
+
+// -------------------------------------------------------------------------
+// 5. SOUNDSTAGE TAB
+// -------------------------------------------------------------------------
+
+@Composable
+private fun SoundstageTabContent(
+    stereoWidth: Float,
+    carFader: Float,
+    quantumFrames: Int,
+    savedPresets: List<ImmersiveAudioPreset>,
+    onStereoWidthChange: (Float) -> Unit,
+    onCarFaderChange: (Float) -> Unit,
+    onQuantumChange: (Int) -> Unit,
+    onPresetSelected: (ImmersiveAudioPreset) -> Unit,
+    onSavePreset: () -> Unit,
+    onDeletePreset: (ImmersiveAudioPreset) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SectionTitleHeader("BINAURAL SOUNDSTAGE", "Spatial width and listener focal point")
+
+        AcousticParamSliderCard(
+            label = "Stereo Soundstage Width",
+            hint = "Expands cross-channel decorrelation and virtual angle",
+            value = stereoWidth,
+            range = 0f..1f,
+            displayValue = "${(stereoWidth * 100).roundToInt()}%",
+            onValueChange = onStereoWidthChange,
+        )
+
+        AcousticParamSliderCard(
+            label = "Front / Rear Stage Fader",
+            hint = "Shifts the virtual sound source between front and rear cabin",
+            value = carFader,
+            range = -1f..1f,
+            displayValue = when {
+                carFader < -0.05f -> "Front ${((-carFader) * 100).roundToInt()}%"
+                carFader > 0.05f -> "Rear ${(carFader * 100).roundToInt()}%"
+                else -> "Center"
+            },
+            onValueChange = onCarFaderChange,
+        )
+
+        SectionTitleHeader("PROCESSING BUFFER (LATENCY)", "Quantum block size for real-time DSP")
+
+        QuantumSettingsCard(
+            quantumFrames = quantumFrames,
+            onQuantumChange = onQuantumChange,
+        )
+
+        SectionTitleHeader("SAVED CUSTOM SPACES", "Store and recall full acoustic configurations")
+
+        SavedSpacesCard(
+            presets = savedPresets,
+            onPresetSelected = onPresetSelected,
+            onSavePreset = onSavePreset,
+            onDeletePreset = onDeletePreset,
         )
     }
 }
 
 @Composable
-private fun QuantumSlider(
+private fun QuantumSettingsCard(
     quantumFrames: Int,
     onQuantumChange: (Int) -> Unit,
 ) {
     var inputText by remember(quantumFrames) { mutableStateOf(quantumFrames.toString()) }
-    val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    Column(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(FrostSoulTheme.colors.surface).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.4f), RoundedCornerShape(18.dp)),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text("Processing quantum", color = FrostSoulTheme.colors.onSurface, fontSize = 13.sp)
-                Text("Native processing block size · enter 1–1,000,000 frames", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-            }
-            TextField(
-                value = inputText,
-                onValueChange = { value ->
-                    val digitsOnly = value.filter(Char::isDigit).take(10)
-                    inputText = digitsOnly
-                },
-                modifier = Modifier.width(118.dp).onFocusChanged { state ->
-                    if (!state.isFocused) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Quantum Block Size",
+                        color = FrostSoulTheme.colors.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                    )
+                    Text(
+                        text = "Range: 96 to 2048 frames (lower = less latency)",
+                        color = FrostSoulTheme.colors.onSurfaceMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+
+                TextField(
+                    value = inputText,
+                    onValueChange = { value ->
+                        val digits = value.filter(Char::isDigit).take(4)
+                        inputText = digits
+                    },
+                    modifier = Modifier
+                        .width(100.dp)
+                        .onFocusChanged { state ->
+                            if (!state.isFocused) {
+                                val safe = inputText.toIntOrNull()?.coerceIn(
+                                    ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES,
+                                    ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES,
+                                ) ?: quantumFrames
+                                inputText = safe.toString()
+                                onQuantumChange(safe)
+                            }
+                        },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
                         val safe = inputText.toIntOrNull()?.coerceIn(
                             ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES,
                             ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES,
                         ) ?: quantumFrames
                         inputText = safe.toString()
                         onQuantumChange(safe)
-                    }
-                },
-                singleLine = true,
-                keyboardActions = KeyboardActions(onDone = {
-                    val safe = inputText.toLongOrNull()?.coerceIn(
-                        ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES.toLong(),
-                        ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES.toLong(),
-                    )?.toInt() ?: quantumFrames
-                    inputText = safe.toString()
-                    onQuantumChange(safe)
-                    focusManager.clearFocus()
-                    keyboardController?.hide()
-                }),
-                label = { Text("frames") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                isError = inputText.isNotEmpty() && (inputText.toIntOrNull()?.let {
-                    it !in ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES..ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES
-                } ?: true),
-                colors = androidx.compose.material3.TextFieldDefaults.colors(
-                    focusedContainerColor = FrostSoulTheme.colors.surfaceRaised,
-                    unfocusedContainerColor = FrostSoulTheme.colors.surfaceRaised,
-                    focusedTextColor = FrostSoulTheme.colors.onSurface,
-                    unfocusedTextColor = FrostSoulTheme.colors.onSurface,
-                    cursorColor = FrostSoulTheme.colors.accent,
-                    focusedIndicatorColor = FrostSoulTheme.colors.accent,
-                    unfocusedIndicatorColor = FrostSoulTheme.colors.outline,
-                ),
-            )
-        }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("1 · lower latency", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-            Text("1,000,000 · larger blocks", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-        }
-    }
-}
-
-@Composable
-private fun SavedPresetSection(
-    presets: List<ImmersiveAudioPreset>,
-    onSelected: (ImmersiveAudioPreset) -> Unit,
-    onSave: () -> Unit,
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(FrostSoulTheme.colors.surface).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Saved engine presets", color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Text("Restore every mapped control and quantum", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                    }),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = FrostSoulTheme.colors.surfaceRaised,
+                        unfocusedContainerColor = FrostSoulTheme.colors.surfaceRaised,
+                        focusedTextColor = FrostSoulTheme.colors.onSurface,
+                        unfocusedTextColor = FrostSoulTheme.colors.onSurface,
+                        focusedIndicatorColor = FrostSoulTheme.colors.accent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                )
             }
-            Button(onClick = onSave) { Text("Save current") }
-        }
-        if (presets.isEmpty()) {
-            Text("No saved presets yet", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
-        } else {
+
+            // Quick Quantum preset chips
             Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                presets.forEach { preset ->
+                listOf(
+                    192 to "192 · Ultra Low",
+                    384 to "384 · Balanced",
+                    512 to "512 · Stable",
+                    1024 to "1024 · Power",
+                ).forEach { (frames, label) ->
+                    val isSelected = quantumFrames == frames
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(FrostSoulTheme.colors.accent.copy(alpha = 0.12f))
-                            .border(1.dp, FrostSoulTheme.colors.outline, RoundedCornerShape(12.dp))
-                            .clickable { onSelected(preset) }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isSelected) FrostSoulTheme.colors.accent.copy(alpha = 0.16f)
+                                else FrostSoulTheme.colors.surfaceRaised,
+                            )
+                            .border(
+                                1.dp,
+                                if (isSelected) FrostSoulTheme.colors.accent else Color.Transparent,
+                                RoundedCornerShape(10.dp),
+                            )
+                            .clickable {
+                                onQuantumChange(frames)
+                                inputText = frames.toString()
+                            }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Text(preset.name, color = FrostSoulTheme.colors.onSurface, fontSize = 12.sp, maxLines = 1)
+                        Text(
+                            text = label,
+                            color = if (isSelected) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                            fontSize = 10.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                        )
                     }
                 }
             }
@@ -1126,44 +1502,545 @@ private fun SavedPresetSection(
 }
 
 @Composable
-private fun ImmersiveRoomPresetSelector(
-    selected: ImmersiveRoomPreset,
-    onSelected: (ImmersiveRoomPreset) -> Unit,
+private fun SavedSpacesCard(
+    presets: List<ImmersiveAudioPreset>,
+    onPresetSelected: (ImmersiveAudioPreset) -> Unit,
+    onSavePreset: () -> Unit,
+    onDeletePreset: (ImmersiveAudioPreset) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.4f), RoundedCornerShape(18.dp)),
     ) {
-        ImmersiveRoomPreset.entries.forEach { preset ->
-            val isSelected = preset == selected
-            Column(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (isSelected) FrostSoulTheme.colors.accent.copy(alpha = 0.12f) else FrostSoulTheme.colors.surface)
-                    .border(
-                        width = 1.dp,
-                        color = if (isSelected) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.outline.copy(alpha = 0.7f),
-                        shape = RoundedCornerShape(14.dp),
-                    )
-                    .selectable(selected = isSelected, role = Role.RadioButton) { onSelected(preset) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                Column {
+                    Text(
+                        text = "Saved Space Snapshots",
+                        color = FrostSoulTheme.colors.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                    )
+                    Text(
+                        text = "${presets.size} custom acoustics saved",
+                        color = FrostSoulTheme.colors.onSurfaceMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+
+                Button(
+                    onClick = onSavePreset,
+                    colors = ButtonDefaults.buttonColors(containerColor = FrostSoulTheme.colors.accent),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Text("+ Save Current", color = FrostSoulTheme.colors.background, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            if (presets.isEmpty()) {
                 Text(
-                    preset.label,
-                    color = if (isSelected) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
-                    fontSize = 11.sp,
-                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                    maxLines = 1,
+                    text = "No custom acoustic spaces saved yet. Tune your space and tap \"Save Current\" to preserve it.",
+                    color = FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
                 )
-                Spacer(Modifier.height(4.dp))
-                Box(
+            } else {
+                Row(
                     modifier = Modifier
-                        .width(18.dp)
-                        .height(2.dp)
-                        .background(if (isSelected) FrostSoulTheme.colors.accent else Color.Transparent, CircleShape),
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    presets.forEach { preset ->
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(FrostSoulTheme.colors.surfaceRaised)
+                                .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                                .clickable { onPresetSelected(preset) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = preset.name,
+                                color = FrostSoulTheme.colors.onSurface,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Icon(
+                                painter = painterResource(R.drawable.delete),
+                                contentDescription = "Delete",
+                                tint = FrostSoulTheme.colors.onSurfaceMuted,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { onDeletePreset(preset) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
+// 6. STUDIO LAB (METERS, TONE & DIAGNOSTICS)
+// -------------------------------------------------------------------------
+
+@Composable
+private fun StudioLabTabContent(
+    diagnostics: ImmersiveAudioDiagnostics,
+    limiterEnabled: Boolean,
+    bassGainDb: Float,
+    trebleGainDb: Float,
+    outputGainDb: Float,
+    activeCapture: ImmersiveActiveCapture?,
+    latestCapture: ImmersiveDiagnosticCapture?,
+    onLimiterChange: (Boolean) -> Unit,
+    onBassGainChange: (Float) -> Unit,
+    onTrebleGainChange: (Float) -> Unit,
+    onOutputGainChange: (Float) -> Unit,
+    onCapture: (Int) -> Unit,
+    onExport: () -> Unit,
+    onResetDiagnostics: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SectionTitleHeader("REAL-TIME STEREO METERS", "Dual-stage peak & RMS audio telemetry")
+
+        RealtimeAudioMetersCard(diagnostics)
+
+        SectionTitleHeader("OUTPUT SAFETY & SHAPING", "True peak ceiling & native frequency trim")
+
+        OutputSafetyToneCard(
+            limiterEnabled = limiterEnabled,
+            bassGainDb = bassGainDb,
+            trebleGainDb = trebleGainDb,
+            outputGainDb = outputGainDb,
+            onLimiterChange = onLimiterChange,
+            onBassGainChange = onBassGainChange,
+            onTrebleGainChange = onTrebleGainChange,
+            onOutputGainChange = onOutputGainChange,
+        )
+
+        SectionTitleHeader("DSP PERFORMANCE TELEMETRY", "Buffer latencies and signal boundaries")
+
+        DspTelemetryCard(
+            diagnostics = diagnostics,
+            activeCapture = activeCapture,
+            latestCapture = latestCapture,
+            onCapture = onCapture,
+            onExport = onExport,
+            onResetDiagnostics = onResetDiagnostics,
+        )
+    }
+}
+
+@Composable
+private fun RealtimeAudioMetersCard(diagnostics: ImmersiveAudioDiagnostics) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.4f), RoundedCornerShape(18.dp)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("INPUT STREAM", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (diagnostics.processCallCount > 0) "PCM ACTIVE" else "IDLE",
+                    color = if (diagnostics.processCallCount > 0) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
                 )
             }
+
+            // Input L & R meters
+            StereoChannelMeterRow("Input L", diagnostics.inputRmsL, diagnostics.inputPeakL, diagnostics.inputTruePeakL)
+            StereoChannelMeterRow("Input R", diagnostics.inputRmsR, diagnostics.inputPeakR, diagnostics.inputTruePeakR)
+
+            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.3f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("OUTPUT STREAM (DSP)", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (diagnostics.processorEnabled) "BINAURAL PROCESSED" else "BYPASSED",
+                    color = if (diagnostics.processorEnabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+
+            // Output L & R meters
+            StereoChannelMeterRow("Output L", diagnostics.outputRmsL, diagnostics.outputPeakL, diagnostics.outputTruePeakL)
+            StereoChannelMeterRow("Output R", diagnostics.outputRmsR, diagnostics.outputPeakR, diagnostics.outputTruePeakR)
+        }
+    }
+}
+
+@Composable
+private fun StereoChannelMeterRow(
+    label: String,
+    rms: Float,
+    peak: Float,
+    truePeak: Float,
+) {
+    val peakDb = if (peak > 1.0e-9f) 20.0 * log10(peak.toDouble()) else -60.0
+    val normalizedMeter = ((peakDb + 60.0) / 60.0).coerceIn(0.0, 1.0).toFloat()
+
+    val meterColor = when {
+        truePeak >= 0.988553f -> Color(0xFFFF5252) // Red peak warning
+        peakDb >= -3.0 -> Color(0xFFFFB74D)        // Amber loud
+        else -> FrostSoulTheme.colors.accent       // Standard accent
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = label,
+            color = FrostSoulTheme.colors.onSurface,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.width(62.dp),
+        )
+
+        // Animated Meter Bar
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(10.dp)
+                .clip(CircleShape)
+                .background(FrostSoulTheme.colors.surfaceRaised),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(normalizedMeter)
+                    .height(10.dp)
+                    .clip(CircleShape)
+                    .background(meterColor),
+            )
+        }
+
+        Text(
+            text = formatDb(peak),
+            color = if (truePeak >= 0.988553f) Color(0xFFFF5252) else FrostSoulTheme.colors.onSurfaceMuted,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.width(65.dp),
+        )
+    }
+}
+
+@Composable
+private fun OutputSafetyToneCard(
+    limiterEnabled: Boolean,
+    bassGainDb: Float,
+    trebleGainDb: Float,
+    outputGainDb: Float,
+    onLimiterChange: (Boolean) -> Unit,
+    onBassGainChange: (Float) -> Unit,
+    onTrebleGainChange: (Float) -> Unit,
+    onOutputGainChange: (Float) -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.4f), RoundedCornerShape(18.dp)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Native Safety Limiter",
+                        color = FrostSoulTheme.colors.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                    )
+                    Text(
+                        text = "Zero-overshoot ceiling protects against inter-sample peaks",
+                        color = FrostSoulTheme.colors.onSurfaceMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+
+                Switch(
+                    checked = limiterEnabled,
+                    onCheckedChange = onLimiterChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = FrostSoulTheme.colors.background,
+                        checkedTrackColor = FrostSoulTheme.colors.accent,
+                    ),
+                )
+            }
+
+            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.3f))
+
+            AcousticParamSliderCard(
+                label = "Spatial Bass Warmth",
+                hint = "Dedicated low-frequency acoustic energy (-12 to +12 dB)",
+                value = bassGainDb,
+                range = -12f..12f,
+                displayValue = String.format(Locale.US, "%+.1f dB", bassGainDb),
+                onValueChange = onBassGainChange,
+            )
+
+            AcousticParamSliderCard(
+                label = "Spatial Treble Air",
+                hint = "High-frequency presence and clarity (-12 to +12 dB)",
+                value = trebleGainDb,
+                range = -12f..12f,
+                displayValue = String.format(Locale.US, "%+.1f dB", trebleGainDb),
+                onValueChange = onTrebleGainChange,
+            )
+
+            AcousticParamSliderCard(
+                label = "Output Gain Trim",
+                hint = "Pre-output signal gain adjustment (-24 to +12 dB)",
+                value = outputGainDb,
+                range = -24f..12f,
+                displayValue = String.format(Locale.US, "%+.1f dB", outputGainDb),
+                onValueChange = onOutputGainChange,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DspTelemetryCard(
+    diagnostics: ImmersiveAudioDiagnostics,
+    activeCapture: ImmersiveActiveCapture?,
+    latestCapture: ImmersiveDiagnosticCapture?,
+    onCapture: (Int) -> Unit,
+    onExport: () -> Unit,
+    onResetDiagnostics: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.4f), RoundedCornerShape(18.dp)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TelemetryMetricItem("Sample Rate", "${diagnostics.sampleRate} Hz")
+                TelemetryMetricItem("Format", if (diagnostics.pcmEncoding == 4) "PCM Float" else "PCM 16-bit")
+                TelemetryMetricItem("Quantum", "${diagnostics.quantumFrames} frames")
+            }
+
+            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.2f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TelemetryMetricItem("Avg Render Time", String.format(Locale.US, "%.2f ms", diagnostics.averageProcessingTimeMs))
+                TelemetryMetricItem("Processed Blocks", "${diagnostics.totalBlocks}")
+                TelemetryMetricItem("Deadline Misses", "${diagnostics.deadlineMisses}")
+            }
+
+            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.2f))
+
+            // Capture Diagnostics Section
+            Text("SIGNAL VERIFICATION CAPTURE", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+            if (activeCapture != null) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Recording ${String.format(Locale.US, "%.1f", activeCapture.elapsedSeconds)}s / ${activeCapture.durationSeconds}s",
+                        color = FrostSoulTheme.colors.accent,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    LinearProgressIndicator(
+                        progress = { (activeCapture.elapsedSeconds / activeCapture.durationSeconds).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
+                        color = FrostSoulTheme.colors.accent,
+                    )
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { onCapture(10) },
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("Capture 10s", fontSize = 12.sp)
+                    }
+                    OutlinedButton(
+                        onClick = { onCapture(20) },
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("Capture 20s", fontSize = 12.sp)
+                    }
+                }
+            }
+
+            if (latestCapture != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Capture ready: ${latestCapture.samples.size} samples",
+                        color = FrostSoulTheme.colors.onSurface,
+                        fontSize = 12.sp,
+                    )
+                    Button(
+                        onClick = onExport,
+                        colors = ButtonDefaults.buttonColors(containerColor = FrostSoulTheme.colors.accent),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("Export TXT", color = FrostSoulTheme.colors.background, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                OutlinedButton(
+                    onClick = onResetDiagnostics,
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Text("Reset Telemetry", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TelemetryMetricItem(label: String, value: String) {
+    Column {
+        Text(label, color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+        Text(value, color = FrostSoulTheme.colors.onSurface, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+    }
+}
+
+// -------------------------------------------------------------------------
+// REUSABLE HELPER UI COMPONENTS
+// -------------------------------------------------------------------------
+
+@Composable
+private fun SectionTitleHeader(title: String, subtitle: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = title,
+            color = FrostSoulTheme.colors.onSurfaceMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp,
+        )
+        Text(
+            text = subtitle,
+            color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.7f),
+            fontSize = 12.sp,
+        )
+    }
+}
+
+@Composable
+private fun AcousticParamSliderCard(
+    label: String,
+    hint: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    displayValue: String,
+    onValueChange: (Float) -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.4f), RoundedCornerShape(18.dp)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = label,
+                        color = FrostSoulTheme.colors.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                    )
+                    Text(
+                        text = hint,
+                        color = FrostSoulTheme.colors.onSurfaceMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(FrostSoulTheme.colors.accent.copy(alpha = 0.12f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = displayValue,
+                        color = FrostSoulTheme.colors.accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+
+            TechnicalSlider(
+                value = value.coerceIn(range.start, range.endInclusive),
+                onValueChange = { onValueChange(it.coerceIn(range.start, range.endInclusive)) },
+                valueRange = range,
+                label = label,
+            )
         }
     }
 }
@@ -1182,11 +2059,12 @@ private fun TechnicalSlider(
     val sliderColors = SliderDefaults.colors(
         thumbColor = colors.accent,
         activeTrackColor = colors.accent,
-        inactiveTrackColor = colors.onSurface.copy(alpha = 0.14f),
+        inactiveTrackColor = colors.onSurface.copy(alpha = 0.12f),
         disabledThumbColor = colors.onSurfaceMuted,
-        disabledActiveTrackColor = colors.onSurfaceMuted.copy(alpha = 0.50f),
-        disabledInactiveTrackColor = colors.onSurface.copy(alpha = 0.08f),
+        disabledActiveTrackColor = colors.onSurfaceMuted.copy(alpha = 0.35f),
+        disabledInactiveTrackColor = colors.onSurface.copy(alpha = 0.06f),
     )
+
     Slider(
         value = value,
         onValueChange = onValueChange,
@@ -1197,91 +2075,29 @@ private fun TechnicalSlider(
         colors = sliderColors,
         thumb = {
             Box(
-                Modifier.size(20.dp)
+                Modifier
+                    .size(20.dp)
                     .background(if (enabled) colors.accent else colors.onSurfaceMuted, CircleShape)
                     .border(3.dp, colors.surfaceRaised, CircleShape),
             )
         },
         track = { state ->
-            // Let Material measure both thumb and track: correct end points, RTL and semantics.
             SliderDefaults.Track(
                 sliderState = state,
                 enabled = enabled,
                 colors = sliderColors,
                 thumbTrackGapSize = 0.dp,
                 drawStopIndicator = null,
-                modifier = Modifier.height(6.dp),
+                modifier = Modifier.height(5.dp),
             )
         },
-        modifier = Modifier.fillMaxWidth().height(48.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
             .semantics { contentDescription = label },
     )
 }
 
-@Composable
-private fun ImmersiveDiagnosticsSection(diagnostics: ImmersiveAudioDiagnostics) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ImmersiveSectionLabel("LIVE DIAGNOSTICS")
-        StatusLine("Processor", if (diagnostics.processCallCount > 0) "Active" else "Waiting for audio")
-        StatusLine("Input RMS / peak", "${formatAudioValue(diagnostics.inputRms)} / ${formatAudioValue(diagnostics.inputPeak)}")
-        StatusLine("Output RMS / peak", "${formatAudioValue(diagnostics.outputRms)} / ${formatAudioValue(diagnostics.outputPeak)}")
-        StatusLine("Changed samples", "${diagnostics.changedPercentage.toInt()}%  ·  max difference ${formatAudioValue(diagnostics.maxAbsDifference)}")
-        StatusLine("Safety", "NaN ${diagnostics.nanCount}  ·  Inf ${diagnostics.infCount}  ·  calls ${diagnostics.processCallCount}")
-    }
-}
-
-private fun formatAudioValue(value: Float): String = String.format(Locale.US, "%.4f", value)
-
-@Composable
-private fun SpatialBlendControl(
-    enabled: Boolean,
-    intensity: Float,
-    onValueChange: (Float) -> Unit,
-    onValueChangeFinished: () -> Unit,
-    technical: Boolean = false,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(if (technical) 3.dp else 8.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Spatial blend", color = FrostSoulTheme.colors.onSurface, fontSize = if (technical) 13.sp else 16.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = "${(intensity * 100f).roundToInt()}%",
-                color = if (enabled) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
-                fontSize = if (technical) 12.sp else 17.sp,
-                fontWeight = if (technical) FontWeight.Normal else FontWeight.SemiBold,
-                fontFamily = if (technical) FontFamily.Monospace else FontFamily.Default,
-            )
-        }
-        TechnicalSlider(
-            value = intensity,
-            onValueChange = onValueChange,
-            onValueChangeFinished = onValueChangeFinished,
-            valueRange = 0f..1f,
-            enabled = enabled,
-            label = "Spatial blend",
-        )
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Transparent", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-            Text("Wide", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-        }
-    }
-}
-
-@Composable
-private fun ImmersiveSectionLabel(label: String) {
-    Text(
-        text = label,
-        color = FrostSoulTheme.colors.onSurfaceMuted,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.6.sp,
-    )
-}
-
-@Composable
-private fun StatusLine(title: String, detail: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, color = FrostSoulTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        Text(detail, color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 12.sp, lineHeight = 17.sp)
-    }
-}
+private fun formatDb(value: Float): String =
+    if (!value.isFinite() || value <= 1.0e-9f) "-∞ dB"
+    else String.format(Locale.US, "%.1f dB", 20.0 * log10(value.toDouble()))

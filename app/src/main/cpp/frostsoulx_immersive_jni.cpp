@@ -573,6 +573,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
 
     const int totalFrames = frames;
     handle->lastHostCallbackFrames.store(totalFrames, std::memory_order_relaxed);
+    const bool isEnabled = handle->enabled.load(std::memory_order_relaxed);
     int frameOffset = 0;
     const int quantumFrames = handle->quantumFrames.load(std::memory_order_relaxed);
     while (frameOffset < totalFrames) {
@@ -583,26 +584,43 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
         if (encoding == 4) {
             auto* samplesFloat = reinterpret_cast<float*>(bytes) + sampleOffset;
             std::copy(samplesFloat, samplesFloat + samples, handle->inputSnapshot.begin());
-            std::copy(samplesFloat, samplesFloat + samples, handle->scratch.begin());
+
+            if (!isEnabled) {
+                handle->diagnostics.nativeStatus.store(
+                    resultCode(frostsoulx::ImmersiveProcessResult::Disabled),
+                    std::memory_order_relaxed);
+                publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->inputSnapshot.data(), chunkFrames);
+                frameOffset += chunkFrames;
+                continue;
+            }
+
+            std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, handle->scratch.begin());
             applyTone(*handle, handle->scratch.data(), chunkFrames);
+
             const auto started = std::chrono::steady_clock::now();
-            const bool processed = handle->enabled.load(std::memory_order_relaxed) && handle->engine.process(handle->scratch.data(), chunkFrames);
+            const bool processed = handle->engine.process(handle->scratch.data(), chunkFrames);
             const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count();
-            if (handle->enabled.load(std::memory_order_relaxed) && !processed) handle->diagnostics.nativeProcessFailures.fetch_add(1, std::memory_order_relaxed);
-            if (processed) {
+
+            if (!processed) {
+                handle->diagnostics.nativeProcessFailures.fetch_add(1, std::memory_order_relaxed);
+                handle->diagnostics.nativeStatus.store(
+                    resultCode(handle->engine.lastProcessResult()),
+                    std::memory_order_relaxed);
+                publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->inputSnapshot.data(), chunkFrames);
+            } else {
                 applyOutputSafety(*handle, handle->scratch.data(), chunkFrames);
                 std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, samplesFloat);
-            }
-            else std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, samplesFloat);
-            handle->diagnostics.nativeStatus.store(handle->enabled.load() ? resultCode(handle->engine.lastProcessResult()) : resultCode(frostsoulx::ImmersiveProcessResult::Disabled), std::memory_order_relaxed);
-            if (processed) {
+                handle->diagnostics.nativeStatus.store(
+                    resultCode(handle->engine.lastProcessResult()),
+                    std::memory_order_relaxed);
                 handle->diagnostics.processingTimeNanos.fetch_add(static_cast<uint64_t>(elapsed), std::memory_order_relaxed);
                 atomicMax(handle->diagnostics.maxProcessingTimeNanos, static_cast<uint64_t>(elapsed));
                 if (handle->sampleRate > 0 && elapsed > (1000000000LL * chunkFrames) / handle->sampleRate) {
                     handle->diagnostics.deadlineMisses.fetch_add(1, std::memory_order_relaxed);
                 }
+                publishDiagnostics(*handle, handle->inputSnapshot.data(), samplesFloat, chunkFrames);
             }
-            publishDiagnostics(*handle, handle->inputSnapshot.data(), samplesFloat, chunkFrames);
+
             frameOffset += chunkFrames;
             continue;
         }
@@ -610,33 +628,49 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
         if (encoding == 2) {
             auto* samples16 = reinterpret_cast<std::int16_t*>(bytes) + sampleOffset;
             for (int frame = 0; frame < chunkFrames; ++frame) {
-                handle->scratch[frame * 2] = readPcm16(samples16[frame * 2]);
-                handle->scratch[frame * 2 + 1] = readPcm16(samples16[frame * 2 + 1]);
+                handle->inputSnapshot[frame * 2] = readPcm16(samples16[frame * 2]);
+                handle->inputSnapshot[frame * 2 + 1] = readPcm16(samples16[frame * 2 + 1]);
             }
-            std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, handle->inputSnapshot.begin());
+
+            if (!isEnabled) {
+                handle->diagnostics.nativeStatus.store(
+                    resultCode(frostsoulx::ImmersiveProcessResult::Disabled),
+                    std::memory_order_relaxed);
+                publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->inputSnapshot.data(), chunkFrames);
+                frameOffset += chunkFrames;
+                continue;
+            }
+
+            std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, handle->scratch.begin());
             applyTone(*handle, handle->scratch.data(), chunkFrames);
+
             const auto started = std::chrono::steady_clock::now();
-            const bool processed = handle->enabled.load(std::memory_order_relaxed) && handle->engine.process(handle->scratch.data(), chunkFrames);
+            const bool processed = handle->engine.process(handle->scratch.data(), chunkFrames);
             const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count();
-            if (handle->enabled.load(std::memory_order_relaxed) && !processed) handle->diagnostics.nativeProcessFailures.fetch_add(1, std::memory_order_relaxed);
-            if (processed) {
-                applyOutputSafety(*handle, handle->scratch.data(), chunkFrames);
+
+            if (!processed) {
+                handle->diagnostics.nativeProcessFailures.fetch_add(1, std::memory_order_relaxed);
+                handle->diagnostics.nativeStatus.store(
+                    resultCode(handle->engine.lastProcessResult()),
+                    std::memory_order_relaxed);
+                publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->inputSnapshot.data(), chunkFrames);
             } else {
-                std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, handle->scratch.begin());
-            }
-            handle->diagnostics.nativeStatus.store(handle->enabled.load() ? resultCode(handle->engine.lastProcessResult()) : resultCode(frostsoulx::ImmersiveProcessResult::Disabled), std::memory_order_relaxed);
-            if (processed) {
+                applyOutputSafety(*handle, handle->scratch.data(), chunkFrames);
+                handle->diagnostics.nativeStatus.store(
+                    resultCode(handle->engine.lastProcessResult()),
+                    std::memory_order_relaxed);
                 handle->diagnostics.processingTimeNanos.fetch_add(static_cast<uint64_t>(elapsed), std::memory_order_relaxed);
                 atomicMax(handle->diagnostics.maxProcessingTimeNanos, static_cast<uint64_t>(elapsed));
                 if (handle->sampleRate > 0 && elapsed > (1000000000LL * chunkFrames) / handle->sampleRate) {
                     handle->diagnostics.deadlineMisses.fetch_add(1, std::memory_order_relaxed);
                 }
+                publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->scratch.data(), chunkFrames);
+                for (int frame = 0; frame < chunkFrames; ++frame) {
+                    samples16[frame * 2] = writePcm16(handle->scratch[frame * 2]);
+                    samples16[frame * 2 + 1] = writePcm16(handle->scratch[frame * 2 + 1]);
+                }
             }
-            publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->scratch.data(), chunkFrames);
-            for (int frame = 0; frame < chunkFrames; ++frame) {
-                samples16[frame * 2] = writePcm16(handle->scratch[frame * 2]);
-                samples16[frame * 2 + 1] = writePcm16(handle->scratch[frame * 2 + 1]);
-            }
+
             frameOffset += chunkFrames;
             continue;
         }

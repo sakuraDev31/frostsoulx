@@ -462,8 +462,8 @@ class ImmersiveAudioProcessor : AudioProcessor {
 
     companion object {
         const val DEFAULT_QUANTUM_FRAMES = 384
-        const val MIN_QUANTUM_FRAMES = 1
-        const val MAX_QUANTUM_FRAMES = 1_000_000
+        const val MIN_QUANTUM_FRAMES = 96
+        const val MAX_QUANTUM_FRAMES = 2048
         private val EMPTY_BUFFER = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
 
         init {
