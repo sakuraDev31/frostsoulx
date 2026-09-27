@@ -271,8 +271,8 @@ SpaceProfile SpaceProfile::createLivingRoom() {
 
 SpaceProfile SpaceProfile::createMediumHall() {
     SpaceProfile p("Medium Hall", {18.0f, 12.0f, 6.5f});
-    p.setSourcePosition({5.0f, 0.0f, 1.4f});
-    p.setListenerPosition({-2.0f, 0.0f, 1.4f});
+    p.setSourcePosition({2.2f, 0.0f, 1.4f});
+    p.setListenerPosition({0.0f, 0.0f, 1.4f});
 
     p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, AcousticMaterial::WoodPanel(), 0.0f});
     p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, AcousticMaterial::Plasterboard(), 0.0f});
@@ -285,8 +285,8 @@ SpaceProfile SpaceProfile::createMediumHall() {
 
 SpaceProfile SpaceProfile::createLargeHall() {
     SpaceProfile p("Large Hall", {35.0f, 22.0f, 12.0f});
-    p.setSourcePosition({10.0f, 0.0f, 1.6f});
-    p.setListenerPosition({-5.0f, 0.0f, 1.4f});
+    p.setSourcePosition({2.4f, 0.0f, 1.5f});
+    p.setListenerPosition({0.0f, 0.0f, 1.4f});
 
     p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, AcousticMaterial::WoodPanel(), 0.0f});
     p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, AcousticMaterial::Plasterboard(), 0.0f});
@@ -299,8 +299,8 @@ SpaceProfile SpaceProfile::createLargeHall() {
 
 SpaceProfile SpaceProfile::createConcertHall() {
     SpaceProfile p("Concert Hall", {36.0f, 24.0f, 15.0f});
-    p.setSourcePosition({8.0f, 0.0f, 1.8f});
-    p.setListenerPosition({-3.0f, 0.0f, 1.4f});
+    p.setSourcePosition({2.4f, 0.0f, 1.5f});
+    p.setListenerPosition({0.0f, 0.0f, 1.4f});
 
     p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, AcousticMaterial::AudienceSeating(), 0.0f});
     p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, AcousticMaterial::Plasterboard(), 0.0f});
@@ -313,50 +313,61 @@ SpaceProfile SpaceProfile::createConcertHall() {
 
 SpaceProfile SpaceProfile::createSubwayPlatform() {
     SpaceProfile p("Subway Platform", {80.0f, 10.0f, 4.5f});
-    p.setSourcePosition({15.0f, 1.5f, 1.5f});
-    p.setListenerPosition({-5.0f, -1.0f, 1.5f});
+    p.setSourcePosition({2.2f, 0.8f, 1.5f});
+    p.setListenerPosition({0.0f, 0.0f, 1.5f});
 
-    p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, AcousticMaterial::Asphalt(), 0.05f});
-    p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, AcousticMaterial::Concrete(), 0.0f});
+    AcousticMaterial platformTile{"PlatformTile", {0.02f, 0.03f, 0.04f, 0.05f, 0.06f, 0.08f}, 0.35f};
+    AcousticMaterial vaultedCeiling{"VaultedCeiling", {0.04f, 0.05f, 0.06f, 0.08f, 0.10f, 0.12f}, 0.45f};
+    AcousticMaterial stationWall{"StationWall", {0.03f, 0.04f, 0.05f, 0.06f, 0.08f, 0.10f}, 0.40f};
+
+    p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, platformTile, 0.05f});
+    p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, vaultedCeiling, 0.0f});
     p.setBoundary(RoomSurface::Front, {RoomSurface::Front, AcousticMaterial::OpenAir(), 0.5f});
     p.setBoundary(RoomSurface::Back, {RoomSurface::Back, AcousticMaterial::OpenAir(), 0.5f});
-    p.setBoundary(RoomSurface::Left, {RoomSurface::Left, AcousticMaterial::CeramicTile(), 0.0f});
-    p.setBoundary(RoomSurface::Right, {RoomSurface::Right, AcousticMaterial::CeramicTile(), 0.0f});
+    p.setBoundary(RoomSurface::Left, {RoomSurface::Left, stationWall, 0.0f});
+    p.setBoundary(RoomSurface::Right, {RoomSurface::Right, stationWall, 0.0f});
     return p;
 }
 
 SpaceProfile SpaceProfile::createLongSubwayTunnel() {
     SpaceProfile p("Long Subway Tunnel", {200.0f, 5.5f, 5.0f});
-    p.setSourcePosition({30.0f, 0.0f, 1.5f});
+    p.setSourcePosition({2.0f, 0.0f, 1.5f});
     p.setListenerPosition({0.0f, 0.0f, 1.5f});
 
-    p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, AcousticMaterial::Concrete(), 0.0f});
-    p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, AcousticMaterial::Concrete(), 0.0f});
+    AcousticMaterial trackBallast{"TrackBallast", {0.08f, 0.10f, 0.12f, 0.16f, 0.20f, 0.24f}, 0.60f};
+    AcousticMaterial archedConcrete{"ArchedConcrete", {0.03f, 0.04f, 0.05f, 0.06f, 0.08f, 0.10f}, 0.50f};
+    AcousticMaterial tunnelWall{"TunnelWall", {0.03f, 0.04f, 0.05f, 0.06f, 0.08f, 0.10f}, 0.45f};
+
+    p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, trackBallast, 0.0f});
+    p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, archedConcrete, 0.0f});
     p.setBoundary(RoomSurface::Front, {RoomSurface::Front, AcousticMaterial::OpenAir(), 0.4f});
     p.setBoundary(RoomSurface::Back, {RoomSurface::Back, AcousticMaterial::OpenAir(), 0.4f});
-    p.setBoundary(RoomSurface::Left, {RoomSurface::Left, AcousticMaterial::Concrete(), 0.0f});
-    p.setBoundary(RoomSurface::Right, {RoomSurface::Right, AcousticMaterial::Concrete(), 0.0f});
+    p.setBoundary(RoomSurface::Left, {RoomSurface::Left, tunnelWall, 0.0f});
+    p.setBoundary(RoomSurface::Right, {RoomSurface::Right, tunnelWall, 0.0f});
     return p;
 }
 
 SpaceProfile SpaceProfile::createLongTunnel() {
     SpaceProfile p("Long Tunnel", {350.0f, 9.0f, 6.0f});
-    p.setSourcePosition({50.0f, 1.0f, 1.5f});
+    p.setSourcePosition({2.5f, 0.0f, 1.5f});
     p.setListenerPosition({0.0f, 0.0f, 1.5f});
 
-    p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, AcousticMaterial::Asphalt(), 0.0f});
-    p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, AcousticMaterial::Concrete(), 0.0f});
+    AcousticMaterial roadAsphalt{"RoadAsphalt", {0.05f, 0.06f, 0.08f, 0.10f, 0.12f, 0.15f}, 0.35f};
+    AcousticMaterial tunnelLining{"TunnelLining", {0.03f, 0.04f, 0.05f, 0.06f, 0.08f, 0.10f}, 0.40f};
+
+    p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, roadAsphalt, 0.0f});
+    p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, tunnelLining, 0.0f});
     p.setBoundary(RoomSurface::Front, {RoomSurface::Front, AcousticMaterial::OpenAir(), 0.35f});
     p.setBoundary(RoomSurface::Back, {RoomSurface::Back, AcousticMaterial::OpenAir(), 0.35f});
-    p.setBoundary(RoomSurface::Left, {RoomSurface::Left, AcousticMaterial::Concrete(), 0.0f});
-    p.setBoundary(RoomSurface::Right, {RoomSurface::Right, AcousticMaterial::Concrete(), 0.0f});
+    p.setBoundary(RoomSurface::Left, {RoomSurface::Left, tunnelLining, 0.0f});
+    p.setBoundary(RoomSurface::Right, {RoomSurface::Right, tunnelLining, 0.0f});
     return p;
 }
 
 SpaceProfile SpaceProfile::createClosedCar() {
     SpaceProfile p("Closed Car Cabin", {2.8f, 1.6f, 1.2f});
-    p.setSourcePosition({0.4f, -0.3f, 0.8f});
-    p.setListenerPosition({0.0f, 0.0f, 0.8f});
+    p.setSourcePosition({0.8f, -0.3f, 0.9f});
+    p.setListenerPosition({0.0f, 0.0f, 0.9f});
 
     p.setBoundary(RoomSurface::Floor, {RoomSurface::Floor, AcousticMaterial::Carpet(), 0.0f});
     p.setBoundary(RoomSurface::Ceiling, {RoomSurface::Ceiling, AcousticMaterial::CarInterior(), 0.0f});

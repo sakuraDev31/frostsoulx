@@ -1,4 +1,5 @@
 #include "frostsoulx/spatial/rir_generator.h"
+#include "frostsoulx/dsp/fft.h"
 #include "frostsoulx/rt/rt_types.h"
 
 #include <algorithm>
@@ -25,11 +26,14 @@ std::vector<GeometricReflectionPath> RirGenerator::calculateReflectionPaths(cons
     // -------------------------------------------------------------------------
     const Vec3 directRay = src - lis;
     const float directDist = directRay.length();
+    const float directDelay = directDist / c;
+    const float delayOffset = cfg_.alignDirectArrival ? directDelay : 0.0f;
+
     if (directDist > 1.0e-4f) {
         GeometricReflectionPath direct;
         direct.order = 0;
         direct.distanceMeters = directDist;
-        direct.delaySeconds = directDist / c;
+        direct.delaySeconds = std::max(0.0f, directDelay - delayOffset);
         direct.arrivalDirection = listenerFrame.toLocalSpherical(src);
         direct.broadbandGain = 1.0f / std::max(directDist, 0.5f);
 
@@ -96,18 +100,37 @@ std::vector<GeometricReflectionPath> RirGenerator::calculateReflectionPaths(cons
                 const float dist = ray.length();
                 if (dist < 1.0e-3f) continue;
 
-                GeometricReflectionPath path;
-                path.order = order;
-                path.distanceMeters = dist;
-                path.delaySeconds = dist / c;
-                path.arrivalDirection = listenerFrame.toLocalSpherical(imgPos);
-
                 const int nx_pos = std::max(0, mx);
                 const int nx_neg = std::max(0, -mx);
                 const int ny_pos = std::max(0, my);
                 const int ny_neg = std::max(0, -my);
                 const int nz_pos = std::max(0, mz);
                 const int nz_neg = std::max(0, -mz);
+
+                float avgScat = 0.0f;
+                if (nx_pos > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Front)];
+                if (nx_neg > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Back)];
+                if (ny_pos > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Left)];
+                if (ny_neg > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Right)];
+                if (nz_pos > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Ceiling)];
+                if (nz_neg > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Floor)];
+                avgScat /= static_cast<float>(order);
+
+                GeometricReflectionPath path;
+                path.order = order;
+                path.distanceMeters = dist;
+                float pathDelay = std::max(0.0f, (dist / c) - delayOffset);
+                if (order >= 1) {
+                    // Temporal jitter breaks the strictly periodic Dirac comb of parallel walls,
+                    // transforming artificial metallic plate ringing into natural diffuse reverberance.
+                    const float orderF = static_cast<float>(order);
+                    const float hash = std::sin(static_cast<float>(mx) * 12.9898f + static_cast<float>(my) * 78.233f + static_cast<float>(mz) * 37.719f);
+                    const float fracHash = hash - std::floor(hash);
+                    const float jitter = (fracHash - 0.5f) * (0.0007f * orderF * (0.2f + 0.8f * avgScat));
+                    pathDelay = std::max(0.0f, pathDelay + jitter);
+                }
+                path.delaySeconds = pathDelay;
+                path.arrivalDirection = listenerFrame.toLocalSpherical(imgPos);
 
                 float midGain = 0.0f;
                 constexpr std::array<float, kNumAcousticBands> kAirAttenPerM = {
@@ -139,23 +162,14 @@ std::vector<GeometricReflectionPath> RirGenerator::calculateReflectionPaths(cons
                 path.isScattered = false;
                 paths.push_back(path);
 
-                // For irregular spaces with high wall scattering (e.g. Cave / Stadium),
+                // For irregular spaces with high wall scattering (e.g. Cave / Stadium / Subway),
                 // generate distributed scattered path
-                float avgScat = 0.0f;
-                if (nx_pos > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Front)];
-                if (nx_neg > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Back)];
-                if (ny_pos > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Left)];
-                if (ny_neg > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Right)];
-                if (nz_pos > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Ceiling)];
-                if (nz_neg > 0) avgScat += scatteringPerSurf[static_cast<std::size_t>(RoomSurface::Floor)];
-                avgScat /= static_cast<float>(order);
-
-                if (avgScat > 0.35f) {
+                if (avgScat > 0.30f) {
                     GeometricReflectionPath scatPath = path;
                     scatPath.isScattered = true;
                     scatPath.broadbandGain *= avgScat * 0.4f;
                     scatPath.arrivalDirection.azimuthDeg += 12.0f * (mx % 2 == 0 ? 1.0f : -1.0f);
-                    scatPath.delaySeconds += 0.003f * static_cast<float>(order);
+                    scatPath.delaySeconds += 0.0025f * static_cast<float>(order);
                     paths.push_back(scatPath);
                 }
             }
@@ -238,8 +252,10 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
     // -------------------------------------------------------------------------
     if (cfg_.enableDiffuseTail && space.openness() < 0.95f) {
         const float V = space.volume();
-        // Transition time from specular to diffuse field: t_mix ~ sqrt(V) / c
-        const float tMix = std::clamp(std::sqrt(V) / c, 0.012f, 0.120f);
+        // Transition time from specular to diffuse field relative to direct arrival
+        const float directDelay = (space.sourcePosition() - space.listenerPosition()).length() / c;
+        const float rawTmix = std::clamp(std::sqrt(V) / c, 0.010f, 0.080f);
+        const float tMix = cfg_.alignDirectArrival ? rawTmix : std::max(rawTmix, directDelay + 0.005f);
         const std::size_t startSample = static_cast<std::size_t>(tMix * fs);
 
         // Sabine/Eyring T60 per band (Low: 125-250Hz, Mid: 500-1000Hz, High: 2000-4000Hz)
@@ -294,36 +310,46 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
     }
 
     // -------------------------------------------------------------------------
-    // 3. Acoustic Energy & Peak Normalization (Headroom Safe)
+    // 3. Acoustic Frequency-Peak & Headroom-Safe Normalization
     // -------------------------------------------------------------------------
-    // Linear convolution with an impulse response whose peak was normalized to 1.0
-    // results in massive over-unity gain (+15 to +25 dB) across music because of the
-    // constructive summation of hundreds of reflection paths and diffuse tail.
-    // We normalize the total RMS energy (L2 norm) to a safe target gain (-7 dBFS / 0.45)
-    // and bound individual peaks to 0.55 to prevent any clipping under full-scale input.
-    double energyL = 0.0;
-    double energyR = 0.0;
-    float maxPeak = 0.0f;
-    for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
-        const float l = brir.left[i];
-        const float r = brir.right[i];
-        energyL += static_cast<double>(l) * l;
-        energyR += static_cast<double>(r) * r;
-        maxPeak = std::max(maxPeak, std::max(std::fabs(l), std::fabs(r)));
+    dsp::RealFft fft(cfg_.maxTaps);
+    float maxFreqGain = 0.0f;
+    if (fft.valid()) {
+        std::vector<float> specL(fft.spectrumFloats(), 0.0f);
+        std::vector<float> specR(fft.spectrumFloats(), 0.0f);
+        fft.forward(brir.left.data(), specL.data());
+        fft.forward(brir.right.data(), specR.data());
+        for (std::size_t k = 0; k < fft.numBins(); ++k) {
+            const float magL = std::sqrt(specL[2 * k] * specL[2 * k] + specL[2 * k + 1] * specL[2 * k + 1]);
+            const float magR = std::sqrt(specR[2 * k] * specR[2 * k] + specR[2 * k + 1] * specR[2 * k + 1]);
+            maxFreqGain = std::max({maxFreqGain, magL, magR});
+        }
     }
 
-    const double rmsEnergy = std::sqrt(std::max(energyL, energyR));
-    if (rmsEnergy > 1.0e-5 && maxPeak > 1.0e-5f) {
-        constexpr float kTargetRmsGain = 0.45f; // -6.9 dB target RMS gain
-        constexpr float kMaxPeakCeiling = 0.55f; // peak ceiling for transient safety
-        float norm = static_cast<float>(kTargetRmsGain / rmsEnergy);
-        if (maxPeak * norm > kMaxPeakCeiling) {
-            norm = kMaxPeakCeiling / maxPeak;
-        }
-        for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
-            brir.left[i] *= norm;
-            brir.right[i] *= norm;
-        }
+    float maxPeak = 0.0f;
+    for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
+        maxPeak = std::max({maxPeak, std::fabs(brir.left[i]), std::fabs(brir.right[i])});
+    }
+
+    constexpr float kTargetMaxFreqGain = 1.35f;
+    constexpr float kTargetMaxTimePeak = 0.85f;
+    constexpr float kMinTimePeak = 0.55f;
+
+    float norm = 1.0f;
+    if (maxPeak > 1.0e-5f) {
+        norm = kMinTimePeak / maxPeak;
+    }
+    if (maxFreqGain > 1.0e-5f && (maxFreqGain * norm) > kTargetMaxFreqGain) {
+        const float freqNorm = kTargetMaxFreqGain / maxFreqGain;
+        norm = std::max(freqNorm, 0.51f / maxPeak);
+    }
+    if (maxPeak * norm > kTargetMaxTimePeak && maxPeak > 1.0e-5f) {
+        norm = kTargetMaxTimePeak / maxPeak;
+    }
+
+    for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
+        brir.left[i] *= norm;
+        brir.right[i] *= norm;
     }
 
     return brir;

@@ -215,7 +215,7 @@ float readPcm16(std::int16_t sample) noexcept {
     return static_cast<float>(sample) / 32768.0f;
 }
 
-inline float softLimitSample(float s, float threshold = 0.88f, float ceiling = 0.96f) noexcept {
+inline float softLimitSample(float s, float threshold = 0.94f, float ceiling = 0.98f) noexcept {
     const float absS = std::fabs(s);
     if (absS <= threshold) return s;
     const float range = ceiling - threshold;
@@ -224,7 +224,7 @@ inline float softLimitSample(float s, float threshold = 0.88f, float ceiling = 0
 }
 
 std::int16_t writePcm16(float sample) noexcept {
-    const float safe = softLimitSample(sample, 0.88f, 0.999f);
+    const float safe = softLimitSample(sample, 0.94f, 0.999f);
     const auto scaled = static_cast<int>(std::lround(safe * 32767.0f));
     return static_cast<std::int16_t>(std::clamp(scaled, -32768, 32767));
 }
@@ -306,13 +306,19 @@ void applyTone(Handle& handle, float* interleavedStereo, int frames) noexcept {
 }
 
 void applyOutputSafety(Handle& handle, float* interleavedStereo, int frames) noexcept {
-    constexpr float kCeiling = 0.96f;
-    constexpr float kSoftThreshold = 0.88f;
+    constexpr float kCeiling = 0.98f;
+    constexpr float kSoftThreshold = 0.94f;
 
     float blockPeak = 0.0f;
     for (int i = 0; i < frames * 2; ++i) {
         const float sample = interleavedStereo[i];
         if (std::isfinite(sample)) blockPeak = std::max(blockPeak, std::fabs(sample));
+    }
+
+    // Bypass entirely if the block has plenty of headroom and limiter is idle
+    if (blockPeak <= kSoftThreshold && handle.outputSafetyGain >= 0.999f) {
+        handle.outputSafetyGain = 1.0f;
+        return;
     }
 
     const float targetGain = blockPeak > kCeiling ? (kCeiling / blockPeak) : 1.0f;

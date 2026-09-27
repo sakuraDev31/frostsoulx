@@ -38,7 +38,7 @@ inline float clampUnit(float value) noexcept {
     return std::isfinite(value) ? std::clamp(value, 0.0f, 1.0f) : 0.0f;
 }
 
-inline float softLimitSample(float s, float threshold = 0.88f, float ceiling = 0.96f) noexcept {
+inline float softLimitSample(float s, float threshold = 0.94f, float ceiling = 0.98f) noexcept {
     const float absS = std::fabs(s);
     if (absS <= threshold) return s;
     const float range = ceiling - threshold;
@@ -114,7 +114,7 @@ struct ImmersiveAudioEngine::Impl {
     // HRTF/HRIR set, the HOA bus and the partitioned binaural convolution.
     spatial::SpatialRenderer nativeRenderer;
     SpatialBackend backend = SpatialBackend::None;
-    SpatialBackend backendPreference = SpatialBackend::FullConvolution;
+    SpatialBackend backendPreference = SpatialBackend::Native;
 
     // True Acoustic Space & Full Partitioned Linear Convolution backend
     spatial::SpaceProfile activeSpace = spatial::SpaceProfile::createLivingRoom();
@@ -140,11 +140,28 @@ struct ImmersiveAudioEngine::Impl {
         rcfg.maxIsmOrder = 2;
         rcfg.enableDiffuseTail = true;
         rcfg.diffuseEnergyRatio = reflectionDensity;
+        rcfg.alignDirectArrival = true; // Align direct sound to t = 0 for transparent binaural blend
         rirGenerator.setConfig(rcfg);
-        activeBrir = rirGenerator.generateBrir(activeSpace);
-        if (activeBrir.valid() && fullConvolutionReady) {
-            convLeft.loadIr(activeBrir.left.data(), activeBrir.taps);
-            convRight.loadIr(activeBrir.right.data(), activeBrir.taps);
+
+        // Generate stereo soundstage: virtual left and right speakers in the physical space
+        const spatial::Vec3 lis = activeSpace.listenerPosition();
+        const float az = (15.0f + 35.0f * widthNorm) * (3.14159265f / 180.0f);
+        const float dist = 1.8f;
+
+        spatial::SpaceProfile spaceL = activeSpace;
+        const spatial::Vec3 posL{lis.x + dist * std::cos(az), lis.y + dist * std::sin(az), lis.z};
+        spaceL.setSourcePosition(posL);
+        spatial::StereoBrir brirL = rirGenerator.generateBrir(spaceL);
+
+        spatial::SpaceProfile spaceR = activeSpace;
+        const spatial::Vec3 posR{lis.x + dist * std::cos(az), lis.y - dist * std::sin(az), lis.z};
+        spaceR.setSourcePosition(posR);
+        spatial::StereoBrir brirR = rirGenerator.generateBrir(spaceR);
+
+        activeBrir = brirL;
+        if (brirL.valid() && brirR.valid() && fullConvolutionReady) {
+            convLeft.loadIr(brirL.left.data(), brirL.taps);
+            convRight.loadIr(brirR.right.data(), brirR.taps);
         }
     }
 
@@ -390,9 +407,10 @@ struct ImmersiveAudioEngine::Impl {
     }
 
     void applyOutputLimiter(float& left, float& right) noexcept {
+        constexpr float kLimiterThresh = 0.94f;
         const float peak = std::max(std::fabs(left), std::fabs(right));
-        const float targetGain = peak > kLimiterThreshold
-            ? std::max(kLimiterThreshold / peak, kLimiterMinGain)
+        const float targetGain = peak > kLimiterThresh
+            ? std::max(kLimiterThresh / peak, kLimiterMinGain)
             : 1.0f;
 
         if (targetGain < limiterGain) {
@@ -401,8 +419,8 @@ struct ImmersiveAudioEngine::Impl {
             limiterGain = std::min(1.0f, limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
         }
 
-        left = softLimitSample(left * limiterGain, 0.88f, kOutputCeiling);
-        right = softLimitSample(right * limiterGain, 0.88f, kOutputCeiling);
+        left = softLimitSample(left * limiterGain, kLimiterThresh, kOutputCeiling);
+        right = softLimitSample(right * limiterGain, kLimiterThresh, kOutputCeiling);
     }
 
     void applyRoomModel(float& left, float& right) noexcept {
@@ -537,14 +555,14 @@ struct ImmersiveAudioEngine::Impl {
         const int maxN = std::min(frames, frameCapacity);
 
         // 1. Sanitise input into preallocated scratch channels and apply stereo width matrixing
-        const float sideGain = widthNorm * 1.8f;
+        const float w = 0.5f + widthNorm * 0.9f;
         for (int i = 0; i < maxN; ++i) {
             const float inL = sanitizeInputSample(interleavedStereo[2 * i]);
             const float inR = sanitizeInputSample(interleavedStereo[2 * i + 1]);
             const float mid = 0.5f * (inL + inR);
             const float side = 0.5f * (inL - inR);
-            convScratchInL[static_cast<std::size_t>(i)] = mid + sideGain * side;
-            convScratchInR[static_cast<std::size_t>(i)] = mid - sideGain * side;
+            convScratchInL[static_cast<std::size_t>(i)] = mid + w * side;
+            convScratchInR[static_cast<std::size_t>(i)] = mid - w * side;
         }
 
         // 2. Multi-tier partitioned linear convolution (128-sample head block)
@@ -568,15 +586,18 @@ struct ImmersiveAudioEngine::Impl {
             }
         }
 
-        // 3. Dry/wet blend & peak limiter
+        // 3. Dry/wet equal-power crossfade & peak limiter
+        const float blendAngle = spatialBlend * 0.5f * 3.14159265358979323846f;
+        const float dryGain = std::cos(blendAngle);
+        const float wetGain = std::sin(blendAngle);
         for (int i = 0; i < maxN; ++i) {
             const float dryL = convScratchInL[static_cast<std::size_t>(i)];
             const float dryR = convScratchInR[static_cast<std::size_t>(i)];
             const float wetL = convScratchOutL[static_cast<std::size_t>(i)];
             const float wetR = convScratchOutR[static_cast<std::size_t>(i)];
 
-            float outL = (1.0f - spatialBlend) * dryL + spatialBlend * wetL;
-            float outR = (1.0f - spatialBlend) * dryR + spatialBlend * wetR;
+            float outL = dryGain * dryL + wetGain * wetL;
+            float outR = dryGain * dryR + wetGain * wetR;
 
             applyOutputLimiter(outL, outR);
 
