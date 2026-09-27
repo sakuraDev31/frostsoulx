@@ -162,7 +162,7 @@ fun ShowMediaInfo(videoId: String) {
     val playbackVolume = playerConnection?.let { "${(it.player.volume * 100).toInt()}%" }
 
     val overviewDetails =
-        buildList {
+        buildList<MediaInfoDetail> {
             add(MediaInfoDetail(label = songTitleLabel, value = song?.title ?: info?.title ?: unknownText))
             add(
                 MediaInfoDetail(
@@ -180,7 +180,7 @@ fun ShowMediaInfo(videoId: String) {
         }
 
     val technicalDetails =
-        buildList {
+        buildList<MediaInfoDetail> {
             currentFormat?.itag?.toString()?.let { add(MediaInfoDetail(label = "Itag", value = it)) }
             currentFormat
                 ?.mimeType
@@ -200,21 +200,19 @@ fun ShowMediaInfo(videoId: String) {
                 ?.let { add(MediaInfoDetail(label = sampleRateLabel, value = "$it Hz")) }
             currentFormat?.loudnessDb?.let { add(MediaInfoDetail(label = loudnessLabel, value = "$it dB")) }
             playbackVolume?.let { add(MediaInfoDetail(label = volumeLabel, value = it)) }
-            currentFormat
-                ?.contentLength
-                ?.takeIf { it > 0 }
-                ?.let {
-                    add(
-                        MediaInfoDetail(
-                            label = fileSizeLabel,
-                            value = Formatter.formatShortFileSize(context, it),
-                        ),
-                    )
-                }
+            val formatLength = currentFormat?.contentLength
+            if (formatLength != null && formatLength > 0L) {
+                add(
+                    MediaInfoDetail(
+                        label = fileSizeLabel,
+                        value = Formatter.formatShortFileSize(context, formatLength),
+                    ),
+                )
+            }
         }
 
     val quickFacts =
-        buildList {
+        buildList<MediaInfoQuickFact> {
             currentFormat
                 ?.mimeType
                 ?.substringBefore(';')
@@ -224,17 +222,15 @@ fun ShowMediaInfo(videoId: String) {
                 ?.bitrate
                 ?.takeIf { it > 0 }
                 ?.let { add(MediaInfoQuickFact(iconRes = R.drawable.waves, text = "${it / 1000} Kbps")) }
-            currentFormat
-                ?.contentLength
-                ?.takeIf { it > 0 }
-                ?.let {
-                    add(
-                        MediaInfoQuickFact(
-                            iconRes = R.drawable.storage,
-                            text = Formatter.formatShortFileSize(context, it),
-                        ),
-                    )
-                }
+            val formatLength = currentFormat?.contentLength
+            if (formatLength != null && formatLength > 0L) {
+                add(
+                    MediaInfoQuickFact(
+                        iconRes = R.drawable.storage,
+                        text = Formatter.formatShortFileSize(context, formatLength),
+                    ),
+                )
+            }
             info
                 ?.subscribers
                 ?.takeIf { it.isNotBlank() }
