@@ -610,7 +610,7 @@ private fun FrostSoulGreetingHeader(
             }
         } else if (isPlaying && mediaMetadata != null) {
             val trackTitle = mediaMetadata.title.take(30)
-            val artist = mediaMetadata.artists.firstOrNull()?.name ?: mediaMetadata.artist
+            val artist = mediaMetadata.artists.joinToString(", ") { it.name }.takeIf { it.isNotBlank() }
             val trackInfo = if (!artist.isNullOrBlank()) "$trackTitle • $artist" else trackTitle
             when (currentHour) {
                 in 0..4 -> "Late night session • Listening to $trackInfo"
