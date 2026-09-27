@@ -517,43 +517,66 @@ private fun FrostSoulGreetingHeader(
     val (greeting, symbol, subtitle) = remember(currentHour) {
         when (currentHour) {
             in 5..11 -> Triple("GOOD MORNING", "☀️", "Music tuned for your morning flow")
-            in 12..16 -> Triple("GOOD AFTERNOON", "⛅", "Soundtracks for your afternoon")
+            in 12..16 -> Triple("GOOD AFTERNOON", "⛅", "Soundtracks for your afternoon flow")
             in 17..21 -> Triple("GOOD EVENING", "🌅", "Wind down with your favorites")
             else -> Triple("GOOD NIGHT", "🌙", "Late night vibes & deep listening")
         }
     }
-    val displayName = accountName.ifBlank { "Shivam" }
+
+    val resolvedName = remember(accountName) {
+        val raw = accountName.trim()
+        if (raw.isNotBlank()) {
+            raw.split("\\s+".toRegex()).firstOrNull()?.replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase() else it.toString()
+            } ?: "Shivam"
+        } else {
+            "Shivam"
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = FrostSoulTheme.spacing.page)
-            .padding(top = 4.dp, bottom = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .padding(top = 2.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         FSText(
             text = greeting,
-            color = FrostSoulTheme.colors.onSurfaceMuted,
+            color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.85f),
             style = FrostSoulTheme.typography.overline.copy(
-                fontSize = 11.sp,
-                letterSpacing = 1.3.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 11.5.sp,
+                letterSpacing = 1.4.sp,
+                fontWeight = FontWeight.SemiBold,
             ),
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             FSText(
-                text = "$displayName $symbol",
+                text = resolvedName,
                 color = FrostSoulTheme.colors.onSurface,
                 style = FrostSoulTheme.typography.title.copy(
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.5).sp,
+                ),
+            )
+            FSText(
+                text = symbol,
+                style = FrostSoulTheme.typography.title.copy(
+                    fontSize = 24.sp,
                 ),
             )
         }
         FSText(
             text = subtitle,
             color = FrostSoulTheme.colors.onSurfaceMuted,
-            style = FrostSoulTheme.typography.bodyMuted,
+            style = FrostSoulTheme.typography.bodyMuted.copy(
+                fontSize = 13.5.sp,
+                lineHeight = 18.sp,
+            ),
         )
     }
 }
