@@ -9,6 +9,7 @@ package dev.vxs.frostsoulx.ui.screens
 
 import androidx.activity.compose.BackHandler
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -97,11 +100,12 @@ fun HomeScreen(
     }
 
     FrostSoulCalmTheme {
+        val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
         Box(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .frostSoulCalmScreenBackground()
+                    .background(if (isLight) Color.White else Color.Black)
                     .then(
                         if (headerScrollConnection != null) Modifier.nestedScroll(headerScrollConnection) else Modifier,
                     ),

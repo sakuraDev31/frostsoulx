@@ -58,11 +58,25 @@ fun FrostSoulHomeCollectionScreen(
     val playerConnection = LocalPlayerConnection.current ?: return
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
-    val title = stringResource(if (kind == "moment") R.string.home_for_this_moment else R.string.home_continue_listening)
     val uiState = (state as? HomeScreenState.Success)?.uiState
-    // Exactly the shelf that was opened, not an independently reranked fallback.
-    val collection: List<LocalItem> = if (kind == "moment") uiState?.forThisMoment.orEmpty()
-        else uiState?.keepListening.orEmpty()
+    val (title, description) = when (kind) {
+        "quick_picks" -> "Quick picks" to "Your top picks and daily rotations"
+        "continue" -> stringResource(R.string.home_continue_listening) to stringResource(R.string.home_continue_description)
+        "moment" -> stringResource(R.string.home_for_this_moment) to stringResource(R.string.home_moment_description)
+        "forgotten" -> "Forgotten favorites" to "Treasures from your listening history"
+        "trending" -> "Trending songs for you" to "Popular tracks matched with your taste"
+        "made_for_you" -> "Made for you" to "Personalized mixes tailored to your listening habits"
+        else -> stringResource(R.string.home_continue_listening) to stringResource(R.string.home_continue_description)
+    }
+    val collection: List<LocalItem> = when (kind) {
+        "quick_picks" -> uiState?.quickPicks.orEmpty()
+        "continue" -> uiState?.keepListening.orEmpty()
+        "moment" -> uiState?.forThisMoment.orEmpty()
+        "forgotten" -> uiState?.forgottenFavorites.orEmpty()
+        "trending" -> uiState?.featuredForYou.orEmpty()
+        "made_for_you" -> uiState?.featuredForYou.orEmpty()
+        else -> uiState?.keepListening.orEmpty()
+    }
     val songs = remember(collection) { collection.filterIsInstance<Song>() }
 
     FrostSoulCalmTheme {
@@ -106,7 +120,7 @@ fun FrostSoulHomeCollectionScreen(
                 ) {
                     item(key = "description", contentType = "description") {
                         Text(
-                            text = stringResource(if (kind == "moment") R.string.home_moment_description else R.string.home_continue_description),
+                            text = description,
                             style = FrostSoulTheme.typography.bodyMuted,
                             color = FrostSoulTheme.colors.onSurfaceMuted,
                             modifier = Modifier.padding(bottom = 8.dp),
