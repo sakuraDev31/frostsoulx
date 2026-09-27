@@ -517,7 +517,7 @@ private fun FrostSoulGreetingHeader(
         FSText(
             text = greeting,
             color = FrostSoulTheme.colors.onSurface,
-            style = FrostSoulTheme.typography.heroTitle.copy(
+            style = FrostSoulTheme.typography.title.copy(
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
             ),
