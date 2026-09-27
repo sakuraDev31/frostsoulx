@@ -32,6 +32,10 @@ import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -1659,12 +1663,30 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
                                     }
+                                    var searchOverlayOpen by rememberSaveable { mutableStateOf(false) }
+                                    LaunchedEffect(active) {
+                                        if (active) {
+                                            searchOverlayOpen = true
+                                        }
+                                    }
+
+                                    val isOnlineSearchResultRoute =
+                                        navBackStackEntry?.destination?.route?.startsWith(OnlineSearchResultRoutePrefix) == true
+                                    val isSearchUiVisible =
+                                        active || isOnlineSearchResultRoute || searchOverlayOpen
+
                                     AnimatedVisibility(
-                                        visible =
-                                            active ||
-                                                navBackStackEntry?.destination?.route?.startsWith(OnlineSearchResultRoutePrefix) == true,
-                                        enter = fadeIn(animationSpec = tween(durationMillis = if (disableAnimations) 0 else 300)),
-                                        exit = fadeOut(animationSpec = tween(durationMillis = if (disableAnimations) 0 else 200)),
+                                        visible = isSearchUiVisible,
+                                        enter = fadeIn(
+                                            animationSpec =
+                                                if (disableAnimations) snap()
+                                                else spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow),
+                                        ),
+                                        exit = fadeOut(
+                                            animationSpec =
+                                                if (disableAnimations) snap()
+                                                else tween(durationMillis = 150, easing = FastOutLinearInEasing),
+                                        ),
                                     ) {
                                         TopSearch(
                                             query = query,
@@ -1672,6 +1694,9 @@ class MainActivity : ComponentActivity() {
                                             onSearch = onSearch,
                                             active = active,
                                             onActiveChange = onActiveChange,
+                                            onCloseFinished = {
+                                                searchOverlayOpen = false
+                                            },
                                             placeholder = {
                                                 Text(
                                                     text =
@@ -2091,9 +2116,20 @@ class MainActivity : ComponentActivity() {
                                         } else if (initialState.destination.route in topLevelScreens &&
                                             targetState.destination.route in topLevelScreens
                                         ) {
-                                            fadeIn(tween(250))
+                                            fadeIn(tween(durationMillis = 220, easing = LinearOutSlowInEasing))
                                         } else {
-                                            fadeIn(tween(250)) + slideInHorizontally { it / 2 }
+                                            fadeIn(
+                                                animationSpec = tween(
+                                                    durationMillis = 280,
+                                                    easing = LinearOutSlowInEasing,
+                                                ),
+                                            ) + slideInHorizontally(
+                                                animationSpec = spring(
+                                                    dampingRatio = 0.88f,
+                                                    stiffness = 380f,
+                                                ),
+                                                initialOffsetX = { fullWidth -> fullWidth },
+                                            )
                                         }
                                     },
                                     exitTransition = {
@@ -2102,33 +2138,74 @@ class MainActivity : ComponentActivity() {
                                         } else if (initialState.destination.route in topLevelScreens &&
                                             targetState.destination.route in topLevelScreens
                                         ) {
-                                            fadeOut(tween(200))
+                                            fadeOut(tween(durationMillis = 180, easing = FastOutLinearInEasing))
                                         } else {
-                                            fadeOut(tween(200)) + slideOutHorizontally { -it / 2 }
+                                            fadeOut(
+                                                animationSpec = tween(
+                                                    durationMillis = 240,
+                                                    easing = FastOutLinearInEasing,
+                                                ),
+                                            ) + slideOutHorizontally(
+                                                animationSpec = spring(
+                                                    dampingRatio = 0.90f,
+                                                    stiffness = 400f,
+                                                ),
+                                                targetOffsetX = { fullWidth -> -fullWidth / 4 },
+                                            ) + scaleOut(
+                                                targetScale = 0.95f,
+                                                animationSpec = spring(
+                                                    dampingRatio = 0.90f,
+                                                    stiffness = 400f,
+                                                ),
+                                            )
                                         }
                                     },
                                     popEnterTransition = {
                                         if (disableAnimations) {
                                             fadeIn(tween(0))
                                         } else {
-                                            // Predictive-back style reveal: the previous page
-                                            // grows from a slightly recessed card while the
-                                            // outgoing page scales away above it.
-                                            fadeIn(tween(220)) +
-                                                scaleIn(initialScale = 0.95f) +
-                                                slideInHorizontally { -it / 8 }
+                                            fadeIn(
+                                                animationSpec = tween(
+                                                    durationMillis = 260,
+                                                    easing = LinearOutSlowInEasing,
+                                                ),
+                                            ) + scaleIn(
+                                                initialScale = 0.94f,
+                                                animationSpec = spring(
+                                                    dampingRatio = 0.88f,
+                                                    stiffness = 380f,
+                                                ),
+                                            ) + slideInHorizontally(
+                                                animationSpec = spring(
+                                                    dampingRatio = 0.88f,
+                                                    stiffness = 380f,
+                                                ),
+                                                initialOffsetX = { fullWidth -> -fullWidth / 4 },
+                                            )
                                         }
                                     },
                                     popExitTransition = {
                                         if (disableAnimations) {
                                             fadeOut(tween(0))
                                         } else {
-                                            // Matches Android's predictive-back gesture visual:
-                                            // current content follows the finger and recedes to
-                                            // roughly 90% before the destination is revealed.
-                                            fadeOut(tween(180)) +
-                                                scaleOut(targetScale = 0.90f) +
-                                                slideOutHorizontally { it / 2 }
+                                            fadeOut(
+                                                animationSpec = tween(
+                                                    durationMillis = 240,
+                                                    easing = FastOutLinearInEasing,
+                                                ),
+                                            ) + slideOutHorizontally(
+                                                animationSpec = spring(
+                                                    dampingRatio = 0.88f,
+                                                    stiffness = 380f,
+                                                ),
+                                                targetOffsetX = { fullWidth -> fullWidth },
+                                            ) + scaleOut(
+                                                targetScale = 0.96f,
+                                                animationSpec = spring(
+                                                    dampingRatio = 0.88f,
+                                                    stiffness = 380f,
+                                                ),
+                                            )
                                         }
                                     },
                                     modifier =
