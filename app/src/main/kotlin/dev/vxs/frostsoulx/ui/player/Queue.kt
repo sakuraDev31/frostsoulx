@@ -546,7 +546,12 @@ fun Queue(
                     )
                 }
 
-                PlayerDesignStyle.V4, PlayerDesignStyle.FROSTSOUL, PlayerDesignStyle.ARTWORK_BLUR -> {
+                PlayerDesignStyle.FROSTSOUL, PlayerDesignStyle.ARTWORK_BLUR -> {
+                    // These designs have a built-in queue overlay + controls;
+                    // no legacy collapsed peek bar needed.
+                }
+
+                PlayerDesignStyle.V4 -> {
                     QueueCollapsedContentV4(
                         showCodecOnPlayer = showCodecOnPlayer,
                         currentFormat = currentFormat,

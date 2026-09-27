@@ -800,7 +800,10 @@ fun BottomSheetPlayer(
     }
 
     val dynamicQueuePeekHeight =
-        if (playerDesignStyle == PlayerDesignStyle.V5) {
+        if (playerDesignStyle == PlayerDesignStyle.V5 ||
+            playerDesignStyle == PlayerDesignStyle.FROSTSOUL ||
+            playerDesignStyle == PlayerDesignStyle.ARTWORK_BLUR
+        ) {
             0.dp
         } else if (playerDesignStyle == PlayerDesignStyle.V9) {
             88.dp +
@@ -1869,7 +1872,10 @@ if (!aodModeEnabled) {
                 }
             }
 
-        if (!aodModeEnabled) {
+        if (!aodModeEnabled &&
+            playerDesignStyle != PlayerDesignStyle.FROSTSOUL &&
+            playerDesignStyle != PlayerDesignStyle.ARTWORK_BLUR
+        ) {
             Queue(
                 state = queueSheetState,
                 playerBottomSheetState = state,
