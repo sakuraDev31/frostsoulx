@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -340,7 +341,7 @@ private fun SearchEntryField(
     pureBlack: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = CircleShape
     val searchSurface = if (pureBlack) SearchTheme.SearchBarBackground else FrostSoulTheme.colors.surfaceRaised
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -348,11 +349,11 @@ private fun SearchEntryField(
             modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .height(46.dp)
+                .height(48.dp)
                 .clip(shape)
                 .background(searchSurface)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = 16.dp),
     ) {
         FrostSoulIcon(
             painter = painterResource(R.drawable.search),

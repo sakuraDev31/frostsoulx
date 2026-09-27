@@ -1662,31 +1662,12 @@ class MainActivity : ComponentActivity() {
                                                     ),
                                             )
                                         }
-                                    }
-                                    var searchOverlayOpen by rememberSaveable { mutableStateOf(false) }
-                                    LaunchedEffect(active) {
-                                        if (active) {
-                                            searchOverlayOpen = true
-                                        }
-                                    }
-
-                                    val isOnlineSearchResultRoute =
-                                        navBackStackEntry?.destination?.route?.startsWith(OnlineSearchResultRoutePrefix) == true
-                                    val isSearchUiVisible =
-                                        active || isOnlineSearchResultRoute || searchOverlayOpen
-
                                     AnimatedVisibility(
-                                        visible = isSearchUiVisible,
-                                        enter = fadeIn(
-                                            animationSpec =
-                                                if (disableAnimations) snap()
-                                                else spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow),
-                                        ),
-                                        exit = fadeOut(
-                                            animationSpec =
-                                                if (disableAnimations) snap()
-                                                else tween(durationMillis = 150, easing = FastOutLinearInEasing),
-                                        ),
+                                        visible =
+                                            active ||
+                                                navBackStackEntry?.destination?.route?.startsWith(OnlineSearchResultRoutePrefix) == true,
+                                        enter = fadeIn(animationSpec = tween(durationMillis = if (disableAnimations) 0 else 300)),
+                                        exit = fadeOut(animationSpec = tween(durationMillis = if (disableAnimations) 0 else 200)),
                                     ) {
                                         TopSearch(
                                             query = query,
@@ -1694,9 +1675,6 @@ class MainActivity : ComponentActivity() {
                                             onSearch = onSearch,
                                             active = active,
                                             onActiveChange = onActiveChange,
-                                            onCloseFinished = {
-                                                searchOverlayOpen = false
-                                            },
                                             placeholder = {
                                                 Text(
                                                     text =
