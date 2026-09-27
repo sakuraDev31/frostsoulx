@@ -1662,6 +1662,8 @@ class MainActivity : ComponentActivity() {
                                                     ),
                                             )
                                         }
+                                    }
+
                                     AnimatedVisibility(
                                         visible =
                                             active ||
