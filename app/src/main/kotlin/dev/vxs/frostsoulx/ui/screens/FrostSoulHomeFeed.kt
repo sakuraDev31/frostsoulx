@@ -216,14 +216,17 @@ internal fun FrostSoulHomeFeed(
             .take(6)
     }
 
+    val topPadding = (WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+        AppBarHeight + FrostSoulTheme.spacing.micro).coerceAtLeast(0.dp)
+    val bottomPadding = (LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 24.dp).coerceAtLeast(0.dp)
+
     // The feed scrolls over the stationary canvas below
     LazyColumn(
         state = lazyListState,
         contentPadding =
             PaddingValues(
-                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
-                    AppBarHeight + FrostSoulTheme.spacing.micro,
-                bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 24.dp,
+                top = topPadding,
+                bottom = bottomPadding,
             ),
         verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.section),
         modifier = modifier.fillMaxSize(),
@@ -1088,7 +1091,7 @@ private fun FrostSoulMadeForYouShelf(
         MadeForYouMix("Daily Mix", "A mix shaped by your listening", R.drawable.album, listOf(Color(0xFF2C3E50), Color(0xFF000000))),
         MadeForYouMix("Night Drive", "For your late night sessions", R.drawable.bedtime, listOf(Color(0xFF3A1C71), Color(0xFF0F0C29))),
         MadeForYouMix("Indie Blend", "Artists you like", R.drawable.library_music, listOf(Color(0xFF134E5E), Color(0xFF0B192C))),
-        MadeForYouMix("Desi Vibes", "Sufi • Bollywood • Acoustic", R.drawable.sparkles, listOf(Color(0xFF4A00E0), Color(0xFF1A1A2E))),
+        MadeForYouMix("Desi Vibes", "Sufi • Bollywood • Acoustic", R.drawable.auto_awesome, listOf(Color(0xFF4A00E0), Color(0xFF1A1A2E))),
         MadeForYouMix("Focus", "Music to keep you in flow", R.drawable.equalizer, listOf(Color(0xFF0F2027), Color(0xFF203A43))),
     )
 

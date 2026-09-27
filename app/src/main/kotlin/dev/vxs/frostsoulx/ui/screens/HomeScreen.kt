@@ -38,6 +38,7 @@ import dev.vxs.frostsoulx.ui.component.ExpressivePullToRefreshBox
 import dev.vxs.frostsoulx.ui.component.LocalMenuState
 import dev.vxs.frostsoulx.ui.frostsoul.FSEmptyState
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
 import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
 import dev.vxs.frostsoulx.viewmodels.HomeViewModel
@@ -141,9 +142,12 @@ fun HomeScreen(
 
 @Composable
 private fun FrostSoulHomeLoading() {
+    val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+    val top = insets.calculateTopPadding().coerceAtLeast(0.dp)
+    val bottom = insets.calculateBottomPadding().coerceAtLeast(0.dp)
     Box(
         contentAlignment = androidx.compose.ui.Alignment.Center,
-        modifier = Modifier.fillMaxSize().padding(LocalPlayerAwareWindowInsets.current.asPaddingValues()),
+        modifier = Modifier.fillMaxSize().padding(top = top, bottom = bottom),
     ) {
         FSLoading()
     }

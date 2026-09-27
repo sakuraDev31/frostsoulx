@@ -122,7 +122,7 @@ fun TopSearch(
         targetValue = if (active) 1f else 0f,
         animationSpec =
             spring(
-                dampingRatio = 0.88f,
+                dampingRatio = Spring.DampingRatioNoBouncy,
                 stiffness = Spring.StiffnessMediumLow,
             ),
         label = "SearchBarAnimation",
@@ -134,17 +134,19 @@ fun TopSearch(
         }
     }
 
+    val clampedProgress = animationProgress.coerceIn(0f, 1f)
+
     val defaultInputFieldShape = SearchBarDefaults.inputFieldShape
     val defaultFullScreenShape = SearchBarDefaults.fullScreenShape
     val animatedShape by remember {
         derivedStateOf {
             when {
                 shape == defaultInputFieldShape -> {
-                    val animatedRadius = SearchBarCornerRadius * (1f - animationProgress)
+                    val animatedRadius = (SearchBarCornerRadius * (1f - clampedProgress)).coerceAtLeast(0.dp)
                     RoundedCornerShape(CornerSize(animatedRadius))
                 }
 
-                animationProgress == 1f -> {
+                clampedProgress >= 1f -> {
                     defaultFullScreenShape
                 }
 
@@ -155,19 +157,20 @@ fun TopSearch(
         }
     }
 
-    val topInset = windowInsets.asPaddingValues().calculateTopPadding()
-    val startInset = windowInsets.asPaddingValues().calculateStartPadding(LocalLayoutDirection.current)
-    val endInset = windowInsets.asPaddingValues().calculateEndPadding(LocalLayoutDirection.current)
+    val topInset = windowInsets.asPaddingValues().calculateTopPadding().coerceAtLeast(0.dp)
+    val startInset = windowInsets.asPaddingValues().calculateStartPadding(LocalLayoutDirection.current).coerceAtLeast(0.dp)
+    val endInset = windowInsets.asPaddingValues().calculateEndPadding(LocalLayoutDirection.current).coerceAtLeast(0.dp)
 
-    val topPadding = SearchBarVerticalPadding + topInset
-    val animatedSurfaceTopPadding = lerp(topPadding, 0.dp, animationProgress)
-    val animatedInputFieldPadding by remember {
+    val topPadding = (SearchBarVerticalPadding + topInset).coerceAtLeast(0.dp)
+    val animatedSurfaceTopPadding = lerp(topPadding, 0.dp, clampedProgress).coerceAtLeast(0.dp)
+    val animatedInputFieldPadding by remember(startInset, topPadding, endInset) {
         derivedStateOf {
+            val p = animationProgress.coerceIn(0f, 1f)
             PaddingValues(
-                start = startInset * animationProgress,
-                top = topPadding * animationProgress,
-                end = endInset * animationProgress,
-                bottom = SearchBarVerticalPadding * animationProgress,
+                start = (startInset * p).coerceAtLeast(0.dp),
+                top = (topPadding * p).coerceAtLeast(0.dp),
+                end = (endInset * p).coerceAtLeast(0.dp),
+                bottom = (SearchBarVerticalPadding * p).coerceAtLeast(0.dp),
             )
         }
     }
@@ -189,20 +192,20 @@ fun TopSearch(
             val endWidth = constraints.maxWidth.toFloat()
             val endHeight = constraints.maxHeight.toFloat()
 
-            height = lerp(startHeight, endHeight, animationProgress).toDp()
-            width = lerp(startWidth, endWidth, animationProgress).toDp()
+            height = lerp(startHeight, endHeight, clampedProgress).toDp().coerceAtLeast(0.dp)
+            width = lerp(startWidth, endWidth, clampedProgress).toDp().coerceAtLeast(0.dp)
             startPadding =
                 lerp(
                     (SearchBarHorizontalPadding + startInset).roundToPx().toFloat(),
                     0f,
-                    animationProgress,
-                ).toDp()
+                    clampedProgress,
+                ).toDp().coerceAtLeast(0.dp)
             endPadding =
                 lerp(
                     (SearchBarHorizontalPadding + endInset).roundToPx().toFloat(),
                     0f,
-                    animationProgress,
-                ).toDp()
+                    clampedProgress,
+                ).toDp().coerceAtLeast(0.dp)
         }
 
         Box(
@@ -221,9 +224,9 @@ fun TopSearch(
             modifier =
                 Modifier
                     .padding(
-                        top = animatedSurfaceTopPadding,
-                        start = startPadding,
-                        end = endPadding,
+                        top = animatedSurfaceTopPadding.coerceAtLeast(0.dp),
+                        start = startPadding.coerceAtLeast(0.dp),
+                        end = endPadding.coerceAtLeast(0.dp),
                     ).size(width = width, height = height),
         ) {
             Column {

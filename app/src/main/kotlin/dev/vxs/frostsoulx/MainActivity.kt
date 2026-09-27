@@ -988,12 +988,12 @@ class MainActivity : ComponentActivity() {
                             playerBottomSheetState.isDismissed,
                             miniPlayerOccupiedHeight,
                         ) {
-                            var bottom = bottomInset
+                            var bottom = bottomInset.coerceAtLeast(0.dp)
                             if (shouldShowNavigationBar && !useRail) {
-                                bottom += getBottomNavPadding() + floatingBarsBottomPadding
+                                bottom += (getBottomNavPadding() + floatingBarsBottomPadding).coerceAtLeast(0.dp)
                             }
                             if (!playerBottomSheetState.isDismissed) {
-                                bottom += miniPlayerOccupiedHeight + MiniPlayerBottomSpacing
+                                bottom += (miniPlayerOccupiedHeight + MiniPlayerBottomSpacing).coerceAtLeast(0.dp)
                             }
                             windowsInsets
                                 .only(
@@ -1004,7 +1004,7 @@ class MainActivity : ComponentActivity() {
                                             WindowInsetsSides.Horizontal
                                         }
                                     ) + WindowInsetsSides.Top,
-                                ).add(WindowInsets(top = AppBarHeight, bottom = bottom))
+                                ).add(WindowInsets(top = AppBarHeight.coerceAtLeast(0.dp), bottom = bottom.coerceAtLeast(0.dp)))
                         }
 
                     val homeScrollBehavior =
@@ -1932,7 +1932,7 @@ class MainActivity : ComponentActivity() {
                                                         .padding(
                                                             start = NavigationBarHorizontalPadding,
                                                             end = NavigationBarHorizontalPadding,
-                                                            bottom = bottomInset + floatingBarsBottomPadding,
+                                                            bottom = (bottomInset + floatingBarsBottomPadding).coerceAtLeast(0.dp),
                                                         )
                                                         .height(navVisibleHeight),
                                                 isSelected = { screen ->
@@ -1965,8 +1965,8 @@ class MainActivity : ComponentActivity() {
         )
 
                                         val homeOverflowFabBottomPadding =
-                                            bottomInset + floatingBarsBottomPadding +
-                                                (navVisibleHeight / 2f).coerceAtLeast(0.dp)
+                                            (bottomInset + floatingBarsBottomPadding +
+                                                (navVisibleHeight / 2f).coerceAtLeast(0.dp)).coerceAtLeast(0.dp)
                                         HomeOverflowFabVisibility(
                                             visible = showHomeOverflowFab,
                                             modifier =
