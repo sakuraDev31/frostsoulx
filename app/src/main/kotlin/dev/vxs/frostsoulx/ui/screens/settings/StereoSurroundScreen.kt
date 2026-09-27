@@ -96,7 +96,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import dev.vxs.frostsoulx.R
-import dev.vxs.frostsoulx.constants.ImmersiveDevelopmentWarningShownKey
 import dev.vxs.frostsoulx.constants.MiniPlayerHeight
 import dev.vxs.frostsoulx.constants.StereoSurroundBassGainDbKey
 import dev.vxs.frostsoulx.constants.StereoSurroundCarFaderKey
@@ -157,7 +156,6 @@ fun StereoSurroundScreen(navController: NavController) {
     val trebleGainDbPreference = rememberPreference(StereoSurroundTrebleGainDbKey, defaultValue = 0f)
     val outputGainDbPreference = rememberPreference(StereoSurroundOutputGainDbKey, defaultValue = 0f)
     val savedPresetsPreference = rememberPreference(StereoSurroundSavedPresetsKey, defaultValue = "")
-    val developmentWarningPreference = rememberPreference(ImmersiveDevelopmentWarningShownKey, defaultValue = false)
 
     val enabled by enabledPreference
     val persistedIntensity by intensityPreference
@@ -175,7 +173,6 @@ fun StereoSurroundScreen(navController: NavController) {
     val persistedTrebleGainDb by trebleGainDbPreference
     val persistedOutputGainDb by outputGainDbPreference
     val savedPresetsRaw by savedPresetsPreference
-    val developmentWarningShown by developmentWarningPreference
 
     var selectedCategory by remember { mutableStateOf(ImmersiveCategory.Acoustics) }
     var draftIntensity by remember { mutableFloatStateOf(persistedIntensity.coerceIn(0f, 1f)) }
@@ -325,7 +322,7 @@ fun StereoSurroundScreen(navController: NavController) {
     LaunchedEffect(Unit) {
         while (true) {
             diagnostics = ImmersiveAudioRuntime.readDiagnostics()
-            delay(400)
+            delay(350)
         }
     }
 
@@ -339,14 +336,26 @@ fun StereoSurroundScreen(navController: NavController) {
                             text = "Immersive Audio",
                             color = FrostSoulTheme.colors.onSurface,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 19.sp,
+                            fontSize = 20.sp,
                         )
-                        Text(
-                            text = if (enabled) "Steam Audio HRTF · Active" else "Engine Bypassed",
-                            color = if (enabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(top = 1.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(if (enabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.5f)),
+                            )
+                            Text(
+                                text = if (enabled) "Spatial Engine · Active" else "Direct Bypass · Bit-Perfect",
+                                color = if (enabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
@@ -362,7 +371,7 @@ fun StereoSurroundScreen(navController: NavController) {
                     IconButton(onClick = { showInfoDialog = true }) {
                         Icon(
                             painter = painterResource(R.drawable.info),
-                            contentDescription = "About Engine",
+                            contentDescription = "Architecture & Engine Info",
                             tint = FrostSoulTheme.colors.onSurfaceMuted,
                         )
                     }
@@ -390,7 +399,7 @@ fun StereoSurroundScreen(navController: NavController) {
                 roomSize = draftRoomSize,
             )
 
-            // 2. Master Immersion Card
+            // 2. Master Immersion Engine Card
             MasterImmersionCard(
                 enabled = enabled,
                 intensity = draftIntensity,
@@ -406,7 +415,7 @@ fun StereoSurroundScreen(navController: NavController) {
                 },
             )
 
-            // 3. Category Selector Navigation
+            // 3. Category Selector Navigation Tabs
             ImmersiveCategorySelector(
                 selected = selectedCategory,
                 onSelected = { selectedCategory = it },
@@ -425,7 +434,6 @@ fun StereoSurroundScreen(navController: NavController) {
                         onRoomPresetChange = { preset ->
                             roomPresetPreference.value = preset.nativeValue
                             ImmersiveAudioRuntime.setRoomPreset(preset)
-                            // Apply smart defaults for the preset
                             when (preset) {
                                 ImmersiveRoomPreset.OFF -> {
                                     draftRoomMix = 0f
@@ -572,44 +580,6 @@ fun StereoSurroundScreen(navController: NavController) {
         }
     }
 
-    if (!developmentWarningShown) {
-        AlertDialog(
-            onDismissRequest = { developmentWarningPreference.value = true },
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.error),
-                    contentDescription = null,
-                    tint = FrostSoulTheme.colors.accent,
-                    modifier = Modifier.size(28.dp),
-                )
-            },
-            title = {
-                Text(
-                    "Immersive Audio Engine",
-                    fontWeight = FontWeight.Bold,
-                    color = FrostSoulTheme.colors.onSurface,
-                )
-            },
-            text = {
-                Text(
-                    "Steam Audio HRTF delivers authentic 3D spatialization and physical room reflection modeling. " +
-                        "For optimal fidelity, use stereo headphones. Direct bit-perfect playback is preserved when toggled off.",
-                    color = FrostSoulTheme.colors.onSurfaceMuted,
-                    fontSize = 14.sp,
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { developmentWarningPreference.value = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = FrostSoulTheme.colors.accent),
-                ) {
-                    Text("Got It", color = FrostSoulTheme.colors.background, fontWeight = FontWeight.SemiBold)
-                }
-            },
-            containerColor = FrostSoulTheme.colors.surfaceRaised,
-        )
-    }
-
     if (showInfoDialog) {
         AlertDialog(
             onDismissRequest = { showInfoDialog = false },
@@ -629,14 +599,17 @@ fun StereoSurroundScreen(navController: NavController) {
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "• Engine: Valve Steam Audio (Phonon) C++17 real-time DSP\n" +
-                            "• Binaural Pipeline: Media3 PCM → Spatial Partitioned Convolver → HRTF Binaural Synthesis → Physical BRIR Room Acoustics → Zero-overshoot Limiter\n" +
-                            "• Bit-Perfect Bypass: When disabled or bypassed, incoming audio passes directly to AudioTrack with zero re-quantization.",
+                        "• Engine: Full-Partitioned Linear Convolution C++17 runtime.\n" +
+                            "• Spatial Convolution: Pure physical binaural Room Impulse Response (BRIR) multi-tier partitioned convolution with zero audio-thread allocations.\n" +
+                            "• Acoustic Spaces: Exact physical convolution with geometric image reflections and Sabine/Eyring statistical diffuse tails.\n" +
+                            "• Direct Spatial: Anechoic direct HRTF binaural convolution without artificial room reflections.\n" +
+                            "• Anti-Clipping Architecture: Energy-normalized impulse responses, zero-overshoot soft-knee saturation, and smooth sample-accurate dynamics.\n" +
+                            "• Bit-Perfect Bypass: When toggled off, audio passes unaltered directly to AudioTrack with zero re-quantization.",
                         color = FrostSoulTheme.colors.onSurfaceMuted,
                         fontSize = 13.sp,
-                        lineHeight = 18.sp,
+                        lineHeight = 19.sp,
                     )
                 }
             },
@@ -645,7 +618,7 @@ fun StereoSurroundScreen(navController: NavController) {
                     onClick = { showInfoDialog = false },
                     colors = ButtonDefaults.buttonColors(containerColor = FrostSoulTheme.colors.accent),
                 ) {
-                    Text("Close", color = FrostSoulTheme.colors.background)
+                    Text("Got It", color = FrostSoulTheme.colors.background, fontWeight = FontWeight.SemiBold)
                 }
             },
             containerColor = FrostSoulTheme.colors.surfaceRaised,
@@ -667,7 +640,7 @@ fun StereoSurroundScreen(navController: NavController) {
                     value = presetName,
                     onValueChange = { presetName = it.take(32) },
                     singleLine = true,
-                    label = { Text("Preset name (e.g. My Studio)") },
+                    label = { Text("Preset name (e.g. My Warm Hall)") },
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = FrostSoulTheme.colors.surface,
                         unfocusedContainerColor = FrostSoulTheme.colors.surface,
@@ -729,18 +702,28 @@ private fun AcousticStageHero(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f,
+        initialValue = 0.20f,
         targetValue = 0.85f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
+            animation = tween(2000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "pulseAlpha",
     )
 
+    val waveOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 20f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "waveOffset",
+    )
+
     val animatedEnabledProgress by animateFloatAsState(
         targetValue = if (enabled) 1f else 0.15f,
-        animationSpec = tween(500),
+        animationSpec = tween(400),
         label = "enabledProgress",
     )
 
@@ -751,150 +734,156 @@ private fun AcousticStageHero(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp)
+            .height(210.dp)
             .clip(RoundedCornerShape(26.dp))
             .background(
-                Brush.verticalGradient(
+                Brush.radialGradient(
                     colors = listOf(
-                        surfaceColor.copy(alpha = 0.95f),
+                        surfaceColor.copy(alpha = 0.98f),
                         FrostSoulTheme.colors.surface.copy(alpha = 0.98f),
                     ),
+                    radius = 500f,
                 ),
             )
-            .border(1.dp, outlineColor.copy(alpha = 0.6f), RoundedCornerShape(26.dp)),
+            .border(
+                1.5.dp,
+                if (enabled) primaryColor.copy(alpha = 0.45f) else outlineColor.copy(alpha = 0.5f),
+                RoundedCornerShape(26.dp),
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
             val cx = w / 2f
-            val cy = h / 2f + 14.dp.toPx()
+            val cy = h / 2f + 12.dp.toPx()
 
-            // 1. Draw Room Acoustics Boundary Box
-            val roomScaleFactor = 0.60f + roomSize * 0.35f
+            // 1. Draw Physical Room Acoustics Boundary Box
+            val roomScaleFactor = 0.62f + roomSize * 0.33f
             val roomW = w * 0.88f * roomScaleFactor
-            val roomH = h * 0.72f * roomScaleFactor
+            val roomH = h * 0.70f * roomScaleFactor
             val roomLeft = cx - roomW / 2f
             val roomTop = cy - roomH / 2f
 
             drawRoundRect(
-                color = primaryColor.copy(alpha = 0.08f * animatedEnabledProgress),
+                color = primaryColor.copy(alpha = 0.06f * animatedEnabledProgress),
                 topLeft = Offset(roomLeft, roomTop),
                 size = Size(roomW, roomH),
                 cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
             )
             drawRoundRect(
-                color = if (enabled) primaryColor.copy(alpha = 0.35f) else outlineColor.copy(alpha = 0.25f),
+                color = if (enabled) primaryColor.copy(alpha = 0.38f) else outlineColor.copy(alpha = 0.22f),
                 topLeft = Offset(roomLeft, roomTop),
                 size = Size(roomW, roomH),
                 cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
                 style = Stroke(
                     width = 1.5f,
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f), 0f),
                 ),
             )
 
             // 2. Speaker Positions (modulated by stereoWidth and carFader)
-            val spread = 70.dp.toPx() * (0.6f + stereoWidth * 0.8f)
-            val faderY = -carFader * 28.dp.toPx()
+            val spread = 72.dp.toPx() * (0.55f + stereoWidth * 0.90f)
+            val faderY = -carFader * 26.dp.toPx()
             val spkLeftX = cx - spread
-            val spkLeftY = cy - 35.dp.toPx() + faderY
+            val spkLeftY = cy - 36.dp.toPx() + faderY
             val spkRightX = cx + spread
-            val spkRightY = cy - 35.dp.toPx() + faderY
+            val spkRightY = cy - 36.dp.toPx() + faderY
 
             // 3. Sound Wave Radiations (when active)
             if (enabled) {
-                val waveRadii = floatArrayOf(24f, 44f, 66f, 90f)
-                waveRadii.forEachIndexed { idx, radius ->
-                    val r = radius * (0.8f + intensity * 0.4f)
-                    val alpha = (pulseAlpha * (1f - (idx / 4f))).coerceIn(0.05f, 0.65f)
-                    // Left wave arc toward listener
+                val baseRadii = floatArrayOf(20f, 40f, 62f, 86f)
+                baseRadii.forEachIndexed { idx, radius ->
+                    val r = (radius + waveOffset) * (0.75f + intensity * 0.45f)
+                    val alpha = (pulseAlpha * (1f - (idx / 4.2f))).coerceIn(0.04f, 0.60f)
                     drawCircle(
-                        color = primaryColor.copy(alpha = alpha * 0.45f),
+                        color = primaryColor.copy(alpha = alpha * 0.42f),
                         radius = r,
                         center = Offset(spkLeftX, spkLeftY),
-                        style = Stroke(width = 1.8f),
+                        style = Stroke(width = 1.6f),
                     )
-                    // Right wave arc toward listener
                     drawCircle(
-                        color = primaryColor.copy(alpha = alpha * 0.45f),
+                        color = primaryColor.copy(alpha = alpha * 0.42f),
                         radius = r,
                         center = Offset(spkRightX, spkRightY),
-                        style = Stroke(width = 1.8f),
+                        style = Stroke(width = 1.6f),
                     )
                 }
             }
 
             // 4. Draw Left & Right Virtual Speakers
+            val speakerRadius = 9.dp.toPx()
             drawCircle(
                 color = if (enabled) primaryColor else Color.Gray.copy(alpha = 0.4f),
-                radius = 8.dp.toPx(),
+                radius = speakerRadius,
                 center = Offset(spkLeftX, spkLeftY),
             )
             drawCircle(
                 color = Color.Black,
-                radius = 4.dp.toPx(),
+                radius = speakerRadius * 0.45f,
                 center = Offset(spkLeftX, spkLeftY),
             )
             drawCircle(
                 color = if (enabled) primaryColor else Color.Gray.copy(alpha = 0.4f),
-                radius = 8.dp.toPx(),
+                radius = speakerRadius,
                 center = Offset(spkRightX, spkRightY),
             )
             drawCircle(
                 color = Color.Black,
-                radius = 4.dp.toPx(),
+                radius = speakerRadius * 0.45f,
                 center = Offset(spkRightX, spkRightY),
             )
 
-            // Direct line-of-sight sound ray to listener
-            drawLine(
-                color = if (enabled) primaryColor.copy(alpha = 0.25f) else Color.Transparent,
-                start = Offset(spkLeftX, spkLeftY),
-                end = Offset(cx - 8.dp.toPx(), cy),
-                strokeWidth = 1.5f,
-            )
-            drawLine(
-                color = if (enabled) primaryColor.copy(alpha = 0.25f) else Color.Transparent,
-                start = Offset(spkRightX, spkRightY),
-                end = Offset(cx + 8.dp.toPx(), cy),
-                strokeWidth = 1.5f,
-            )
+            // Direct line-of-sight sound rays to listener
+            if (enabled) {
+                drawLine(
+                    color = primaryColor.copy(alpha = 0.22f),
+                    start = Offset(spkLeftX, spkLeftY),
+                    end = Offset(cx - 9.dp.toPx(), cy),
+                    strokeWidth = 1.5f,
+                )
+                drawLine(
+                    color = primaryColor.copy(alpha = 0.22f),
+                    start = Offset(spkRightX, spkRightY),
+                    end = Offset(cx + 9.dp.toPx(), cy),
+                    strokeWidth = 1.5f,
+                )
+            }
 
-            // 5. Draw Center Listener
-            // Headphone band
+            // 5. Draw Center Listener Avatar
+            // Headphone Headband
             drawArc(
-                color = if (enabled) primaryColor else Color.Gray,
+                color = if (enabled) primaryColor else Color.Gray.copy(alpha = 0.7f),
                 startAngle = 180f,
                 sweepAngle = 180f,
                 useCenter = false,
-                topLeft = Offset(cx - 16.dp.toPx(), cy - 16.dp.toPx()),
-                size = Size(32.dp.toPx(), 32.dp.toPx()),
-                style = Stroke(width = 3f),
+                topLeft = Offset(cx - 17.dp.toPx(), cy - 17.dp.toPx()),
+                size = Size(34.dp.toPx(), 34.dp.toPx()),
+                style = Stroke(width = 3.2f),
             )
             // Head
             drawCircle(
                 color = surfaceColor,
-                radius = 12.dp.toPx(),
+                radius = 13.dp.toPx(),
                 center = Offset(cx, cy),
             )
             drawCircle(
-                color = if (enabled) primaryColor else Color.Gray,
-                radius = 12.dp.toPx(),
+                color = if (enabled) primaryColor else Color.Gray.copy(alpha = 0.7f),
+                radius = 13.dp.toPx(),
                 center = Offset(cx, cy),
                 style = Stroke(width = 2f),
             )
             // Left & Right Ear Cushions
             drawRoundRect(
-                color = if (enabled) primaryColor else Color.Gray,
-                topLeft = Offset(cx - 18.dp.toPx(), cy - 6.dp.toPx()),
-                size = Size(5.dp.toPx(), 12.dp.toPx()),
+                color = if (enabled) primaryColor else Color.Gray.copy(alpha = 0.7f),
+                topLeft = Offset(cx - 19.dp.toPx(), cy - 7.dp.toPx()),
+                size = Size(5.dp.toPx(), 14.dp.toPx()),
                 cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
             )
             drawRoundRect(
-                color = if (enabled) primaryColor else Color.Gray,
-                topLeft = Offset(cx + 13.dp.toPx(), cy - 6.dp.toPx()),
-                size = Size(5.dp.toPx(), 12.dp.toPx()),
+                color = if (enabled) primaryColor else Color.Gray.copy(alpha = 0.7f),
+                topLeft = Offset(cx + 14.dp.toPx(), cy - 7.dp.toPx()),
+                size = Size(5.dp.toPx(), 14.dp.toPx()),
                 cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
             )
         }
@@ -911,14 +900,14 @@ private fun AcousticStageHero(
             Box(
                 modifier = Modifier
                     .clip(CircleShape)
-                    .background(FrostSoulTheme.colors.background.copy(alpha = 0.75f))
-                    .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.5f), CircleShape)
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                    .background(FrostSoulTheme.colors.background.copy(alpha = 0.85f))
+                    .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.6f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "Room · ${roomPreset.label}",
+                    text = "Acoustic Space · ${roomPreset.label}",
                     color = FrostSoulTheme.colors.onSurface,
-                    fontSize = 11.sp,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -927,21 +916,21 @@ private fun AcousticStageHero(
                 modifier = Modifier
                     .clip(CircleShape)
                     .background(
-                        if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.15f)
-                        else FrostSoulTheme.colors.surface.copy(alpha = 0.6f),
+                        if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.16f)
+                        else FrostSoulTheme.colors.surface.copy(alpha = 0.75f),
                     )
                     .border(
                         1.dp,
-                        if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.4f)
+                        if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.5f)
                         else FrostSoulTheme.colors.outline.copy(alpha = 0.4f),
                         CircleShape,
                     )
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = if (enabled) "Blend ${(intensity * 100).roundToInt()}%" else "Bypass",
+                    text = if (enabled) "Immersion ${(intensity * 100).roundToInt()}%" else "Bypass",
                     color = if (enabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
-                    fontSize = 11.sp,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                 )
@@ -951,7 +940,7 @@ private fun AcousticStageHero(
 }
 
 // -------------------------------------------------------------------------
-// 2. MASTER IMMERSION CARD
+// 2. MASTER IMMERSION ENGINE CARD
 // -------------------------------------------------------------------------
 
 @Composable
@@ -970,8 +959,8 @@ private fun MasterImmersionCard(
         modifier = Modifier
             .fillMaxWidth()
             .border(
-                1.dp,
-                if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.35f) else FrostSoulTheme.colors.outline.copy(alpha = 0.4f),
+                1.5.dp,
+                if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.40f) else FrostSoulTheme.colors.outline.copy(alpha = 0.4f),
                 RoundedCornerShape(22.dp),
             ),
     ) {
@@ -985,10 +974,10 @@ private fun MasterImmersionCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(46.dp)
                         .clip(CircleShape)
                         .background(
-                            if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.16f)
+                            if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.18f)
                             else FrostSoulTheme.colors.surfaceRaised,
                         ),
                     contentAlignment = Alignment.Center,
@@ -1013,8 +1002,8 @@ private fun MasterImmersionCard(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = if (enabled) "Binaural Steam Audio HRTF & room convolution" else "Direct bit-perfect Media3 stream",
-                        color = FrostSoulTheme.colors.onSurfaceMuted,
+                        text = if (enabled) "Binaural HRTF & acoustic convolution active" else "Direct bit-perfect Media3 stream",
+                        color = if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.9f) else FrostSoulTheme.colors.onSurfaceMuted,
                         fontSize = 12.sp,
                     )
                 }
@@ -1036,26 +1025,40 @@ private fun MasterImmersionCard(
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut(),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.3f))
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.25f))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "Spatial Blend",
-                            color = FrostSoulTheme.colors.onSurface,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = "${(intensity * 100).roundToInt()}% Immersion",
-                            color = FrostSoulTheme.colors.accent,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                        )
+                        Column {
+                            Text(
+                                text = "Spatial Immersion Blend",
+                                color = FrostSoulTheme.colors.onSurface,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = "Balance between direct source and 3D soundfield",
+                                color = FrostSoulTheme.colors.onSurfaceMuted,
+                                fontSize = 11.5.sp,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(FrostSoulTheme.colors.accent.copy(alpha = 0.14f))
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                text = "${(intensity * 100).roundToInt()}%",
+                                color = FrostSoulTheme.colors.accent,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
                     }
 
                     TechnicalSlider(
@@ -1069,24 +1072,35 @@ private fun MasterImmersionCard(
                     // Quick blend snaps
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        listOf(0.25f to "Subtle", 0.50f to "Balanced", 0.75f to "Deep", 1.0f to "Full").forEach { (v, tag) ->
+                        listOf(0.25f to "Subtle", 0.50f to "Balanced", 0.75f to "Immersive", 1.0f to "Max Wide").forEach { (v, tag) ->
+                            val isCurrent = (intensity - v).let { kotlin.math.abs(it) } < 0.08f
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(FrostSoulTheme.colors.surfaceRaised)
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (isCurrent) FrostSoulTheme.colors.accent.copy(alpha = 0.16f)
+                                        else FrostSoulTheme.colors.surfaceRaised,
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isCurrent) FrostSoulTheme.colors.accent else Color.Transparent,
+                                        RoundedCornerShape(10.dp),
+                                    )
                                     .clickable {
                                         onIntensityChange(v)
                                         onIntensityFinished()
                                     }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    .padding(vertical = 7.dp),
+                                contentAlignment = Alignment.Center,
                             ) {
                                 Text(
                                     text = tag,
-                                    color = if ((intensity - v).let { kotlin.math.abs(it) } < 0.08f) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                                    color = if (isCurrent) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
                                 )
                             }
                         }
@@ -1166,9 +1180,9 @@ private fun AcousticsTabContent(
     onResetAcoustics: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionTitleHeader("ACOUSTIC ENVIRONMENTS", "Physics-based room impulse simulation")
+        SectionTitleHeader("ACOUSTIC ENVIRONMENTS", "Physics-based room impulse simulation & binaural acoustics")
 
-        // Environment Preset Cards Carousel/Grid
+        // Environment Preset Cards Carousel
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1208,7 +1222,7 @@ private fun AcousticsTabContent(
 
         AcousticParamSliderCard(
             label = "Reverb Decay Time (T60)",
-            hint = "Time for acoustic energy to attenuate by 60 dB",
+            hint = "Time for acoustic reverberance to attenuate by 60 dB",
             value = reverbTime,
             range = 0.2f..8.0f,
             displayValue = String.format(Locale.US, "%.2f s", reverbTime),
@@ -1225,7 +1239,7 @@ private fun AcousticsTabContent(
         )
 
         AcousticParamSliderCard(
-            label = "Surface Absorption & Dampening",
+            label = "Surface Absorption & Damping",
             hint = "High-frequency material damping across surfaces",
             value = dampening,
             range = 0f..1f,
@@ -1266,12 +1280,12 @@ private fun AcousticPresetCard(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         modifier = Modifier
-            .width(135.dp)
+            .width(140.dp)
             .border(1.5.dp, borderColor, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(13.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
@@ -1283,7 +1297,7 @@ private fun AcousticPresetCard(
                     text = preset.label,
                     color = FrostSoulTheme.colors.onSurface,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
+                    fontSize = 13.5.sp,
                     maxLines = 1,
                 )
                 if (selected) {
@@ -1295,18 +1309,41 @@ private fun AcousticPresetCard(
                 }
             }
 
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(FrostSoulTheme.colors.surfaceRaised)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = when (preset) {
+                        ImmersiveRoomPreset.OFF -> "Direct HRTF"
+                        ImmersiveRoomPreset.SMALL_ROOM -> "0.80s T60"
+                        ImmersiveRoomPreset.STUDIO -> "1.35s T60"
+                        ImmersiveRoomPreset.CONCERT_HALL -> "3.20s T60"
+                        ImmersiveRoomPreset.CATHEDRAL -> "4.80s T60"
+                        ImmersiveRoomPreset.SUBWAY -> "2.40s T60"
+                        ImmersiveRoomPreset.CLOSED_CAR -> "0.60s T60"
+                    },
+                    color = if (selected) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+
             Text(
                 text = when (preset) {
-                    ImmersiveRoomPreset.OFF -> "Pure HRTF\nno room model"
-                    ImmersiveRoomPreset.SMALL_ROOM -> "Compact space\nfast diffusion"
-                    ImmersiveRoomPreset.STUDIO -> "Balanced control\nclean acoustic decay"
-                    ImmersiveRoomPreset.CONCERT_HALL -> "Orchestral stage\nlush reverberation"
-                    ImmersiveRoomPreset.CATHEDRAL -> "Monumental volume\nethereal sustain"
-                    ImmersiveRoomPreset.SUBWAY -> "Tunnel acoustics\nhigh reflections"
-                    ImmersiveRoomPreset.CLOSED_CAR -> "Cabin enclosure\nfront/rear stage"
+                    ImmersiveRoomPreset.OFF -> "Pure spatial stage\nno room reflection"
+                    ImmersiveRoomPreset.SMALL_ROOM -> "Compact room\nfast diffusion"
+                    ImmersiveRoomPreset.STUDIO -> "Balanced acoustics\nclean decay"
+                    ImmersiveRoomPreset.CONCERT_HALL -> "Orchestral stage\nlush reverberance"
+                    ImmersiveRoomPreset.CATHEDRAL -> "Monumental space\nethereal sustain"
+                    ImmersiveRoomPreset.SUBWAY -> "Reflective tunnel\nhigh reflections"
+                    ImmersiveRoomPreset.CLOSED_CAR -> "Cabin enclosure\nfront/rear focus"
                 },
                 color = FrostSoulTheme.colors.onSurfaceMuted,
-                fontSize = 10.sp,
+                fontSize = 10.5.sp,
                 lineHeight = 14.sp,
                 minLines = 2,
             )
@@ -1336,7 +1373,7 @@ private fun SoundstageTabContent(
 
         AcousticParamSliderCard(
             label = "Stereo Soundstage Width",
-            hint = "Expands cross-channel decorrelation and virtual angle",
+            hint = "Expands cross-channel decorrelation (Narrow ↔ Ultra-Wide)",
             value = stereoWidth,
             range = 0f..1f,
             displayValue = "${(stereoWidth * 100).roundToInt()}%",
@@ -1345,7 +1382,7 @@ private fun SoundstageTabContent(
 
         AcousticParamSliderCard(
             label = "Front / Rear Stage Fader",
-            hint = "Shifts the virtual sound source between front and rear cabin",
+            hint = "Shifts the virtual sound source between front and rear stage",
             value = carFader,
             range = -1f..1f,
             displayValue = when {
@@ -1382,6 +1419,7 @@ private fun QuantumSettingsCard(
     var inputText by remember(quantumFrames) { mutableStateOf(quantumFrames.toString()) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val latencyMs = (quantumFrames.toFloat() / 48000f) * 1000f
 
     Card(
         shape = RoundedCornerShape(18.dp),
@@ -1407,9 +1445,10 @@ private fun QuantumSettingsCard(
                         fontSize = 14.sp,
                     )
                     Text(
-                        text = "Range: 96 to 2048 frames (lower = less latency)",
-                        color = FrostSoulTheme.colors.onSurfaceMuted,
-                        fontSize = 11.sp,
+                        text = "Real-time DSP latency: ${String.format(Locale.US, "%.1f", latencyMs)} ms @ 48kHz",
+                        color = FrostSoulTheme.colors.accent,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
                     )
                 }
 
@@ -1461,10 +1500,10 @@ private fun QuantumSettingsCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 listOf(
-                    192 to "192 · Ultra Low",
-                    384 to "384 · Balanced",
-                    512 to "512 · Stable",
-                    1024 to "1024 · Power",
+                    192 to "192 · 4.0ms",
+                    384 to "384 · 8.0ms",
+                    512 to "512 · 10.7ms",
+                    1024 to "1024 · 21.3ms",
                 ).forEach { (frames, label) ->
                     val isSelected = quantumFrames == frames
                     Box(
@@ -1534,7 +1573,7 @@ private fun SavedSpacesCard(
                     Text(
                         text = "${presets.size} custom acoustics saved",
                         color = FrostSoulTheme.colors.onSurfaceMuted,
-                        fontSize = 11.sp,
+                        fontSize = 11.5.sp,
                     )
                 }
 
@@ -1549,7 +1588,7 @@ private fun SavedSpacesCard(
 
             if (presets.isEmpty()) {
                 Text(
-                    text = "No custom acoustic spaces saved yet. Tune your space and tap \"Save Current\" to preserve it.",
+                    text = "No custom acoustic spaces saved yet. Tune your space and tap \"+ Save Current\" to preserve it.",
                     color = FrostSoulTheme.colors.onSurfaceMuted,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
@@ -1662,40 +1701,69 @@ private fun RealtimeAudioMetersCard(diagnostics: ImmersiveAudioDiagnostics) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("INPUT STREAM", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    text = if (diagnostics.processCallCount > 0) "PCM ACTIVE" else "IDLE",
-                    color = if (diagnostics.processCallCount > 0) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(FrostSoulTheme.colors.surfaceRaised)
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = if (diagnostics.processCallCount > 0) "PCM ACTIVE" else "IDLE",
+                        color = if (diagnostics.processCallCount > 0) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
             }
 
             // Input L & R meters
-            StereoChannelMeterRow("Input L", diagnostics.inputRmsL, diagnostics.inputPeakL, diagnostics.inputTruePeakL)
-            StereoChannelMeterRow("Input R", diagnostics.inputRmsR, diagnostics.inputPeakR, diagnostics.inputTruePeakR)
+            StereoChannelMeterRow("In L", diagnostics.inputRmsL, diagnostics.inputPeakL, diagnostics.inputTruePeakL)
+            StereoChannelMeterRow("In R", diagnostics.inputRmsR, diagnostics.inputPeakR, diagnostics.inputTruePeakR)
 
-            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.3f))
+            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.25f))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("OUTPUT STREAM (DSP)", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    text = if (diagnostics.processorEnabled) "BINAURAL PROCESSED" else "BYPASSED",
-                    color = if (diagnostics.processorEnabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(FrostSoulTheme.colors.surfaceRaised)
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = if (diagnostics.processorEnabled) "BINAURAL PROCESSED" else "BYPASSED",
+                        color = if (diagnostics.processorEnabled) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
             }
 
             // Output L & R meters
-            StereoChannelMeterRow("Output L", diagnostics.outputRmsL, diagnostics.outputPeakL, diagnostics.outputTruePeakL)
-            StereoChannelMeterRow("Output R", diagnostics.outputRmsR, diagnostics.outputPeakR, diagnostics.outputTruePeakR)
+            StereoChannelMeterRow("Out L", diagnostics.outputRmsL, diagnostics.outputPeakL, diagnostics.outputTruePeakL)
+            StereoChannelMeterRow("Out R", diagnostics.outputRmsR, diagnostics.outputPeakR, diagnostics.outputTruePeakR)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(FrostSoulTheme.colors.surfaceRaised)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("HEADROOM SAFETY", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+                Text("ZERO CLIPPING · CLEAN", color = FrostSoulTheme.colors.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            }
         }
     }
 }
@@ -1711,9 +1779,9 @@ private fun StereoChannelMeterRow(
     val normalizedMeter = ((peakDb + 60.0) / 60.0).coerceIn(0.0, 1.0).toFloat()
 
     val meterColor = when {
-        truePeak >= 0.988553f -> Color(0xFFFF5252) // Red peak warning
-        peakDb >= -3.0 -> Color(0xFFFFB74D)        // Amber loud
-        else -> FrostSoulTheme.colors.accent       // Standard accent
+        truePeak >= 0.98f -> Color(0xFFFF5252) // Peak alert
+        peakDb >= -3.0 -> Color(0xFFFFB74D)    // Amber warm
+        else -> FrostSoulTheme.colors.accent   // Crisp accent
     }
 
     Row(
@@ -1726,21 +1794,21 @@ private fun StereoChannelMeterRow(
             color = FrostSoulTheme.colors.onSurface,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
-            modifier = Modifier.width(62.dp),
+            modifier = Modifier.width(46.dp),
         )
 
         // Animated Meter Bar
         Box(
             modifier = Modifier
                 .weight(1f)
-                .height(10.dp)
+                .height(8.dp)
                 .clip(CircleShape)
                 .background(FrostSoulTheme.colors.surfaceRaised),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(normalizedMeter)
-                    .height(10.dp)
+                    .height(8.dp)
                     .clip(CircleShape)
                     .background(meterColor),
             )
@@ -1748,10 +1816,10 @@ private fun StereoChannelMeterRow(
 
         Text(
             text = formatDb(peak),
-            color = if (truePeak >= 0.988553f) Color(0xFFFF5252) else FrostSoulTheme.colors.onSurfaceMuted,
+            color = if (truePeak >= 0.98f) Color(0xFFFF5252) else FrostSoulTheme.colors.onSurfaceMuted,
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,
-            modifier = Modifier.width(65.dp),
+            modifier = Modifier.width(62.dp),
         )
     }
 }
@@ -1790,7 +1858,7 @@ private fun OutputSafetyToneCard(
                         fontSize = 14.sp,
                     )
                     Text(
-                        text = "Zero-overshoot ceiling protects against inter-sample peaks",
+                        text = "Zero-overshoot smooth ceiling protects against transients",
                         color = FrostSoulTheme.colors.onSurfaceMuted,
                         fontSize = 11.sp,
                     )
@@ -1806,11 +1874,11 @@ private fun OutputSafetyToneCard(
                 )
             }
 
-            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.3f))
+            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.25f))
 
             AcousticParamSliderCard(
                 label = "Spatial Bass Warmth",
-                hint = "Dedicated low-frequency acoustic energy (-12 to +12 dB)",
+                hint = "Dedicated low-frequency acoustic warmth (-12 to +12 dB)",
                 value = bassGainDb,
                 range = -12f..12f,
                 displayValue = String.format(Locale.US, "%+.1f dB", bassGainDb),
@@ -1828,7 +1896,7 @@ private fun OutputSafetyToneCard(
 
             AcousticParamSliderCard(
                 label = "Output Gain Trim",
-                hint = "Pre-output signal gain adjustment (-24 to +12 dB)",
+                hint = "Pre-output signal gain trim (-24 to +12 dB)",
                 value = outputGainDb,
                 range = -24f..12f,
                 displayValue = String.format(Locale.US, "%+.1f dB", outputGainDb),

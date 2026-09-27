@@ -260,15 +260,32 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
     }
 
     // -------------------------------------------------------------------------
-    // 3. Peak Normalization
+    // 3. Acoustic Energy & Peak Normalization (Headroom Safe)
     // -------------------------------------------------------------------------
+    // Linear convolution with an impulse response whose peak was normalized to 1.0
+    // results in massive over-unity gain (+15 to +25 dB) across music because of the
+    // constructive summation of hundreds of reflection paths and diffuse tail.
+    // We normalize the total RMS energy (L2 norm) to a safe target gain (-7 dBFS / 0.45)
+    // and bound individual peaks to 0.55 to prevent any clipping under full-scale input.
+    double energyL = 0.0;
+    double energyR = 0.0;
     float maxPeak = 0.0f;
     for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
-        maxPeak = std::max(maxPeak, std::max(std::fabs(brir.left[i]), std::fabs(brir.right[i])));
+        const float l = brir.left[i];
+        const float r = brir.right[i];
+        energyL += static_cast<double>(l) * l;
+        energyR += static_cast<double>(r) * r;
+        maxPeak = std::max(maxPeak, std::max(std::fabs(l), std::fabs(r)));
     }
 
-    if (maxPeak > 1.0e-5f) {
-        const float norm = 1.0f / maxPeak;
+    const double rmsEnergy = std::sqrt(std::max(energyL, energyR));
+    if (rmsEnergy > 1.0e-5 && maxPeak > 1.0e-5f) {
+        constexpr float kTargetRmsGain = 0.45f; // -6.9 dB target RMS gain
+        constexpr float kMaxPeakCeiling = 0.55f; // peak ceiling for transient safety
+        float norm = static_cast<float>(kTargetRmsGain / rmsEnergy);
+        if (maxPeak * norm > kMaxPeakCeiling) {
+            norm = kMaxPeakCeiling / maxPeak;
+        }
         for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
             brir.left[i] *= norm;
             brir.right[i] *= norm;

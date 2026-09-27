@@ -412,8 +412,22 @@ SpaceProfile SpaceProfile::createStadium() {
     return p;
 }
 
+SpaceProfile SpaceProfile::createAnechoic() {
+    SpaceProfile p("Direct Anechoic Spatial", {10.0f, 10.0f, 10.0f});
+    p.setOpenness(1.0f);
+    p.setSourcePosition({1.5f, 0.0f, 1.2f});
+    p.setListenerPosition({0.0f, 0.0f, 1.2f});
+
+    for (int s = 0; s < 6; ++s) {
+        p.setBoundary(static_cast<RoomSurface>(s),
+                      {static_cast<RoomSurface>(s), AcousticMaterial::OpenAir(), 1.0f});
+    }
+    return p;
+}
+
 SpaceProfile SpaceProfile::createPreset(Preset preset) {
     switch (preset) {
+        case Preset::Anechoic: return createAnechoic();
         case Preset::Bathroom: return createBathroom();
         case Preset::LivingRoom: return createLivingRoom();
         case Preset::MediumHall: return createMediumHall();

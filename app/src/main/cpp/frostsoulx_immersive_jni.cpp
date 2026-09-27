@@ -215,9 +215,17 @@ float readPcm16(std::int16_t sample) noexcept {
     return static_cast<float>(sample) / 32768.0f;
 }
 
+inline float softLimitSample(float s, float threshold = 0.88f, float ceiling = 0.96f) noexcept {
+    const float absS = std::fabs(s);
+    if (absS <= threshold) return s;
+    const float range = ceiling - threshold;
+    const float compressed = threshold + range * std::tanh((absS - threshold) / range);
+    return std::copysign(compressed, s);
+}
+
 std::int16_t writePcm16(float sample) noexcept {
-    const float bounded = std::clamp(sample, -1.0f, 0.9999695f);
-    const auto scaled = static_cast<int>(bounded * 32768.0f);
+    const float safe = softLimitSample(sample, 0.88f, 0.999f);
+    const auto scaled = static_cast<int>(std::lround(safe * 32767.0f));
     return static_cast<std::int16_t>(std::clamp(scaled, -32768, 32767));
 }
 
@@ -228,35 +236,29 @@ int resultCode(frostsoulx::ImmersiveProcessResult result) noexcept {
 void applyPhysicalPreset(Handle& handle, int preset) noexcept {
     using Preset = frostsoulx::spatial::SpaceProfile::Preset;
     handle.roomPreset.store(preset, std::memory_order_relaxed);
+    handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
     switch (preset) {
         case 1:
-            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
             handle.engine.setSpacePreset(Preset::Bathroom);
             break;
         case 2:
-            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
             handle.engine.setSpacePreset(Preset::LivingRoom);
             break;
         case 3:
-            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
             handle.engine.setSpacePreset(Preset::ConcertHall);
             break;
         case 4:
-            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
             handle.engine.setSpacePreset(Preset::LargeHall);
             break;
         case 5:
-            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
             handle.engine.setSpacePreset(Preset::LongSubwayTunnel);
             break;
         case 6:
-            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
             handle.engine.setSpacePreset(Preset::ClosedCar);
             break;
         case 0:
         default:
-            handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::Native);
-            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Off);
+            handle.engine.setSpacePreset(Preset::Anechoic);
             break;
     }
 }
@@ -273,11 +275,24 @@ void applyCarFader(Handle& handle, float fader) noexcept {
 }
 
 void applyTone(Handle& handle, float* interleavedStereo, int frames) noexcept {
-    const float bass = std::pow(10.0f, handle.bassGainDb.load(std::memory_order_relaxed) / 20.0f);
-    const float treble = std::pow(10.0f, handle.trebleGainDb.load(std::memory_order_relaxed) / 20.0f);
-    const float output = std::pow(10.0f, handle.outputGainDb.load(std::memory_order_relaxed) / 20.0f);
+    const float bassDb = handle.bassGainDb.load(std::memory_order_relaxed);
+    const float trebleDb = handle.trebleGainDb.load(std::memory_order_relaxed);
+    const float outDb = handle.outputGainDb.load(std::memory_order_relaxed);
+
+    if (std::fabs(bassDb) < 0.01f && std::fabs(trebleDb) < 0.01f && std::fabs(outDb) < 0.01f) {
+        return; // Direct bit-exact pass-through when neutral
+    }
+
+    const float bass = std::pow(10.0f, bassDb / 20.0f);
+    const float treble = std::pow(10.0f, trebleDb / 20.0f);
+    const float output = std::pow(10.0f, outDb / 20.0f);
     const float lowAlpha = std::clamp(120.0f / std::max(8000.0f, static_cast<float>(handle.sampleRate)),
                                       0.005f, 0.03f);
+
+    // Dynamic headroom trim to guarantee EQ boost never causes digital clipping
+    const float maxBoost = std::max({1.0f, bass, treble, output});
+    const float headroomTrim = (maxBoost > 1.0f) ? (1.0f / maxBoost) : 1.0f;
+
     for (int frame = 0; frame < frames; ++frame) {
         float& left = interleavedStereo[frame * 2];
         float& right = interleavedStereo[frame * 2 + 1];
@@ -285,30 +300,48 @@ void applyTone(Handle& handle, float* interleavedStereo, int frames) noexcept {
         handle.toneLowR += lowAlpha * (right - handle.toneLowR);
         const float highL = left - handle.toneLowL;
         const float highR = right - handle.toneLowR;
-        left = (left + (bass - 1.0f) * handle.toneLowL + (treble - 1.0f) * highL) * output;
-        right = (right + (bass - 1.0f) * handle.toneLowR + (treble - 1.0f) * highR) * output;
+        left = ((left + (bass - 1.0f) * handle.toneLowL + (treble - 1.0f) * highL) * output) * headroomTrim;
+        right = ((right + (bass - 1.0f) * handle.toneLowR + (treble - 1.0f) * highR) * output) * headroomTrim;
     }
 }
 
 void applyOutputSafety(Handle& handle, float* interleavedStereo, int frames) noexcept {
     constexpr float kCeiling = 0.96f;
-    float peak = 0.0f;
+    constexpr float kSoftThreshold = 0.88f;
+
+    float blockPeak = 0.0f;
     for (int i = 0; i < frames * 2; ++i) {
         const float sample = interleavedStereo[i];
-        if (std::isfinite(sample)) peak = std::max(peak, std::fabs(sample));
+        if (std::isfinite(sample)) blockPeak = std::max(blockPeak, std::fabs(sample));
     }
 
-    const float requestedGain = peak > kCeiling ? kCeiling / peak : 1.0f;
-    // Attack immediately, release over several blocks. This is a safety ceiling,
-    // not a tone-shaping compressor, so unity-level material remains untouched.
-    const float gain = std::min(handle.outputSafetyGain, requestedGain);
-    handle.outputSafetyGain = std::min(1.0f, gain + 0.015f);
-    for (int i = 0; i < frames * 2; ++i) {
-        const float sample = interleavedStereo[i];
-        interleavedStereo[i] = std::isfinite(sample)
-            ? std::clamp(sample * gain, -kCeiling, kCeiling)
-            : 0.0f;
+    const float targetGain = blockPeak > kCeiling ? (kCeiling / blockPeak) : 1.0f;
+    const float fs = handle.sampleRate > 0 ? static_cast<float>(handle.sampleRate) : 48000.0f;
+    // ~0.5ms attack to quickly catch transients without pops, ~80ms release for transparent recovery
+    const float attackCoeff = std::exp(-1.0f / (0.0005f * fs));
+    const float releaseCoeff = std::exp(-1.0f / (0.080f * fs));
+
+    float currentGain = handle.outputSafetyGain;
+    for (int i = 0; i < frames; ++i) {
+        const float sL = std::fabs(interleavedStereo[i * 2]);
+        const float sR = std::fabs(interleavedStereo[i * 2 + 1]);
+        const float instantPeak = std::max(sL, sR);
+        const float instTarget = instantPeak > kCeiling ? (kCeiling / instantPeak) : targetGain;
+        const float neededGain = std::min(targetGain, instTarget);
+
+        if (neededGain < currentGain) {
+            currentGain += (neededGain - currentGain) * (1.0f - attackCoeff);
+        } else {
+            currentGain += (1.0f - currentGain) * (1.0f - releaseCoeff);
+        }
+
+        const float outL = interleavedStereo[i * 2] * currentGain;
+        const float outR = interleavedStereo[i * 2 + 1] * currentGain;
+
+        interleavedStereo[i * 2] = std::isfinite(outL) ? softLimitSample(outL, kSoftThreshold, kCeiling) : 0.0f;
+        interleavedStereo[i * 2 + 1] = std::isfinite(outR) ? softLimitSample(outR, kSoftThreshold, kCeiling) : 0.0f;
     }
+    handle.outputSafetyGain = currentGain;
 }
 
 } // namespace
@@ -319,6 +352,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeCreate(
     auto handle = std::make_unique<Handle>();
     handle->sampleRate = sampleRate;
     handle->encoding = encoding;
+    handle->engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
     if (!handle->engine.prepare(sampleRate, kMaxQuantumFrames)) return 0L;
     applyPhysicalPreset(*handle, 2);
     handle->engine.setEnabled(false);

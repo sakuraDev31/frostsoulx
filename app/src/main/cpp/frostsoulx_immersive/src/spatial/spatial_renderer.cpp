@@ -91,10 +91,11 @@ bool SpatialRenderer::prepare(double sampleRate, int maxFrames,
 
     // --- Normalisation ------------------------------------------------------
     // Encode a centred unit source, decode it and measure the resulting
-    // binaural peak so the whole chain is unity-gain for a front source. This
-    // keeps the renderer from changing programme level, which matters because
-    // the engine's limiter downstream must stay out of the way of normal
-    // material.
+    // binaural peak. In stereo playback, both left and right virtual sources
+    // feed correlated energy (center vocal, kick, bass) to each ear (up to +6 dB
+    // binaural summation). We incorporate calibrated stereo headroom (0.60f ~ -4.4 dB,
+    // aligned with Steam Audio's -6 dB fixed headroom) so programme material
+    // never clips downstream.
     {
         std::vector<float> enc(kMaxAmbisonicChannels, 0.0f);
         evaluateSphericalHarmonics(Vec3{1.0f, 0.0f, 0.0f}, order_, enc.data());
@@ -109,7 +110,8 @@ bool SpatialRenderer::prepare(double sampleRate, int maxFrames,
             for (std::size_t n = 0; n < taps; ++n) sum += std::fabs(acc[n]);
             peak = std::max(peak, sum);
         }
-        outputGain_ = (peak > 1.0e-6) ? static_cast<float>(1.0 / peak) : 1.0f;
+        constexpr float kStereoHeadroomFactor = 0.60f;
+        outputGain_ = (peak > 1.0e-6) ? static_cast<float>(kStereoHeadroomFactor / peak) : kStereoHeadroomFactor;
         outputGain_ = std::clamp(outputGain_, 1.0e-3f, 32.0f);
     }
 

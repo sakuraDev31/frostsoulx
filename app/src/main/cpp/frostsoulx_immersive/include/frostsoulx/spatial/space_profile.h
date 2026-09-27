@@ -157,11 +157,13 @@ public:
     static SpaceProfile createLongSubwayTunnel();
     static SpaceProfile createLongTunnel();
     static SpaceProfile createClosedCar();
+    static SpaceProfile createAnechoic();
     static SpaceProfile createOpenRoad();
     static SpaceProfile createCave();
     static SpaceProfile createStadium();
 
     enum class Preset {
+        Anechoic,
         Bathroom,
         LivingRoom,
         MediumHall,
@@ -179,6 +181,7 @@ public:
     static SpaceProfile createPreset(Preset preset);
 
     // Compatibility aliases:
+    static SpaceProfile createOff() { return createAnechoic(); }
     static SpaceProfile createSmallRoom() { return createBathroom(); }
     static SpaceProfile createStudio() { return createLivingRoom(); }
     static SpaceProfile createCathedral() { return createLargeHall(); }
