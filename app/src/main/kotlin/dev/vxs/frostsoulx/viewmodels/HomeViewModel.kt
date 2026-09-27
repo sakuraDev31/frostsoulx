@@ -204,18 +204,33 @@ private data class HomeStateInputs(
         val recentlyPlayed = content.local.recentlyPlayed.distinctBy { it.id }
         val keepListening = content.local.keepListening.distinctBy { it.id }
         val speedDialItems = content.local.speedDialItems.distinctBy { it.id }
-        val usedLocalIds = (recentlyPlayed + keepListening + speedDialItems).mapTo(HashSet()) { it.id }
-        fun <T : LocalItem> dedupe(items: List<T>): List<T> =
-            items.filter { usedLocalIds.add(it.id) }
-        val featured = dedupe(content.local.featuredForYou)
-        val moment = dedupe(content.local.forThisMoment)
-        val quickPicks = dedupe(content.local.quickPicks)
-        val forgottenFavorites = dedupe(content.local.forgottenFavorites)
+
+        // Recommended items: Don't starve recommendations when the user listens to music.
+        // Featured for you: prioritize smart picks, falling back gracefully to quick picks or recent favorites.
+        val featured = (content.local.featuredForYou.distinctBy { it.id }
+            .ifEmpty { content.local.quickPicks.distinctBy { it.id } }
+            .ifEmpty { recentlyPlayed })
+            .distinctBy { it.id }
+
+        val featuredIds = featured.mapTo(HashSet()) { it.id }
+
+        // For this moment: Contextual picks, avoiding direct duplicates with featured shelf
+        val rawMoment = content.local.forThisMoment.distinctBy { it.id }
+        val moment = rawMoment.filterNot { it.id in featuredIds }.ifEmpty { rawMoment }
+
+        // Quick picks: User's top picks / heavy rotation
+        val rawQuickPicks = content.local.quickPicks.distinctBy { it.id }
+        val quickPicks = (rawQuickPicks.ifEmpty { recentlyPlayed }).distinctBy { it.id }
+
+        // Forgotten favorites: Deep library rediscoveries
+        val forgottenFavorites = content.local.forgottenFavorites.distinctBy { it.id }
+
+        // Similar recommendations: Keep high-quality distinct items per shelf
         val similarRecommendations =
             content.remote.similarRecommendations
                 .map { recommendation ->
                     recommendation.copy(
-                        items = recommendation.items.filter { usedLocalIds.add(it.id) }.distinctBy { it.id },
+                        items = recommendation.items.distinctBy { it.id },
                     )
                 }.filter { it.items.isNotEmpty() }
 

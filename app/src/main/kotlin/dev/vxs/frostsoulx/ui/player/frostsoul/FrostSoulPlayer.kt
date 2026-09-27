@@ -6,6 +6,7 @@
  */
 
 package dev.vxs.frostsoulx.ui.player.frostsoul
+import androidx.compose.material3.MaterialTheme
 import dev.vxs.frostsoulx.ui.player.legibleArtworkAccent
 import dev.vxs.frostsoulx.ui.utils.formatLikeCount
 
@@ -425,8 +426,9 @@ internal fun FrostSoulPlayer(
         }
         // Dim only the player behind the sheet; tapping outside or Back closes the queue.
         if (queueVisible) {
+            val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f || FrostSoulTheme.colors.background.luminance() > 0.5f
             Box(
-                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.62f))
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (isLight) 0.32f else 0.62f))
                     .clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null,
@@ -439,10 +441,17 @@ internal fun FrostSoulPlayer(
             exit = fadeOut(tween(120)) + slideOutVertically(tween(180)) { it },
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
         ) {
+            val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f || FrostSoulTheme.colors.background.luminance() > 0.5f
+            val queueSheetBackground = if (isLight) MaterialTheme.colorScheme.surfaceContainerHigh else Color(0xFF202020)
+            val queueSheetOnSurface = if (isLight) MaterialTheme.colorScheme.onSurface else Color.White
+            val queueSheetMuted = if (isLight) MaterialTheme.colorScheme.onSurfaceVariant else Color.White.copy(alpha = 0.42f)
+            val queueSheetBorder = if (isLight) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f) else Color.White.copy(alpha = 0.12f)
+
             Column(
                 modifier = Modifier.fillMaxWidth().fillMaxHeight(0.65f)
                     .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
-                    .background(Color(0xFF202020))
+                    .background(queueSheetBackground)
+                    .border(width = 1.dp, color = queueSheetBorder, shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
                     .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
                     .padding(horizontal = 16.dp),
             ) {
@@ -470,8 +479,17 @@ internal fun FrostSoulPlayer(
                         )
                     },
                 ) {
+                    Box(
+                        Modifier
+                            .padding(top = 8.dp, bottom = 2.dp)
+                            .width(36.dp)
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(queueSheetMuted.copy(alpha = 0.35f))
+                            .align(Alignment.CenterHorizontally),
+                    )
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 18.dp),
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         // These are queue positions, not fabricated listening-history counts.
@@ -488,7 +506,7 @@ internal fun FrostSoulPlayer(
                                         append(label)
                                         withStyle(SpanStyle(fontSize = 10.sp)) { append(" $count") }
                                     },
-                                    color = Color.White.copy(alpha = if (queueTab == index) 0.92f else 0.38f),
+                                    color = if (queueTab == index) queueSheetOnSurface else queueSheetMuted,
                                     fontSize = 16.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -503,10 +521,11 @@ internal fun FrostSoulPlayer(
                             painterResource(R.drawable.shuffle), "Toggle shuffle", actions.onToggleShuffle,
                             active = uiState.shuffleModeEnabled, buttonSize = 48.dp, iconSize = 20.dp,
                             showContainer = false, dimBackdrop = false,
+                            tintOverride = if (uiState.shuffleModeEnabled) queueAccent else queueSheetMuted,
                         )
                         Text(
                             if (uiState.shuffleModeEnabled) "Shuffle on" else "Shuffle",
-                            color = Color.White.copy(alpha = 0.42f), fontSize = 12.sp,
+                            color = if (uiState.shuffleModeEnabled) queueAccent else queueSheetMuted, fontSize = 12.sp,
                             modifier = Modifier.weight(1f),
                         )
                         FSIconButton(
@@ -515,14 +534,17 @@ internal fun FrostSoulPlayer(
                                 if (currentQueuePosition >= 0) scope.launch { queueListState.animateScrollToItem(currentQueuePosition) }
                             },
                             buttonSize = 48.dp, iconSize = 20.dp, showContainer = false, dimBackdrop = false,
+                            tintOverride = queueSheetMuted,
                         )
                         FSIconButton(
                             painterResource(R.drawable.download), "Download queue", actions.onDownloadQueue,
                             buttonSize = 48.dp, iconSize = 20.dp, showContainer = false, dimBackdrop = false,
+                            tintOverride = queueSheetMuted,
                         )
                         FSIconButton(
                             painterResource(R.drawable.more_vert), "Queue options", actions.onOpenOptions,
                             buttonSize = 48.dp, iconSize = 20.dp, showContainer = false, dimBackdrop = false,
+                            tintOverride = queueSheetMuted,
                         )
                     }
                 }
@@ -535,6 +557,8 @@ internal fun FrostSoulPlayer(
                     onRemove = actions.onRemoveQueueItem,
                     onSelect = actions.onSelectQueueItem,
                     accent = queueAccent,
+                    textColor = queueSheetOnSurface,
+                    mutedTextColor = queueSheetMuted,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -2476,7 +2500,13 @@ internal fun FSQueue(
     onToggleLike: (Int) -> Unit = {},
     onRemove: (Int) -> Unit = {},
     accent: Color = FrostSoulQueueFallbackAccent,
+    textColor: Color = Color.Unspecified,
+    mutedTextColor: Color = Color.Unspecified,
 ) {
+    val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f || FrostSoulTheme.colors.background.luminance() > 0.5f
+    val resolvedTextColor = if (textColor != Color.Unspecified) textColor else if (isLight) MaterialTheme.colorScheme.onSurface else Color.White
+    val resolvedMutedColor = if (mutedTextColor != Color.Unspecified) mutedTextColor else if (isLight) MaterialTheme.colorScheme.onSurfaceVariant else Color.White.copy(alpha = 0.40f)
+
     LazyColumn(
         state = listState,
         verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -2486,7 +2516,7 @@ internal fun FSQueue(
             item {
                 Text(
                     text = title.uppercase(),
-                    color = Color.White,
+                    color = resolvedTextColor,
                     fontSize = 12.sp,
                     letterSpacing = 1.7.sp,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
@@ -2497,7 +2527,7 @@ internal fun FSQueue(
             item {
                 Text(
                     text = "Your queue is empty.",
-                    color = FrostSoulOnSurfaceMuted,
+                    color = resolvedMutedColor,
                     fontSize = 17.sp,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 22.dp),
                 )
@@ -2505,7 +2535,11 @@ internal fun FSQueue(
         }
         items(queue, key = { item -> "${item.index}-${item.id}" }) { item ->
             FrostSoulQueueRow(
-                item = item, isPlaying = isPlaying, activeColor = accent,
+                item = item,
+                isPlaying = isPlaying,
+                activeColor = accent,
+                textColor = resolvedTextColor,
+                mutedColor = resolvedMutedColor,
                 onClick = { onSelect(item.index) },
                 onToggleLike = { onToggleLike(item.index) },
                 onRemove = { onRemove(item.index) },
@@ -2519,6 +2553,8 @@ private fun FrostSoulQueueRow(
     item: FrostSoulQueueItem,
     isPlaying: Boolean,
     activeColor: Color,
+    textColor: Color,
+    mutedColor: Color,
     onClick: () -> Unit,
     onToggleLike: () -> Unit,
     onRemove: () -> Unit,
@@ -2531,11 +2567,11 @@ private fun FrostSoulQueueRow(
         Text(
             text = buildAnnotatedString {
                 append(item.title)
-                withStyle(SpanStyle(color = if (item.isCurrent) activeColor.copy(alpha = 0.60f) else Color.White.copy(alpha = 0.36f), fontSize = 12.sp)) {
+                withStyle(SpanStyle(color = if (item.isCurrent) activeColor.copy(alpha = 0.70f) else mutedColor, fontSize = 12.sp)) {
                     append(" - ${item.artist}")
                 }
             },
-            color = if (item.isCurrent) activeColor else Color.White.copy(alpha = 0.84f),
+            color = if (item.isCurrent) activeColor else textColor,
             fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).padding(start = 4.dp, end = 8.dp),
         )
@@ -2546,12 +2582,12 @@ private fun FrostSoulQueueRow(
             painterResource(if (item.isLiked) R.drawable.favorite else R.drawable.favorite_border),
             if (item.isLiked) "Unlike ${item.title}" else "Like ${item.title}", onToggleLike,
             buttonSize = 48.dp, iconSize = 19.dp, showContainer = false, dimBackdrop = false,
-            tintOverride = if (item.isLiked) activeColor else Color.White.copy(alpha = 0.40f),
+            tintOverride = if (item.isLiked) activeColor else mutedColor,
         )
         FSIconButton(
             painterResource(R.drawable.close), "Remove ${item.title} from queue", onRemove,
             buttonSize = 48.dp, iconSize = 18.dp, showContainer = false, dimBackdrop = false,
-            tintOverride = Color.White.copy(alpha = 0.40f),
+            tintOverride = mutedColor,
         )
     }
 }

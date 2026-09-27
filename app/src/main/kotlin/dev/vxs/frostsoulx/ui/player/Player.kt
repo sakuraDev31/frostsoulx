@@ -1869,7 +1869,7 @@ if (!aodModeEnabled) {
                 }
             }
 
-        if (aodModeEnabled) {
+        if (!aodModeEnabled) {
             Queue(
                 state = queueSheetState,
                 playerBottomSheetState = state,
@@ -1881,9 +1881,9 @@ if (!aodModeEnabled) {
                         MaterialTheme.colorScheme.surfaceContainer
                     },
                 onBackgroundColor = queueOnBackgroundColor,
-                TextBackgroundColor = TextBackgroundColor,
-                textButtonColor = textButtonColor,
-                iconButtonColor = iconButtonColor,
+                TextBackgroundColor = if (useBlackBackground) Color.White else MaterialTheme.colorScheme.onSurface,
+                textButtonColor = queueTextButtonColor,
+                iconButtonColor = queueIconButtonColor,
                 onShowLyrics = { isLyricsScreenVisible = true },
                 pureBlack = pureBlack,
             )
