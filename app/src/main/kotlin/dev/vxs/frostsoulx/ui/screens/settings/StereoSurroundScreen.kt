@@ -819,7 +819,7 @@ private fun AcousticStageHero(
                 center = Offset(spkLeftX, spkLeftY),
             )
             drawCircle(
-                color = Color.Black,
+                color = surfaceColor,
                 radius = speakerRadius * 0.45f,
                 center = Offset(spkLeftX, spkLeftY),
             )
@@ -829,7 +829,7 @@ private fun AcousticStageHero(
                 center = Offset(spkRightX, spkRightY),
             )
             drawCircle(
-                color = Color.Black,
+                color = surfaceColor,
                 radius = speakerRadius * 0.45f,
                 center = Offset(spkRightX, spkRightY),
             )

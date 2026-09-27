@@ -49,6 +49,7 @@ import dev.vxs.frostsoulx.BuildConfig
 import dev.vxs.frostsoulx.LocalPlayerAwareWindowInsets
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.ui.component.IconButton
+import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.premium.PremiumTopBar
 import dev.vxs.frostsoulx.ui.utils.backToMain
 import dev.vxs.frostsoulx.utils.Updater
@@ -109,8 +110,8 @@ fun SettingsScreen(
     val settingsGroups = buildSettingsGroups(navController, isAndroid12OrLater, hasUpdate, context)
 
     Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = Color.Black,
+        modifier = Modifier.fillMaxSize(),
+        containerColor = FrostSoulTheme.colors.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             PremiumTopBar(

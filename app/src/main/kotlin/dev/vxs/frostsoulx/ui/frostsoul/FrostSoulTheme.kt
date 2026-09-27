@@ -203,50 +203,97 @@ object FrostSoulTheme {
 @Composable
 fun FrostSoulCalmTheme(content: @Composable () -> Unit) {
     val parent = LocalFrostSoulTokens.current
-    val calmTokens = remember(parent) {
-        parent.copy(
-            colors = parent.colors.copy(
-                background = Color.Black,
-                surface = Color(0xFF0B0B0B),
-                surfaceRaised = Color(0xFF151515),
-                surfaceGlass = Color(0xFF111111),
-                surfaceGlassStrong = Color(0xFF181818),
-                accent = Color.White,
-                accentBright = Color.White,
-                accentMuted = Color(0xFFB6B6B6),
-                onBackground = Color(0xFFF5F5F5),
-                onSurface = Color(0xFFF5F5F5),
-                onSurfaceMuted = Color(0xFF9A9A9A),
-                outline = Color(0xFF292929),
-                scrim = Color.Black.copy(alpha = 0.78f),
-            ),
-            effects = parent.effects.copy(
-                activeGlowAlpha = 0f,
-                ambientGlowAlpha = 0f,
-            ),
-        )
+    val isLight = parent.colors.background.luminance() > 0.5f
+    val calmTokens = remember(parent, isLight) {
+        if (isLight) {
+            parent.copy(
+                colors = parent.colors.copy(
+                    background = Color.White,
+                    surface = Color.White,
+                    surfaceRaised = Color(0xFFF5F5F5),
+                    surfaceGlass = Color.White.copy(alpha = 0.96f),
+                    surfaceGlassStrong = Color.White,
+                    accent = Color.Black,
+                    accentBright = Color.Black,
+                    accentMuted = Color(0xFF555555),
+                    onBackground = Color.Black,
+                    onSurface = Color.Black,
+                    onSurfaceMuted = Color(0xFF666666),
+                    outline = Color(0x1A000000),
+                    scrim = Color.Black.copy(alpha = 0.48f),
+                ),
+                effects = parent.effects.copy(
+                    activeGlowAlpha = 0f,
+                    ambientGlowAlpha = 0f,
+                ),
+            )
+        } else {
+            parent.copy(
+                colors = parent.colors.copy(
+                    background = Color.Black,
+                    surface = Color(0xFF0B0B0B),
+                    surfaceRaised = Color(0xFF151515),
+                    surfaceGlass = Color(0xFF111111),
+                    surfaceGlassStrong = Color(0xFF181818),
+                    accent = Color.White,
+                    accentBright = Color.White,
+                    accentMuted = Color(0xFFB6B6B6),
+                    onBackground = Color(0xFFF5F5F5),
+                    onSurface = Color(0xFFF5F5F5),
+                    onSurfaceMuted = Color(0xFF9A9A9A),
+                    outline = Color(0xFF292929),
+                    scrim = Color.Black.copy(alpha = 0.78f),
+                ),
+                effects = parent.effects.copy(
+                    activeGlowAlpha = 0f,
+                    ambientGlowAlpha = 0f,
+                ),
+            )
+        }
     }
     val inheritedScheme = MaterialTheme.colorScheme
-    val calmScheme = remember(inheritedScheme, calmTokens) {
-        inheritedScheme.copy(
-            background = Color.Black,
-            onBackground = calmTokens.colors.onBackground,
-            surface = calmTokens.colors.surface,
-            onSurface = calmTokens.colors.onSurface,
-            surfaceVariant = calmTokens.colors.surfaceRaised,
-            onSurfaceVariant = calmTokens.colors.onSurfaceMuted,
-            surfaceContainerLowest = Color.Black,
-            surfaceContainerLow = calmTokens.colors.surface,
-            surfaceContainer = calmTokens.colors.surfaceRaised,
-            surfaceContainerHigh = calmTokens.colors.surfaceRaised,
-            surfaceContainerHighest = Color(0xFF1D1D1D),
-            primary = Color.White,
-            onPrimary = Color.Black,
-            primaryContainer = calmTokens.colors.surfaceRaised,
-            onPrimaryContainer = calmTokens.colors.onSurface,
-            outline = calmTokens.colors.outline,
-            outlineVariant = calmTokens.colors.outline,
-        )
+    val calmScheme = remember(inheritedScheme, calmTokens, isLight) {
+        if (isLight) {
+            inheritedScheme.copy(
+                background = Color.White,
+                onBackground = calmTokens.colors.onBackground,
+                surface = calmTokens.colors.surface,
+                onSurface = calmTokens.colors.onSurface,
+                surfaceVariant = calmTokens.colors.surfaceRaised,
+                onSurfaceVariant = calmTokens.colors.onSurfaceMuted,
+                surfaceContainerLowest = Color.White,
+                surfaceContainerLow = Color(0xFFFAFAFA),
+                surfaceContainer = calmTokens.colors.surfaceRaised,
+                surfaceContainerHigh = Color(0xFFEFEFEF),
+                surfaceContainerHighest = Color(0xFFE5E5E5),
+                primary = Color.Black,
+                onPrimary = Color.White,
+                primaryContainer = calmTokens.colors.surfaceRaised,
+                onPrimaryContainer = calmTokens.colors.onSurface,
+                outline = calmTokens.colors.outline,
+                outlineVariant = calmTokens.colors.outline,
+            )
+        } else {
+            inheritedScheme.copy(
+                background = Color.Black,
+                onBackground = calmTokens.colors.onBackground,
+                surface = calmTokens.colors.surface,
+                onSurface = calmTokens.colors.onSurface,
+                surfaceVariant = calmTokens.colors.surfaceRaised,
+                onSurfaceVariant = calmTokens.colors.onSurfaceMuted,
+                surfaceContainerLowest = Color.Black,
+                surfaceContainerLow = calmTokens.colors.surface,
+                surfaceContainer = calmTokens.colors.surfaceRaised,
+                surfaceContainerHigh = calmTokens.colors.surfaceRaised,
+                surfaceContainerHighest = Color(0xFF1D1D1D),
+                primary = Color.White,
+                onPrimary = Color.Black,
+                primaryContainer = calmTokens.colors.surfaceRaised,
+                onPrimaryContainer = calmTokens.colors.onSurface,
+                outline = calmTokens.colors.outline,
+                outlineVariant = calmTokens.colors.outline,
+            )
+        }
     }
     androidx.compose.runtime.CompositionLocalProvider(LocalFrostSoulTokens provides calmTokens) {
         MaterialTheme(colorScheme = calmScheme, content = content)
@@ -414,24 +461,38 @@ fun Modifier.frostSoulGlow(
 fun Modifier.frostSoulCalmScreenBackground(): Modifier {
     val base = FrostSoulTheme.colors.background
     val colors = FrostSoulTheme.colors
+    val isLight = base.luminance() > 0.5f
     return background(base).drawWithCache {
         val atmosphere = Brush.radialGradient(
-            colors = listOf(
-                colors.surfaceGlassStrong.copy(alpha = 0.38f),
-                colors.accent.copy(alpha = 0.06f),
-                Color.Transparent,
-            ),
+            colors = if (isLight) {
+                listOf(
+                    colors.accent.copy(alpha = 0.03f),
+                    Color.Transparent,
+                )
+            } else {
+                listOf(
+                    colors.surfaceGlassStrong.copy(alpha = 0.38f),
+                    colors.accent.copy(alpha = 0.06f),
+                    Color.Transparent,
+                )
+            },
             center = Offset(size.width * 0.74f, size.height * 0.14f),
             radius = size.maxDimension * 0.92f,
         )
-        val lowerWash = Brush.verticalGradient(
-            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.22f)),
-            startY = size.height * 0.40f,
-            endY = size.height,
-        )
+        val lowerWash = if (isLight) {
+            null
+        } else {
+            Brush.verticalGradient(
+                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.22f)),
+                startY = size.height * 0.40f,
+                endY = size.height,
+            )
+        }
         onDrawWithContent {
             drawRect(brush = atmosphere)
-            drawRect(brush = lowerWash)
+            if (lowerWash != null) {
+                drawRect(brush = lowerWash)
+            }
             drawContent()
         }
     }
@@ -440,13 +501,21 @@ fun Modifier.frostSoulCalmScreenBackground(): Modifier {
 @Composable
 fun Modifier.frostSoulScreenBackground(ambient: Color = Color(0xFF334760)): Modifier {
     val base = FrostSoulTheme.colors.background
+    val isLight = base.luminance() > 0.5f
     // Static tonal atmosphere; no full-screen blur texture or animation loop.
-    val wash = remember(base, ambient) {
-        Brush.verticalGradient(
-            0f to lerp(base, ambient, 0.20f),
-            0.48f to lerp(base, ambient, 0.06f),
-            1f to base,
-        )
+    val wash = remember(base, ambient, isLight) {
+        if (isLight) {
+            Brush.verticalGradient(
+                0f to base,
+                1f to base,
+            )
+        } else {
+            Brush.verticalGradient(
+                0f to lerp(base, ambient, 0.20f),
+                0.48f to lerp(base, ambient, 0.06f),
+                1f to base,
+            )
+        }
     }
     return background(wash)
 }
