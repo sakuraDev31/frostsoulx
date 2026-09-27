@@ -604,13 +604,14 @@ internal fun FSMiniPlayer(
         animationSpec = tween(220),
         label = "frostsoul-mini-player-progress",
     )
-    val isLightTheme = FrostSoulTheme.colors.background.luminance() > 0.5f
+    val themeColors = FrostSoulTheme.colors
+    val isLightTheme = themeColors.background.luminance() > 0.5f
     val lightTintPrimary = remember(palette.artworkPrimary) { artworkLightTint(palette.artworkPrimary) }
     val lightTintSecondary = remember(palette.artworkSecondary, lightTintPrimary) {
         artworkLightSecondaryTint(palette.artworkSecondary, lightTintPrimary)
     }
-    val primaryTextColor = if (isLightTheme) FrostSoulTheme.colors.onSurface else FrostSoulOnSurface
-    val mutedTextColor = FrostSoulTheme.colors.onSurfaceMuted
+    val primaryTextColor = if (isLightTheme) themeColors.onSurface else FrostSoulOnSurface
+    val mutedTextColor = themeColors.onSurfaceMuted
     // Keep the arc contrast stable; artwork-derived colors remain on the mini-player surface.
     val progressColor = if (isLightTheme) Color.Black else Color.White
     val progressTrackColor = progressColor.copy(alpha = 0.22f)
@@ -658,7 +659,7 @@ internal fun FSMiniPlayer(
                         fallbackColorEffect(
                             HazeColorEffect.tint(
                                 if (isLightTheme) lightTintPrimary.copy(alpha = 0.65f)
-                                else FrostSoulTheme.colors.surface.copy(alpha = 0.88f),
+                                else themeColors.surface.copy(alpha = 0.88f),
                             ),
                         )
                     },
@@ -702,7 +703,7 @@ internal fun FSMiniPlayer(
                             )
                     } else {
                         Modifier
-                            .background(FrostSoulTheme.colors.surface)
+                            .background(themeColors.surface)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(
@@ -712,7 +713,7 @@ internal fun FSMiniPlayer(
                                     ),
                                 ),
                             )
-                            .border(1.dp, FrostSoulTheme.colors.outline.copy(alpha = 0.65f), shape)
+                            .border(1.dp, themeColors.outline.copy(alpha = 0.65f), shape)
                     },
                 )
                 .combinedClickable(

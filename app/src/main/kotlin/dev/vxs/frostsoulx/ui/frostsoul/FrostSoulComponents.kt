@@ -619,7 +619,7 @@ fun FSNavigationBar(
     val homeSelected = selectedRoute == "home"
     val selectedTint = if (pureBlack) Color.White else Color.Black
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
-    val isLight = !pureBlack && FrostSoulTheme.colors.background.luminance() > 0.5f
+    val isLight = !pureBlack && colors.background.luminance() > 0.5f
     val navSurface = if (pureBlack) Color.Black else if (isLight) Color(0xFFF2F4F7) else Color.White
     val shadowModifier = if (isLight) {
         Modifier.shadow(
