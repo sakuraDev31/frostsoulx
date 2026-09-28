@@ -72,6 +72,7 @@ import dev.vxs.frostsoulx.extensions.togglePlayPause
 import dev.vxs.frostsoulx.home.HomeAction
 import dev.vxs.frostsoulx.home.HomeUiState
 import dev.vxs.frostsoulx.innertube.models.PlaylistItem
+import dev.vxs.frostsoulx.innertube.models.AlbumItem
 import dev.vxs.frostsoulx.innertube.models.SongItem
 import dev.vxs.frostsoulx.innertube.models.WatchEndpoint
 import dev.vxs.frostsoulx.innertube.models.YTItem
@@ -147,7 +148,43 @@ internal fun FrostSoulHomeFeed(
             .filterIsInstance<PlaylistItem>()
             .distinctBy { it.id }
 
-        (fromOnline + uiState.accountPlaylists).distinctBy { it.id }.take(6)
+        (fromOnline + uiState.accountPlaylists).distinctBy { it.id }.take(4)
+    }
+
+    // Use only real album payloads from the Home response. The shelf intentionally
+    // stays compact (5–6 cards) so it remains a quick discovery row on phones.
+    val newReleases = remember(uiState.homePage) {
+        val sections = uiState.homePage?.sections.orEmpty()
+        val preferred = sections
+            .filter { section ->
+                section.title.contains("new release", ignoreCase = true) ||
+                    section.title.contains("latest", ignoreCase = true) ||
+                    section.title.contains("album", ignoreCase = true) ||
+                    section.title.contains("single", ignoreCase = true)
+            }
+            .flatMap { it.items }
+            .filterIsInstance<AlbumItem>()
+        val fallback = sections.flatMap { it.items }.filterIsInstance<AlbumItem>()
+        (preferred + fallback).distinctBy { it.id }.take(6)
+    }
+
+    // Some Home responses include songs alongside a playlist card. Preserve those
+    // actual songs for the card preview; never invent track titles or durations.
+    val communityPreviewSongs = remember(uiState.homePage) {
+        buildMap<String, List<SongItem>> {
+            uiState.homePage?.sections.orEmpty()
+                .filter { section ->
+                    section.title.contains("playlist", ignoreCase = true) ||
+                        section.title.contains("community", ignoreCase = true) ||
+                        section.items.any { it is PlaylistItem }
+                }
+                .forEach { section ->
+                    val songs = section.items.filterIsInstance<SongItem>().distinctBy { it.id }.take(3)
+                    section.items.filterIsInstance<PlaylistItem>().forEach { playlist ->
+                        put(playlist.id, songs)
+                    }
+                }
+        }
     }
 
     // Similar artists
@@ -340,7 +377,24 @@ internal fun FrostSoulHomeFeed(
                 )
             }
 
-            // 6. TRENDING COMMUNITY PLAYLISTS
+            // 6. NEW RELEASES
+            if (newReleases.isNotEmpty()) {
+                item(key = "frostsoul_new_releases_header") {
+                    FSSectionHeader(
+                        title = "New releases",
+                        actionLabel = "See all ›",
+                        onAction = { navController.navigate("new_release") },
+                    )
+                }
+                item(key = "frostsoul_new_releases_shelf") {
+                    FrostSoulNewReleasesShelf(
+                        releases = newReleases,
+                        navController = navController,
+                    )
+                }
+            }
+
+            // 7. TRENDING COMMUNITY PLAYLISTS
             if (communityPlaylists.isNotEmpty()) {
                 item(key = "frostsoul_community_playlists_header") {
                     FSSectionHeader(
@@ -352,6 +406,7 @@ internal fun FrostSoulHomeFeed(
                 item(key = "frostsoul_community_playlists_shelf") {
                     FrostSoulCommunityPlaylistsShelf(
                         playlists = communityPlaylists,
+                        previewSongsByPlaylist = communityPreviewSongs,
                         navController = navController,
                         playerConnection = playerConnection,
                     )
@@ -1321,12 +1376,95 @@ private fun FrostSoulMadeForYouShelf(
 }
 
 // =======================================================================
-// 6. TRENDING COMMUNITY PLAYLISTS SHELF
+// 6. NEW RELEASES SHELF
+// =======================================================================
+
+@Composable
+private fun FrostSoulNewReleasesShelf(
+    releases: List<AlbumItem>,
+    navController: NavController,
+) {
+    val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
+    val cardShape = RoundedCornerShape(16.dp)
+    val cardWidth = 156.dp
+
+    LazyRow(
+        contentPadding = ShelfPadding,
+        horizontalArrangement = Arrangement.spacedBy(ShelfSpacing),
+    ) {
+        items(releases, key = { "release_${it.id}" }, contentType = { "new_release" }) { release ->
+            Column(
+                modifier = Modifier
+                    .width(cardWidth)
+                    .clickable { navController.navigate("album/${release.id}") },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(cardWidth)
+                        .shadow(
+                            elevation = if (isLight) 3.dp else 0.dp,
+                            shape = cardShape,
+                            clip = false,
+                            spotColor = Color(0x18000000),
+                            ambientColor = Color(0x0C000000),
+                        )
+                        .clip(cardShape)
+                        .background(FrostSoulTheme.colors.surfaceRaised),
+                ) {
+                    AsyncImage(
+                        model = release.thumbnail,
+                        contentDescription = release.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.58f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        FSIcon(
+                            painter = painterResource(R.drawable.play),
+                            contentDescription = "Open ${release.title}",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = release.title,
+                    color = FrostSoulTheme.colors.onSurface,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(
+                    text = release.artists.orEmpty().joinToString(", ") { it.name }
+                        .ifBlank { release.year?.toString() ?: "New release" },
+                    color = FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+    }
+}
+
+// =======================================================================
+// 7. TRENDING COMMUNITY PLAYLISTS SHELF
 // =======================================================================
 
 @Composable
 private fun FrostSoulCommunityPlaylistsShelf(
     playlists: List<PlaylistItem>,
+    previewSongsByPlaylist: Map<String, List<SongItem>> = emptyMap(),
     navController: NavController,
     playerConnection: PlayerConnection,
 ) {
@@ -1428,10 +1566,9 @@ private fun FrostSoulCommunityPlaylistsShelf(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        val previewTracks = listOf("1  Top Trending Picks", "2  Fan Favorites", "3  Heavy Rotation", "4  Community Selections")
-                        previewTracks.forEach { track ->
+                        previewSongsByPlaylist[playlist.id].orEmpty().forEachIndexed { index, track ->
                             Text(
-                                text = track,
+                                text = "${index + 1}  ${track.title}",
                                 color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.85f),
                                 fontSize = 11.sp,
                                 maxLines = 1,
