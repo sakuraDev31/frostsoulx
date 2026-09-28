@@ -73,6 +73,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import dev.vxs.frostsoulx.LocalPlayerAwareWindowInsets
 import dev.vxs.frostsoulx.LocalPlayerConnection
+import dev.vxs.frostsoulx.BuildConfig
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.ui.component.IconButton
 import dev.vxs.frostsoulx.ui.component.PreferenceEntry
@@ -191,24 +192,26 @@ fun DebugSettings(navController: NavController) {
                     )
                 }
 
-                item {
-                    PreferenceEntry(
-                        title = { Text("Intelligence Console") },
-                        description = "Inspect local recommendation telemetry",
-                        icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.manage_search),
-                                contentDescription = null,
-                            )
-                        },
-                        trailingContent = {
-                            Icon(
-                                painter = painterResource(R.drawable.navigate_next),
-                                contentDescription = null,
-                            )
-                        },
-                        onClick = { navController.navigate("settings/intelligence_console") },
-                    )
+                if (BuildConfig.DEBUG) {
+                    item {
+                        PreferenceEntry(
+                            title = { Text("Intelligence Console") },
+                            description = "Inspect local recommendation telemetry",
+                            icon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.manage_search),
+                                    contentDescription = null,
+                                )
+                            },
+                            trailingContent = {
+                                Icon(
+                                    painter = painterResource(R.drawable.navigate_next),
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = { navController.navigate("settings/intelligence_console") },
+                        )
+                    }
                 }
 
             }
