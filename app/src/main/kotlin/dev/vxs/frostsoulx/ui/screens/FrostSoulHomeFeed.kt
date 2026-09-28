@@ -331,8 +331,6 @@ internal fun FrostSoulHomeFeed(
             item(key = "frostsoul_made_for_you_header") {
                 FSSectionHeader(
                     title = "Made for you",
-                    actionLabel = "See all ›",
-                    onAction = { navController.navigate(Screens.Library.route) },
                 )
             }
             item(key = "frostsoul_made_for_you_shelf") {
