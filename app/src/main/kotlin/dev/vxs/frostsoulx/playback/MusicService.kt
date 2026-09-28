@@ -425,14 +425,14 @@ class MusicService :
     }
     private val _extractorAuthenticationEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val extractorAuthenticationEvents = _extractorAuthenticationEvents.asSharedFlow()
-    private val streamingExtractionManagerDelegate =
-        lazy {
-            StreamingExtractionManager(
-                tokenRepository = extractorTokenRepository,
-                authenticationCallback = { notifyExtractorAuthenticationRequired() },
-            )
-        }
-    private val streamingExtractionManager by streamingExtractionManagerDelegate
+    private val streamingExtractionManagerDelegate = lazy {
+        StreamingExtractionManager(
+            tokenRepository = extractorTokenRepository,
+            authenticationCallback = { notifyExtractorAuthenticationRequired() },
+        )
+    }
+    private val streamingExtractionManager: StreamingExtractionManager
+        get() = streamingExtractionManagerDelegate.value
     private val mediaOkHttpClient: OkHttpClient by lazy {
         OkHttpClient
             .Builder()
