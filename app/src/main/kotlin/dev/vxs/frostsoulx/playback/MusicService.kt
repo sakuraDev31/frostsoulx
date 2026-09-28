@@ -282,13 +282,13 @@ import dev.vxs.frostsoulx.utils.StreamClientUtils
 import dev.vxs.frostsoulx.utils.SyncUtils
 import dev.vxs.frostsoulx.utils.YTPlayerUtils
 import dev.vxs.frostsoulx.utils.dataStore
-import dev.vxs.frostsoulx.utils.enumPreference
 import dev.vxs.frostsoulx.utils.get
 import dev.vxs.frostsoulx.utils.getAsync
 import dev.vxs.frostsoulx.utils.isLocalMediaId
 import dev.vxs.frostsoulx.utils.isLowDataModeActive
 import dev.vxs.frostsoulx.utils.reportException
 import dev.vxs.frostsoulx.utils.retryWithoutPlaybackLoginContext
+import dev.vxs.frostsoulx.extensions.toEnum
 import dev.vxs.frostsoulx.widget.LoadWidgetInsightsUseCase
 import okhttp3.OkHttpClient
 import timber.log.Timber
@@ -410,16 +410,12 @@ class MusicService :
     val waitingForNetworkConnection = MutableStateFlow(false)
     private val isNetworkConnected = MutableStateFlow(false)
 
-    private val audioQuality by enumPreference(
-        this,
-        AudioQualityKey,
-        dev.vxs.frostsoulx.constants.AudioQuality.AUTO,
-    )
-    private val preferredStreamClient by enumPreference(
-        this,
-        PlayerStreamClientKey,
-        PlayerStreamClient.ANDROID_VR,
-    )
+    // Resolve preferences on demand. Service field injection happens after the Kotlin
+    // constructor/property initializers, so eager delegated reads are unsafe here.
+    private val audioQuality: AudioQuality
+        get() = applicationContext.dataStore.get(AudioQualityKey)?.toEnum(AudioQuality.AUTO) ?: AudioQuality.AUTO
+    private val preferredStreamClient: PlayerStreamClient
+        get() = applicationContext.dataStore.get(PlayerStreamClientKey)?.toEnum(PlayerStreamClient.ANDROID_VR) ?: PlayerStreamClient.ANDROID_VR
     private val playbackUrlCache = ConcurrentHashMap<String, AuthScopedCacheValue>()
     private val extractorPlaybackUrlCache = ConcurrentHashMap<String, AuthScopedCacheValue>()
     private val remotePlaybackTrackingUrlCache = ConcurrentHashMap<String, String>()
