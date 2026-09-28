@@ -39,7 +39,9 @@ class Media3PlaybackCore(
     private val mutationMutex = Mutex()
     private val history = ArrayDeque<QueueUndoToken<MediaItem>>()
     private var snapshotJob: Job? = null
-    private val _state = MutableStateFlow(projectState())
+    // Seed the flow before projectState() reads its queue-lock value. Calling projectState()
+    // from this initializer would dereference _state while _state itself is still null.
+    private val _state = MutableStateFlow(PlaybackCoreState())
 
     val state: StateFlow<PlaybackCoreState> = _state.asStateFlow()
     val canUndoQueueMutation: Boolean
@@ -53,6 +55,7 @@ class Media3PlaybackCore(
 
     init {
         player.addListener(this)
+        _state.value = projectState()
     }
 
     suspend fun insertNext(items: List<MediaItem>): Boolean =
