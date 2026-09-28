@@ -67,6 +67,11 @@ import dev.vxs.frostsoulx.innertube.utils.hasYouTubeLoginCookie
 import dev.vxs.frostsoulx.models.SimilarRecommendation
 import dev.vxs.frostsoulx.models.toMediaMetadata
 import dev.vxs.frostsoulx.recommendation.OfflineRecommendationEngine
+import dev.vxs.frostsoulx.recommendation.HomeChipSignals
+import dev.vxs.frostsoulx.recommendation.HomeIntelligencePlanner
+import dev.vxs.frostsoulx.recommendation.HomeSectionCandidate
+import dev.vxs.frostsoulx.recommendation.IntelligenceChipSnapshot
+import dev.vxs.frostsoulx.recommendation.IntelligenceTelemetryStore
 import dev.vxs.frostsoulx.recommendation.RecommendationContext
 import dev.vxs.frostsoulx.recommendation.RecommendationSignalType
 import dev.vxs.frostsoulx.repository.LibraryTopMixRepository
@@ -277,6 +282,7 @@ class HomeViewModel
         private val filterAiContent: FilterAiContentUseCase,
         private val getTasteProfile: GetTasteProfileUseCase,
         private val offlineRecommendationEngine: OfflineRecommendationEngine,
+        private val intelligenceTelemetryStore: IntelligenceTelemetryStore,
     ) : ViewModel() {
         private val isRefreshing = MutableStateFlow(false)
         private val isLoading = MutableStateFlow(false)
@@ -432,6 +438,7 @@ class HomeViewModel
         private var loadMoreJob: Job? = null
         private var recommendationJob: Job? = null
         private var pageGeneration = 0
+        private var previousHomeSessionSignals: Map<String, Float>? = null
 
         private fun filterHomeChips(chips: List<HomePage.Chip>?): List<HomePage.Chip>? =
             chips?.filter {
@@ -1161,11 +1168,66 @@ class HomeViewModel
             } else {
                 chips.distinctBy { it.title }
             }
-
-            return page.copy(
-                chips = safeChips,
-                sections = safeSections,
+            val profile = getTasteProfile(forceRefresh = false).getOrNull()
+            val sessionSignals = intelligenceTelemetryStore.snapshot.value.let { snapshot ->
+                snapshot.moodDistribution + snapshot.genreDistribution
+            }.takeIf { it.isNotEmpty() }
+            val longTermSignals = buildMap {
+                profile?.topArtists?.forEach { artist -> put(artist.name, artist.share) }
+                profile?.dominantTraits?.forEachIndexed { index, trait ->
+                    put(trait.name.replace('_', ' '), 1f - index * 0.1f)
+                }
+            }
+            val chipScores = HomeIntelligencePlanner.scoreChips(
+                candidates = safeChips.orEmpty().map { it.title },
+                signals = HomeChipSignals(
+                    longTerm = longTermSignals,
+                    currentSession = sessionSignals.orEmpty(),
+                    previousSession = previousHomeSessionSignals,
+                ),
             )
+            if (sessionSignals != null) previousHomeSessionSignals = sessionSignals
+            val chipsByTitle = safeChips.orEmpty().associateBy { it.title.trim().lowercase() }
+            val plannedChips = chipScores.mapNotNull { chipsByTitle[it.title.trim().lowercase()] }
+                .ifEmpty { safeChips.orEmpty() }
+            val sectionPlan = HomeIntelligencePlanner.planSections(
+                safeSections.mapIndexed { sectionIndex, section ->
+                    val relatedChip = chipScores.firstOrNull { score ->
+                        section.title.contains(score.title, ignoreCase = true) || score.title.contains(section.title, ignoreCase = true)
+                    }
+                    HomeSectionCandidate(
+                        id = section.endpoint?.browseId ?: section.title,
+                        title = section.title,
+                        // A browse id prefix is not a reliable source identity: many unrelated
+                        // shelves share the same prefix and would otherwise be suppressed as
+                        // duplicates by the diversity planner.
+                        source = section.endpoint?.browseId ?: "home_section_$sectionIndex",
+                        itemCount = section.items.size,
+                        longTermAffinity = relatedChip?.longTerm ?: profile?.confidence ?: 0.5f,
+                        currentSessionCompatibility = relatedChip?.currentSession ?: 0.5f,
+                        freshness = if (section.title.contains("new", true) || section.title.contains("discover", true)) 0.8f else 0.5f,
+                        novelty = if (section.title.contains("discover", true) || section.title.contains("similar", true)) 0.8f else 0.4f,
+                        recentEngagement = if (section.title.contains("recent", true) || section.title.contains("continue", true)) 0.8f else 0.4f,
+                        discoveryValue = if (section.title.contains("new", true) || section.title.contains("discover", true)) 0.8f else 0.5f,
+                    )
+                },
+                maxSections = safeSections.size,
+            )
+            val scoreBySection = sectionPlan.selected.associate { it.id to it.selectionScore }
+            intelligenceTelemetryStore.publish(
+                intelligenceTelemetryStore.snapshot.value.copy(
+                    homeChipScores = chipScores.map { score ->
+                        IntelligenceChipSnapshot(score.title, score.longTerm, score.currentSession, score.previousSession, score.finalScore)
+                    },
+                    selectedHomeSections = sectionPlan.selected.map { it.title },
+                    suppressedHomeSections = sectionPlan.suppressed.map { it.title },
+                    homeContentScores = scoreBySection,
+                ),
+            )
+            val plannedSections = sectionPlan.selected.mapNotNull { planned ->
+                safeSections.firstOrNull { it.title == planned.title }
+            }.ifEmpty { safeSections }
+            return page.copy(chips = plannedChips, sections = plannedSections)
         }
 
         private fun loadMoreYouTubeItems(continuation: String?) {

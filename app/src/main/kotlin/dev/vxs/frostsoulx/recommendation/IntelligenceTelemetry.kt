@@ -24,6 +24,10 @@ data class IntelligenceSnapshot(
     val energyTrajectory: List<Float> = emptyList(),
     val processingDurationMs: Long? = null,
     val sequenceOptimizationResult: String? = null,
+    val homeChipScores: List<IntelligenceChipSnapshot> = emptyList(),
+    val selectedHomeSections: List<String> = emptyList(),
+    val suppressedHomeSections: List<String> = emptyList(),
+    val homeContentScores: Map<String, Float> = emptyMap(),
     val recentEvents: List<IntelligenceEventSnapshot> = emptyList(),
     val isOffline: Boolean = true,
 )
@@ -51,6 +55,14 @@ data class IntelligenceEventSnapshot(
     val occurredAtMs: Long,
 )
 
+data class IntelligenceChipSnapshot(
+    val title: String,
+    val longTerm: Float? = null,
+    val currentSession: Float? = null,
+    val previousSession: Float? = null,
+    val finalScore: Float? = null,
+)
+
 class IntelligenceTelemetryStore(
     private val maxCandidates: Int = 32,
     private val maxEvents: Int = 64,
@@ -63,6 +75,10 @@ class IntelligenceTelemetryStore(
         _snapshot.value = snapshot.copy(
             candidateSourceCounts = snapshot.candidateSourceCounts.toMap(),
             filteringCounts = snapshot.filteringCounts.toMap(),
+            homeChipScores = snapshot.homeChipScores.take(5).toList(),
+            selectedHomeSections = snapshot.selectedHomeSections.take(12).toList(),
+            suppressedHomeSections = snapshot.suppressedHomeSections.take(32).toList(),
+            homeContentScores = snapshot.homeContentScores.entries.take(32).associate { it.key to it.value },
             rankedCandidates = snapshot.rankedCandidates.take(maxCandidates).toList(),
             recentEvents = snapshot.recentEvents.takeLast(maxEvents).toList(),
             energyTrajectory = snapshot.energyTrajectory.takeLast(64).toList(),

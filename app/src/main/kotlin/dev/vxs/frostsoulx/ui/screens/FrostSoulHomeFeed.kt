@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,7 +28,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -64,7 +62,6 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import dev.vxs.frostsoulx.LocalPlayerAwareWindowInsets
 import dev.vxs.frostsoulx.R
-import dev.vxs.frostsoulx.constants.AppBarHeight
 import dev.vxs.frostsoulx.db.entities.Album
 import dev.vxs.frostsoulx.db.entities.Artist
 import dev.vxs.frostsoulx.db.entities.LocalItem
@@ -216,8 +213,11 @@ internal fun FrostSoulHomeFeed(
             .take(6)
     }
 
-    val topPadding = (WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
-        AppBarHeight + FrostSoulTheme.spacing.micro).coerceAtLeast(0.dp)
+    // MainActivity already exposes the status-bar + shared brand-header inset here.
+    // Re-adding WindowInsets.statusBars caused the Home rows to move underneath the
+    // header when the system bars were revealed by a pull-down gesture.
+    val topPadding = (LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateTopPadding() +
+        FrostSoulTheme.spacing.micro).coerceAtLeast(0.dp)
     val bottomPadding = (LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding() + 24.dp).coerceAtLeast(0.dp)
 
     // The feed scrolls over the stationary canvas below
