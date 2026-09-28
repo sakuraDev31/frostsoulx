@@ -25,6 +25,7 @@ import coil3.request.crossfade
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -152,6 +153,23 @@ class App :
     }
 
     private fun initializeDeferredAsync() {
+        // Start BotGuard on a fresh install as well as after account changes. Previously
+        // this only happened when visitorData was already cached, leaving first playback
+        // to pay the full WebView/bootstrap latency.
+        applicationScope.launch(Dispatchers.IO) {
+            try {
+                val authState = YouTube.currentPlaybackAuthState()
+                val sessionId = authState.visitorData
+                    ?: YouTube.visitorData().getOrNull()?.also { visitorData ->
+                        dataStore.edit { settings -> settings[VisitorDataKey] = visitorData }
+                    }
+                sessionId?.let { BotGuardTokenGenerator.preWarm(it) }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                Timber.tag("BotGuardTokenGen").w(throwable, "Deferred pre-warm failed")
+            }
+        }
         applicationScope.launch(Dispatchers.IO) {
             MoriCipherRuntime
                 .refresh(force = false)
