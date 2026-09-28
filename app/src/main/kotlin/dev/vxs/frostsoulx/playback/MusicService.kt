@@ -248,8 +248,19 @@ import moe.rukamori.archivetune.moriextractor.StreamingExtractionManager
 import dev.vxs.frostsoulx.playback.core.Media3PlaybackCore
 import dev.vxs.frostsoulx.playback.core.PlaybackCoreState
 import dev.vxs.frostsoulx.playback.core.PlaybackSnapshotRepository
+import dev.vxs.frostsoulx.recommendation.IntelligenceAutoplayCoordinator
+import dev.vxs.frostsoulx.recommendation.CandidateSource
+import dev.vxs.frostsoulx.recommendation.MusicKnowledgeProvider
+import dev.vxs.frostsoulx.recommendation.RecommendationCandidate
 import dev.vxs.frostsoulx.recommendation.RecommendationBehaviorTracker
+import dev.vxs.frostsoulx.recommendation.RecommendationContext
+import dev.vxs.frostsoulx.recommendation.RecommendationQueueState
 import dev.vxs.frostsoulx.recommendation.RecommendationSignalType
+import dev.vxs.frostsoulx.recommendation.SongFeatureVector
+import dev.vxs.frostsoulx.recommendation.IntelligenceEvent
+import dev.vxs.frostsoulx.recommendation.IntelligenceEventType
+import dev.vxs.frostsoulx.recommendation.IntelligenceSnapshot
+import dev.vxs.frostsoulx.recommendation.IntelligenceTelemetryStore
 import dev.vxs.frostsoulx.playback.queues.EmptyQueue
 import dev.vxs.frostsoulx.playback.queues.ListQueue
 import dev.vxs.frostsoulx.playback.queues.Queue
@@ -341,6 +352,12 @@ class MusicService :
 
     @Inject
     lateinit var recommendationBehaviorTracker: RecommendationBehaviorTracker
+
+    @Inject
+    lateinit var musicKnowledgeProvider: MusicKnowledgeProvider
+
+    @Inject
+    lateinit var intelligenceTelemetryStore: IntelligenceTelemetryStore
 
     private lateinit var audioManager: AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -470,6 +487,7 @@ class MusicService :
     private var hideMusicVideos = false
     private var infiniteQueueJob: Job? = null
     private var infiniteQueueGeneration = 0L
+    private val intelligenceAutoplayCoordinator = IntelligenceAutoplayCoordinator()
     private val persistentStateLock = Any()
     private val persistentSaveGeneration = AtomicLong(0L)
 
@@ -528,6 +546,7 @@ class MusicService :
     val currentMediaMetadata = MutableStateFlow<dev.vxs.frostsoulx.models.MediaMetadata?>(null)
     val queueRestoreCompleted = MutableStateFlow(false)
     val infiniteQueueLoading = MutableStateFlow(false)
+    val generatedAutoplayIds = MutableStateFlow<List<String>>(emptyList())
     private val playerInitialized = MutableStateFlow(false)
     private val currentSong =
         currentMediaMetadata
@@ -4002,6 +4021,7 @@ class MusicService :
 
     fun clearAutomix() {
         autoAddedMediaIds.clear()
+        generatedAutoplayIds.value = emptyList()
     }
 
     fun onInfiniteQueueDisabled() {
@@ -4019,6 +4039,7 @@ class MusicService :
             }
         }
         autoAddedMediaIds.clear()
+        generatedAutoplayIds.value = emptyList()
         currentQueue = EmptyQueue
     }
 
@@ -4046,6 +4067,7 @@ class MusicService :
                     val knownIds =
                         (0 until player.mediaItemCount)
                             .mapTo(mutableSetOf()) { player.getMediaItemAt(it).mediaId }
+                    val explicitQueueIds = knownIds.toList()
                     val newItems = status.items.filter { knownIds.add(it.mediaId) }.toMutableList()
                     var loadedPageCount = 1
 
@@ -4067,8 +4089,114 @@ class MusicService :
                     if (generation != infiniteQueueGeneration) return@launch
 
                     if (newItems.isNotEmpty()) {
-                        player.addMediaItems(newItems)
-                        newItems.forEach { autoAddedMediaIds.add(it.mediaId) }
+                        val additionalCandidates =
+                            withContext(Dispatchers.IO) {
+                                val localSongs =
+                                    runCatching { database.homeRecommendationCandidates(limit = 96) }
+                                        .getOrDefault(emptyList())
+                                val seedArtist = currentMeta.artists.firstOrNull()?.name.orEmpty()
+                                val seedTitle = currentMeta.title
+                                val cachedKnowledge =
+                                    runCatching {
+                                        musicKnowledgeProvider.similarTracks(
+                                            artist = seedArtist,
+                                            track = seedTitle,
+                                            limit = 32,
+                                            forceRefresh = false,
+                                        )
+                                    }.getOrNull()
+                                val knowledgeKeys =
+                                    cachedKnowledge?.values.orEmpty()
+                                        .associateBy { value ->
+                                            "${value.artist.trim().lowercase()}\u0000${value.track.orEmpty().trim().lowercase()}"
+                                        }
+                                localSongs.mapNotNull { song ->
+                                    val metadata = song.toMediaMetadata()
+                                    val artist = metadata.artists.firstOrNull()?.name.orEmpty()
+                                    val key = "${artist.trim().lowercase()}\u0000${metadata.title.trim().lowercase()}"
+                                    val knowledge = knowledgeKeys[key]
+                                    RecommendationCandidate(
+                                        track = metadata,
+                                        feature = SongFeatureVector(
+                                            songId = metadata.id,
+                                            artistId = metadata.artists.firstOrNull()?.id,
+                                            albumId = metadata.album?.id,
+                                            lastFmSimilarity = knowledge?.score?.let { mapOf("lastfm" to it) }.orEmpty(),
+                                        ),
+                                        source = if (knowledge != null) CandidateSource.LastFm else CandidateSource.Library,
+                                    )
+                                }
+                            }
+                        val recentIds =
+                            (0 until player.mediaItemCount)
+                                .map { player.getMediaItemAt(it).mediaId }
+                                .takeLast(20)
+                        val now = LocalDateTime.now()
+                        val recommendationContext = RecommendationContext(
+                            hourOfDay = now.hour,
+                            dayOfWeek = now.dayOfWeek.value,
+                            isHeadphones = false,
+                            isBluetooth = false,
+                            isCharging = false,
+                            isOffline = false,
+                            currentSongId = seedMediaId,
+                            recentSongIds = recentIds,
+                            queueState = RecommendationQueueState(
+                                explicitSongIds = explicitQueueIds,
+                                generatedSongIds = autoAddedMediaIds.toList(),
+                                isLocked = playbackCore?.state?.value?.queueEditLocked == true,
+                            ),
+                            autoplayEnabled = true,
+                        )
+                        val autoplayStartedAtNs = System.nanoTime()
+                        val orderedItems =
+                            withContext(Dispatchers.Default) {
+                                intelligenceAutoplayCoordinator.orderMediaItems(
+                                    items = newItems,
+                                    context = recommendationContext,
+                                    seed = seedMediaId.hashCode().toLong(),
+                                    additionalCandidates = additionalCandidates,
+                                )
+                            }
+                        val autoplayPlan = intelligenceAutoplayCoordinator.lastPlan
+                        val telemetryEventTime = System.currentTimeMillis()
+                        listOf(
+                            IntelligenceEventType.CandidatesGenerated,
+                            IntelligenceEventType.Filtered,
+                            IntelligenceEventType.Ranked,
+                            IntelligenceEventType.SequenceOptimized,
+                            IntelligenceEventType.AutoplayPlanReady,
+                        ).forEach { type ->
+                            recommendationBehaviorTracker.record(
+                                IntelligenceEvent(
+                                    type = type,
+                                    occurredAtMs = telemetryEventTime,
+                                    context = recommendationContext,
+                                ),
+                            )
+                        }
+                        intelligenceTelemetryStore.publish(
+                            IntelligenceSnapshot(
+                                engineStatus = "ready",
+                                mode = "local-cache",
+                                recommendationMode = "autoplay",
+                                modelVersion = dev.vxs.frostsoulx.recommendation.IntelligenceModelVersion.toString(),
+                                currentTrackId = seedMediaId,
+                                hourOfDay = recommendationContext.hourOfDay,
+                                dayOfWeek = recommendationContext.dayOfWeek,
+                                candidateSourceCounts = autoplayPlan.candidateSourceCounts,
+                                filteringCounts = autoplayPlan.filteringCounts,
+                                rankedCandidates = autoplayPlan.rankedCandidates,
+                                selectedNextTrackId = autoplayPlan.appendOnlySongIds.firstOrNull(),
+                                energyTrajectory = autoplayPlan.energyTrajectory,
+                                processingDurationMs = (System.nanoTime() - autoplayStartedAtNs) / 1_000_000L,
+                                sequenceOptimizationResult = autoplayPlan.sequenceOptimizationResult,
+                                isOffline = recommendationContext.isOffline,
+                            ),
+                        )
+                        player.addMediaItems(orderedItems)
+                        orderedItems.forEach { autoAddedMediaIds.add(it.mediaId) }
+                        generatedAutoplayIds.value = synchronized(autoAddedMediaIds) { autoAddedMediaIds.toList() }
                     }
 
                     currentQueue = radioQueue
@@ -4147,21 +4275,10 @@ class MusicService :
             return
         }
         suppressAutoPlayback = false
-        val insertionIndex = if (player.mediaItemCount == 0) 0 else player.currentMediaItemIndex + 1
-        val playNextShuffleOrder =
-            if (player.shuffleModeEnabled && player.mediaItemCount > 0) {
-                buildPlayNextShuffleOrder(
-                    currentIndex = player.currentMediaItemIndex,
-                    insertionIndex = insertionIndex,
-                    insertionCount = allowedItems.size,
-                )
-            } else {
-                null
-            }
-
-        player.addMediaItems(insertionIndex, allowedItems)
-        playNextShuffleOrder?.let(localPlayer::setShuffleOrder)
-        player.prepare()
+        ensureScopesActive()
+        scope.launch(SilentHandler) {
+            playbackCore?.insertNext(allowedItems)
+        }
     }
 
     fun insertLater(items: List<MediaItem>) {
@@ -4199,6 +4316,10 @@ class MusicService :
         scope.launch(SilentHandler) {
             playbackCore?.undoLastQueueMutation()
         }
+    }
+
+    fun setQueueEditLocked(locked: Boolean) {
+        playbackCore?.setQueueEditLocked(locked)
     }
 
     fun appendSmartQueue(items: List<MediaItem>) {
@@ -4252,8 +4373,10 @@ class MusicService :
             return
         }
         suppressAutoPlayback = false
-        player.addMediaItems(allowedItems)
-        player.prepare()
+        ensureScopesActive()
+        scope.launch(SilentHandler) {
+            playbackCore?.insertLater(allowedItems)
+        }
     }
 
     fun playFromVoiceSearch(query: String) {

@@ -21,6 +21,7 @@ data class PlaybackCoreState(
     val shuffleEnabled: Boolean = false,
     val playbackSpeed: Float = 1f,
     val playbackPitch: Float = 1f,
+    val queueEditLocked: Boolean = false,
 )
 
 @Immutable

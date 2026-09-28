@@ -97,6 +97,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.flowOf
 import dev.vxs.frostsoulx.LocalDatabase
 import dev.vxs.frostsoulx.LocalPlayerConnection
 import dev.vxs.frostsoulx.R
@@ -121,6 +122,7 @@ import dev.vxs.frostsoulx.ui.component.MediaMetadataListItem
 import dev.vxs.frostsoulx.db.entities.EventWithSong
 import dev.vxs.frostsoulx.db.entities.Playlist
 import dev.vxs.frostsoulx.playback.queues.ListQueue
+import dev.vxs.frostsoulx.playback.core.PlaybackCoreState
 import dev.vxs.frostsoulx.extensions.toMediaItem
 import dev.vxs.frostsoulx.ui.component.TextFieldDialog
 import dev.vxs.frostsoulx.ui.menu.AddToPlaylistDialog
@@ -157,6 +159,9 @@ fun Queue(
     val bottomSheetPageState = LocalBottomSheetPageState.current
 
     val playerConnection = LocalPlayerConnection.current ?: return
+    val playbackCoreState by
+        (playerConnection.playbackCoreState ?: flowOf(PlaybackCoreState()))
+            .collectAsState(initial = PlaybackCoreState())
     val isPlaying by playerConnection.isPlaying.collectAsState()
     val repeatMode by playerConnection.repeatMode.collectAsState()
 
@@ -191,7 +196,11 @@ fun Queue(
     val togetherForcesLock =
         togetherSessionState is dev.vxs.frostsoulx.together.TogetherSessionState.Joined &&
             (togetherSessionState as dev.vxs.frostsoulx.together.TogetherSessionState.Joined).role is dev.vxs.frostsoulx.together.TogetherRole.Guest
-    val effectiveLocked = locked || togetherForcesLock
+    val effectiveLocked = playbackCoreState.queueEditLocked || togetherForcesLock
+
+    LaunchedEffect(locked, togetherForcesLock) {
+        playerConnection.service.setQueueEditLocked(locked || togetherForcesLock)
+    }
 
     val playerDesignStyle by rememberEnumPreference(
         key = PlayerDesignStyleKey,
@@ -321,7 +330,7 @@ fun Queue(
 
     val onRemoveWithUndo: (Timeline.Window) -> Unit = { window ->
         val index = window.firstPeriodIndex
-        playerConnection.player.removeMediaItem(index)
+        playerConnection.service.removeQueueItems(listOf(index))
         dismissJob?.cancel()
         dismissJob =
             coroutineScope.launch {
@@ -336,11 +345,7 @@ fun Queue(
                         duration = SnackbarDuration.Short,
                     )
                 if (snackbarResult == SnackbarResult.ActionPerformed) {
-                    playerConnection.player.addMediaItem(window.mediaItem)
-                    playerConnection.player.moveMediaItem(
-                        playerConnection.player.mediaItemCount - 1,
-                        index,
-                    )
+                    playerConnection.service.undoQueueMutation()
                 }
             }
     }
@@ -348,10 +353,7 @@ fun Queue(
     val onRemoveMultipleWithUndo: (List<Timeline.Window>) -> Unit = { windows ->
         if (windows.isNotEmpty()) {
             val sortedWindows = windows.sortedBy { it.firstPeriodIndex }
-            var i = 0
-            sortedWindows.forEach { window ->
-                playerConnection.player.removeMediaItem(window.firstPeriodIndex - i++)
-            }
+            playerConnection.service.removeQueueItems(sortedWindows.map { it.firstPeriodIndex })
             dismissJob?.cancel()
             dismissJob =
                 coroutineScope.launch {
@@ -373,13 +375,7 @@ fun Queue(
                             duration = SnackbarDuration.Short,
                         )
                     if (snackbarResult == SnackbarResult.ActionPerformed) {
-                        sortedWindows.forEach { window ->
-                            playerConnection.player.addMediaItem(window.mediaItem)
-                            playerConnection.player.moveMediaItem(
-                                playerConnection.player.mediaItemCount - 1,
-                                window.firstPeriodIndex,
-                            )
-                        }
+                        playerConnection.service.undoQueueMutation()
                     }
                 }
         }
@@ -811,8 +807,9 @@ fun Queue(
                     destinationIndex != null &&
                     sourceIndex != destinationIndex
                 ) {
+                    if (effectiveLocked) return@LaunchedEffect
                     if (!playerConnection.player.shuffleModeEnabled) {
-                        playerConnection.player.moveMediaItem(sourceIndex, destinationIndex)
+                        playerConnection.service.moveQueueItem(sourceIndex, destinationIndex)
                     } else {
                         playerConnection.localPlayer.setShuffleOrder(
                             DefaultShuffleOrder(
@@ -939,7 +936,9 @@ fun Queue(
                         if (togetherForcesLock) {
                             Toast.makeText(context, R.string.not_allowed, Toast.LENGTH_SHORT).show()
                         } else {
-                            locked = !locked
+                            val nextLocked = !playbackCoreState.queueEditLocked
+                            locked = nextLocked
+                            playerConnection.service.setQueueEditLocked(nextLocked)
                         }
                     },
                     onInfiniteQueueClick = {
@@ -1181,7 +1180,7 @@ fun Queue(
                         }
                     },
                     onSongMenu = { event ->
-                        playerConnection.player.addMediaItem(event.song.toMediaItem())
+                        playerConnection.service.addToQueue(listOf(event.song.toMediaItem()))
                         Toast.makeText(context, "Added to queue", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.weight(1f),

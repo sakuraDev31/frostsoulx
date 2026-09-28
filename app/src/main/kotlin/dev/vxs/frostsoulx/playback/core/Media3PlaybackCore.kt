@@ -45,6 +45,12 @@ class Media3PlaybackCore(
     val canUndoQueueMutation: Boolean
         get() = history.isNotEmpty()
 
+    fun setQueueEditLocked(locked: Boolean) {
+        if (_state.value.queueEditLocked == locked) return
+        _state.value = projectState()
+            .copy(queueEditLocked = locked)
+    }
+
     init {
         player.addListener(this)
     }
@@ -78,6 +84,7 @@ class Media3PlaybackCore(
 
     suspend fun move(fromIndex: Int, toIndex: Int): Boolean =
         mutationMutex.withLock {
+            if (_state.value.queueEditLocked) return@withLock false
             val items = currentItems()
             val result = QueueMutationPlanner.move(items, player.currentMediaItemIndex, fromIndex, toIndex)
             val token = result.undoToken ?: return@withLock false
@@ -89,6 +96,7 @@ class Media3PlaybackCore(
 
     suspend fun remove(indices: Collection<Int>): Boolean =
         mutationMutex.withLock {
+            if (_state.value.queueEditLocked) return@withLock false
             val items = currentItems()
             val result = QueueMutationPlanner.remove(items, player.currentMediaItemIndex, indices)
             val token = result.undoToken ?: return@withLock false
@@ -104,6 +112,7 @@ class Media3PlaybackCore(
 
     suspend fun undoLastQueueMutation(): Boolean =
         mutationMutex.withLock {
+            if (_state.value.queueEditLocked) return@withLock false
             val token = history.removeLastOrNull() ?: return@withLock false
             restoreQueue(token.before)
             true
@@ -201,6 +210,7 @@ class Media3PlaybackCore(
         mode: QueueInsertionMode,
     ): Boolean =
         mutationMutex.withLock {
+            if (_state.value.queueEditLocked) return@withLock false
             val existing = currentItems()
             val result = QueueMutationPlanner.insert(existing, player.currentMediaItemIndex, incoming, mode)
             val token = result.undoToken ?: return@withLock false
@@ -255,6 +265,7 @@ class Media3PlaybackCore(
             shuffleEnabled = player.shuffleModeEnabled,
             playbackSpeed = parameters.speed,
             playbackPitch = parameters.pitch,
+            queueEditLocked = _state.value.queueEditLocked,
         )
     }
 

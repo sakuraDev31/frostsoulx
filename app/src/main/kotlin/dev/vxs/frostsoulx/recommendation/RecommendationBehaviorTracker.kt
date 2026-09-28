@@ -27,6 +27,7 @@ import javax.inject.Singleton
 class RecommendationBehaviorTracker @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: MusicDatabase,
+    private val telemetryStore: IntelligenceTelemetryStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pending =
@@ -87,6 +88,20 @@ class RecommendationBehaviorTracker @Inject constructor(
         }
     }
 
+    /** Typed facade; all writes still use the existing non-blocking channel. */
+    fun record(event: IntelligenceEvent) {
+        telemetryStore.recordEvent(event)
+        val songId = event.songId ?: return
+        record(
+            songId = songId,
+            type = event.type.toRecommendationSignalType(),
+            positionMs = event.positionMs,
+            listenedMs = event.listenedMs,
+            context = event.context,
+            occurredAtMs = event.occurredAtMs,
+        )
+    }
+
     fun beginNewSession() {
         sessionId.set(System.currentTimeMillis())
     }
@@ -131,3 +146,29 @@ class RecommendationBehaviorTracker @Inject constructor(
             )
     }
 }
+
+private fun IntelligenceEventType.toRecommendationSignalType(): RecommendationSignalType =
+    when (this) {
+        IntelligenceEventType.PlayStarted -> RecommendationSignalType.Play
+        IntelligenceEventType.PlayProgress -> RecommendationSignalType.Progress
+        IntelligenceEventType.PlayCompleted -> RecommendationSignalType.Complete
+        IntelligenceEventType.SongSkipped -> RecommendationSignalType.Skip
+        IntelligenceEventType.SongLiked -> RecommendationSignalType.Favorite
+        IntelligenceEventType.SongDisliked -> RecommendationSignalType.Dislike
+        IntelligenceEventType.SongSaved -> RecommendationSignalType.Saved
+        IntelligenceEventType.SongReplayed -> RecommendationSignalType.Replay
+        IntelligenceEventType.SongAddedToPlaylist -> RecommendationSignalType.AddedToPlaylist
+        IntelligenceEventType.SongRemovedFromPlaylist -> RecommendationSignalType.RemovedFromPlaylist
+        IntelligenceEventType.SongQueued -> RecommendationSignalType.QueueInsert
+        IntelligenceEventType.SongRemovedFromQueue -> RecommendationSignalType.QueueRemove
+        IntelligenceEventType.SearchPerformed -> RecommendationSignalType.Search
+        IntelligenceEventType.RecommendationShown -> RecommendationSignalType.RecommendationShown
+        IntelligenceEventType.RecommendationPlayed -> RecommendationSignalType.RecommendationPlayed
+        IntelligenceEventType.RecommendationSkipped -> RecommendationSignalType.RecommendationSkipped
+        IntelligenceEventType.CandidatesGenerated,
+        IntelligenceEventType.Filtered,
+        IntelligenceEventType.Ranked,
+        IntelligenceEventType.SequenceOptimized,
+        IntelligenceEventType.AutoplayPlanReady,
+        -> RecommendationSignalType.RecommendationShown
+    }

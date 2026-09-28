@@ -191,6 +191,26 @@ fun DebugSettings(navController: NavController) {
                     )
                 }
 
+                item {
+                    PreferenceEntry(
+                        title = { Text("Intelligence Console") },
+                        description = "Inspect local recommendation telemetry",
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.manage_search),
+                                contentDescription = null,
+                            )
+                        },
+                        trailingContent = {
+                            Icon(
+                                painter = painterResource(R.drawable.navigate_next),
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = { navController.navigate("settings/intelligence_console") },
+                    )
+                }
+
             }
 
             AnimatedVisibility(

@@ -36,6 +36,7 @@ data class RecommendationBudget(
 
 enum class RecommendationSignalType {
     Play,
+    Progress,
     Pause,
     Resume,
     Skip,
@@ -48,6 +49,12 @@ enum class RecommendationSignalType {
     Search,
     QueueInsert,
     QueueRemove,
+    Saved,
+    AddedToPlaylist,
+    RemovedFromPlaylist,
+    RecommendationShown,
+    RecommendationPlayed,
+    RecommendationSkipped,
 }
 
 enum class TasteProfileKind {
@@ -80,7 +87,20 @@ data class RecommendationContext(
     val isBluetooth: Boolean,
     val isCharging: Boolean,
     val isOffline: Boolean,
+    val currentSongId: String? = null,
+    val recentSongIds: List<String> = emptyList(),
+    val sessionState: SessionState? = null,
+    val userProfile: UserTasteProfile? = null,
+    val temporalModel: TemporalModel? = null,
+    val queueState: RecommendationQueueState = RecommendationQueueState(),
+    val playbackPositionMs: Long = 0L,
+    val autoplayEnabled: Boolean = false,
+    val explorationLevel: Float = 0.5f,
 ) {
+    init {
+        require(playbackPositionMs >= 0L)
+        require(explorationLevel.isFinite() && explorationLevel in 0f..1f)
+    }
     companion object {
         const val HeadphonesBit = 1 shl 0
         const val BluetoothBit = 1 shl 1
@@ -108,6 +128,16 @@ data class RecommendationContext(
             (if (isCharging) ChargingBit else 0) or
             (if (isOffline) OfflineBit else 0)
 }
+
+/** Queue facts visible to recommendation code; it never owns or mutates the player queue. */
+@Immutable
+data class RecommendationQueueState(
+    val explicitSongIds: List<String> = emptyList(),
+    val generatedSongIds: List<String> = emptyList(),
+    val isLocked: Boolean = false,
+    val loopQueue: Boolean = false,
+    val loopOne: Boolean = false,
+)
 
 @Immutable
 data class RecommendationExplanation(

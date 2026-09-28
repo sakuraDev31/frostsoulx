@@ -7,8 +7,8 @@
 
 package dev.vxs.frostsoulx.recommendation
 
-import kotlin.random.Random
 import com.google.common.collect.ImmutableList
+import dev.vxs.frostsoulx.BuildConfig
 import dev.vxs.frostsoulx.db.MusicDatabase
 import dev.vxs.frostsoulx.db.entities.RecommendationFeatureEntity
 import dev.vxs.frostsoulx.db.entities.RecommendationProfileEntity
@@ -35,23 +35,33 @@ class OfflineRecommendationEngine @Inject constructor(
     private val database: MusicDatabase,
     private val topMixRepository: LibraryTopMixRepository,
     private val getTasteProfile: GetTasteProfileUseCase,
+    private val telemetryStore: IntelligenceTelemetryStore,
 ) {
     private val budget = RecommendationBudget()
+    private val modelConfig = RecommendationModelConfig()
+    private val formalRanker = ProbabilisticRecommendationRanker(modelConfig)
+    private val candidateGenerator = RecommendationCandidateGenerator()
     private val refreshMutex = Mutex()
 
     @Volatile
     private var lastMixTrackIds: Set<String> = emptySet()
     private val encoder = MetadataFeatureEncoder(budget.embeddingDimension)
     private val _lastRefresh = MutableStateFlow<RecommendationRefreshState>(RecommendationRefreshState.Idle)
+    private val _uiState = MutableStateFlow(RecommendationUiState())
+    private var lastFormalScores: Map<String, RecommendationFeatureScore> = emptyMap()
 
     val lastRefresh: StateFlow<RecommendationRefreshState> = _lastRefresh.asStateFlow()
+    val uiState: StateFlow<RecommendationUiState> = _uiState.asStateFlow()
+    val telemetry: StateFlow<IntelligenceSnapshot> = telemetryStore.snapshot
 
     suspend fun refresh(
         context: RecommendationContext,
         forceTasteRefresh: Boolean = true,
     ): RecommendationRefreshState =
         refreshMutex.withLock {
+            val startedAtNs = System.nanoTime()
             _lastRefresh.value = RecommendationRefreshState.Refreshing
+            _uiState.value = _uiState.value.copy(refreshState = RecommendationRefreshState.Refreshing, isOffline = context.isOffline)
             runCatching {
                 withContext(Dispatchers.IO) {
                     val taste = getTasteProfile(forceRefresh = forceTasteRefresh).getOrDefault(TasteProfile.Empty)
@@ -59,7 +69,10 @@ class OfflineRecommendationEngine @Inject constructor(
                         database
                             .offlineRecommendationCandidates(budget.candidateLimit)
                             .filterNot { song -> song.artists.any { artist -> artist.id in taste.avoidedArtistIds } }
-                    if (candidates.isEmpty()) return@withContext RecommendationRefreshState.Empty
+                    if (candidates.isEmpty()) {
+                        _uiState.value = _uiState.value.copy(homeMixes = emptyList())
+                        return@withContext RecommendationRefreshState.Empty
+                    }
 
                     val tracks = candidates.map { it.toMediaMetadata() }
                     // MediaMetadata.duration is seconds; signal timing (listenedMs/positionMs) is
@@ -80,9 +93,31 @@ class OfflineRecommendationEngine @Inject constructor(
                         if (taste.isUsable) candidates.associate { song -> song.id to taste.affinityOf(song) } else emptyMap()
                     val tasteWeight = if (taste.isUsable) taste.confidence * MaxTasteWeight else 0f
                     val narrowedTracks = narrowCandidates(tracks, features, profiles)
+                    val generatedHomeCandidates =
+                        candidateGenerator
+                            .generate(
+                                sources = listOf(
+                                    narrowedTracks.mapNotNull { track ->
+                                        features[track.id]?.let { feature ->
+                                            RecommendationCandidate(
+                                                track = track,
+                                                feature = SongFeatureVector(
+                                                    songId = track.id,
+                                                    artistId = track.artists.firstOrNull()?.id,
+                                                    albumId = track.album?.id,
+                                                ),
+                                                source = CandidateSource.Library,
+                                            )
+                                        }
+                                    },
+                                ),
+                                context = context,
+                                limit = budget.candidateLimit,
+                                maxPerArtist = MaxTracksPerArtist,
+                            ).map { it.track }
                     val recommendations =
                         rank(
-                            narrowedTracks,
+                            generatedHomeCandidates,
                             features,
                             signalsBySong,
                             contextSignalsBySong,
@@ -90,10 +125,21 @@ class OfflineRecommendationEngine @Inject constructor(
                             sequenceAffinity,
                             tasteAffinity,
                             tasteWeight,
+                            taste,
+                            context,
                         )
                     val mixes = buildMixes(recommendations)
                     topMixRepository.replaceTopMixes(mixes)
                     lastMixTrackIds = mixes.flatMapTo(HashSet()) { mix -> mix.tracks.map { track -> track.id } }
+                    _uiState.value = _uiState.value.copy(homeMixes = mixes)
+                    publishTelemetry(
+                        context = context,
+                        status = "ready",
+                        candidateCount = tracks.size,
+                        generatedCandidateCount = generatedHomeCandidates.size,
+                        recommendations = recommendations,
+                        processingDurationMs = (System.nanoTime() - startedAtNs) / 1_000_000L,
+                    )
                     RecommendationRefreshState.Success(
                         candidateCount = tracks.size,
                         recommendationCount = recommendations.size,
@@ -102,8 +148,68 @@ class OfflineRecommendationEngine @Inject constructor(
                 }
             }.getOrElse { error ->
                 RecommendationRefreshState.Failure(error.message ?: error.javaClass.simpleName)
-            }.also { _lastRefresh.value = it }
+            }.also {
+                _lastRefresh.value = it
+                _uiState.value = _uiState.value.copy(
+                    refreshState = it,
+                    hasError = it is RecommendationRefreshState.Failure,
+                )
+            }
         }
+
+    private fun publishTelemetry(
+        context: RecommendationContext,
+        status: String,
+        candidateCount: Int,
+        generatedCandidateCount: Int,
+        recommendations: List<OfflineRecommendation>,
+        processingDurationMs: Long,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        val ranked = recommendations.map { recommendation ->
+            val factor = lastFormalScores[recommendation.track.id]
+            IntelligenceCandidateSnapshot(
+                songId = recommendation.track.id,
+                title = recommendation.track.title,
+                artist = recommendation.track.artists.firstOrNull()?.name.orEmpty(),
+                probability = factor?.probability,
+                score = factor?.rawScore ?: recommendation.explanation.score,
+                lastFm = factor?.lastFm,
+                userAffinity = factor?.user,
+                genreCompatibility = factor?.genre,
+                moodCompatibility = factor?.mood,
+                energyTransition = factor?.energy,
+                temporalCompatibility = factor?.temporal,
+                sessionCompatibility = factor?.session,
+                novelty = factor?.novelty,
+                repetitionPenalty = factor?.repetitionPenalty,
+            )
+        }
+        telemetryStore.publish(
+            IntelligenceSnapshot(
+                engineStatus = status,
+                mode = if (context.isOffline) "offline" else "local-cache",
+                recommendationMode = "home",
+                modelVersion = IntelligenceModelVersion.toString(),
+                currentTrackId = context.currentSongId,
+                sessionId = context.sessionState?.sessionId,
+                hourOfDay = context.hourOfDay,
+                dayOfWeek = context.dayOfWeek,
+                moodDistribution = context.sessionState?.moodDistribution.orEmpty(),
+                genreDistribution = context.sessionState?.genreDistribution.orEmpty(),
+                candidateSourceCounts = mapOf("library" to generatedCandidateCount),
+                filteringCounts = mapOf("filtered" to (candidateCount - generatedCandidateCount).coerceAtLeast(0)),
+                rankedCandidates = ranked,
+                selectedNextTrackId = ranked.firstOrNull()?.songId,
+                energyTrajectory = buildList {
+                    context.sessionState?.currentEnergy?.let(::add)
+                    context.sessionState?.energyTrend?.let { trend -> add((context.sessionState?.currentEnergy ?: 0f) + trend) }
+                },
+                processingDurationMs = processingDurationMs,
+                isOffline = context.isOffline,
+            ),
+        )
+    }
 
     private suspend fun ensureFeatures(
         tracks: List<MediaMetadata>,
@@ -286,9 +392,45 @@ class OfflineRecommendationEngine @Inject constructor(
         sequenceAffinity: Map<String, Float>,
         tasteAffinity: Map<String, Float>,
         tasteWeight: Float,
+        tasteProfile: TasteProfile,
+        context: RecommendationContext,
     ): List<OfflineRecommendation> {
         val profile = profiles[TasteProfileKind.Session] ?: profiles[TasteProfileKind.Weekly] ?: profiles[TasteProfileKind.LongTerm]
             ?: return emptyList()
+        val formalScores =
+            tracks.mapNotNull { track ->
+                val feature = features[track.id] ?: return@mapNotNull null
+                val history = signalsBySong[track.id].orEmpty()
+                track.id to formalRanker.score(
+                    candidate = SongFeatureVector(
+                        songId = track.id,
+                        artistId = track.artists.firstOrNull()?.id,
+                        albumId = track.album?.id,
+                        popularity = null,
+                        interaction = InteractionStats(
+                            plays = history.count { it.isPositive() },
+                            completed = history.count { it.type == RecommendationSignalType.Complete.name },
+                            skips = history.count { it.type == RecommendationSignalType.Skip.name },
+                            replays = history.count { it.type == RecommendationSignalType.Replay.name },
+                            likes = if (track.liked) 1 else 0,
+                            lastPlayedAtMs = history.maxOfOrNull { it.occurredAtMs },
+                        ),
+                    ),
+                    user = UserTasteProfile(
+                        artistAffinity = tasteProfile.artistAffinity,
+                        songAffinity = tasteAffinity,
+                        negativeSongs = emptySet(),
+                        explorationPreference = context.explorationLevel,
+                        familiarityPreference = 1f - context.explorationLevel,
+                    ),
+                    session = context.sessionState,
+                    temporal = context.temporalModel,
+                    context = context,
+                    nowMs = System.currentTimeMillis(),
+                    recentSongIds = context.recentSongIds.toSet() + lastMixTrackIds,
+                )
+            }.toMap()
+        lastFormalScores = formalScores
         val ranked =
             tracks.mapNotNull { track ->
                 val feature = features[track.id] ?: return@mapNotNull null
@@ -314,16 +456,8 @@ class OfflineRecommendationEngine @Inject constructor(
                 // Without any variation every refresh returned the identical mixes. A little jitter
                 // plus a nudge against last time's tracks lets near-ties rotate, while strong taste
                 // matches still win.
-                val variety = Random.nextFloat() * ExplorationJitter
-                val repeatPenalty = if (track.id in lastMixTrackIds) RepeatExposurePenalty else 0f
-                val score =
-                    variety - repeatPenalty +
-                        (similarity * 0.38f) +
-                        (novelty * 0.14f) +
-                        (contextScore * 0.10f) +
-                        (replayProbability * 0.18f) +
-                        (sequence * 0.20f) -
-                        (skipProbability * 0.26f)
+                val formalScore = formalScores[track.id] ?: return@mapNotNull null
+                val score = formalScore.rawScore
                 val shelf =
                     when {
                         track.liked && history.size <= 2 -> RecommendationShelfType.ForgottenGems
@@ -338,9 +472,9 @@ class OfflineRecommendationEngine @Inject constructor(
                     explanation =
                         RecommendationExplanation(
                             score = score,
-                            similarity = similarity,
-                            novelty = novelty,
-                            context = contextScore,
+                            similarity = formalScore.user,
+                            novelty = formalScore.novelty,
+                            context = formalScore.temporal,
                             replayProbability = replayProbability,
                             skipProbability = skipProbability,
                             reason = shelf.description,
@@ -364,6 +498,9 @@ class OfflineRecommendationEngine @Inject constructor(
             }
         }
     }
+
+    private fun stableJitter(songId: String): Float =
+        ((songId.hashCode() and Int.MAX_VALUE) % 10_000) / 10_000f
 
     private fun buildMixes(recommendations: List<OfflineRecommendation>): List<GeneratedLibraryTopMix> {
         val byShelf = recommendations.groupBy { it.shelf }
@@ -477,3 +614,10 @@ sealed interface RecommendationRefreshState {
         val detail: String,
     ) : RecommendationRefreshState
 }
+
+data class RecommendationUiState(
+    val refreshState: RecommendationRefreshState = RecommendationRefreshState.Idle,
+    val homeMixes: List<GeneratedLibraryTopMix> = emptyList(),
+    val isOffline: Boolean = false,
+    val hasError: Boolean = false,
+)

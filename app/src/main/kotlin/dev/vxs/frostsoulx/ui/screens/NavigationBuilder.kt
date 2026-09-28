@@ -67,6 +67,7 @@ import dev.vxs.frostsoulx.ui.screens.settings.HiddenPlaylistsScreen
 import dev.vxs.frostsoulx.ui.screens.settings.IconScreen
 import dev.vxs.frostsoulx.ui.screens.settings.IntegrationScreen
 import dev.vxs.frostsoulx.ui.screens.settings.InternetSettings
+import dev.vxs.frostsoulx.ui.screens.settings.IntelligenceConsoleScreen
 import dev.vxs.frostsoulx.ui.screens.settings.LastFMSettings
 import dev.vxs.frostsoulx.ui.screens.settings.LogcatScreen
 import dev.vxs.frostsoulx.ui.screens.settings.LyricsAnimationSettings
@@ -453,6 +454,11 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("settings/logcat") {
         FrostSoulSettingsPage { LogcatScreen(navController) }
+    }
+    if (BuildConfig.DEBUG) {
+        composable("settings/intelligence_console") {
+            FrostSoulSettingsPage { IntelligenceConsoleScreen(navController) }
+        }
     }
     if (BuildConfig.UPDATER_AVAILABLE) {
         composable("settings/update") {

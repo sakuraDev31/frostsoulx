@@ -51,6 +51,7 @@ import dev.vxs.frostsoulx.db.entities.PlaylistSongMap
 import dev.vxs.frostsoulx.db.entities.PlaylistTagMap
 import dev.vxs.frostsoulx.db.entities.RelatedSongMap
 import dev.vxs.frostsoulx.db.entities.RecommendationFeatureEntity
+import dev.vxs.frostsoulx.db.entities.RecommendationKnowledgeEntity
 import dev.vxs.frostsoulx.db.entities.RecommendationProfileEntity
 import dev.vxs.frostsoulx.db.entities.RecommendationSignalEntity
 import dev.vxs.frostsoulx.db.entities.SearchHistory
@@ -1604,6 +1605,24 @@ interface DatabaseDao {
 
     @Query("SELECT * FROM recommendation_profile WHERE profile = :profile LIMIT 1")
     suspend fun recommendationProfile(profile: String): RecommendationProfileEntity?
+    @Query(
+        """
+        SELECT * FROM recommendation_knowledge
+        WHERE provider = :provider AND knowledgeType = :knowledgeType AND lookupKey = :lookupKey
+        LIMIT 1
+        """,
+    )
+    suspend fun recommendationKnowledge(
+        provider: String,
+        knowledgeType: String,
+        lookupKey: String,
+    ): RecommendationKnowledgeEntity?
+
+    @Upsert
+    suspend fun upsertRecommendationKnowledge(entry: RecommendationKnowledgeEntity)
+
+    @Query("DELETE FROM recommendation_knowledge WHERE expiresAtMs < :nowMs")
+    suspend fun pruneRecommendationKnowledge(nowMs: Long): Int
 
     @Transaction
     @Query("SELECT * FROM search_history WHERE `query` LIKE :query || '%' ORDER BY id DESC")

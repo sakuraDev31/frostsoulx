@@ -258,7 +258,7 @@ internal fun FrostSoulPlayerAdapter(
                     val expected = queueWindows.getOrNull(index)?.mediaItem
                     if (expected != null && index < playerConnection.player.mediaItemCount &&
                         playerConnection.player.getMediaItemAt(index).mediaId == expected.mediaId) {
-                        playerConnection.player.removeMediaItem(index)
+                        playerConnection.service.removeQueueItems(listOf(index))
                     }
                 },
                 onToggleQueueLike = { index ->

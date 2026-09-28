@@ -27,6 +27,9 @@ import dev.vxs.frostsoulx.db.InternalDatabase
 import dev.vxs.frostsoulx.db.MusicDatabase
 import dev.vxs.frostsoulx.playback.core.FilePlaybackSnapshotRepository
 import dev.vxs.frostsoulx.playback.core.PlaybackSnapshotRepository
+import dev.vxs.frostsoulx.recommendation.LastFmKnowledgeProvider
+import dev.vxs.frostsoulx.recommendation.MusicKnowledgeProvider
+import dev.vxs.frostsoulx.recommendation.IntelligenceTelemetryStore
 import dev.vxs.frostsoulx.storage.StorageFolderKind
 import dev.vxs.frostsoulx.storage.StorageLocationRepository
 import dev.vxs.frostsoulx.utils.dataStore
@@ -180,6 +183,16 @@ object AppModule {
     fun providePlaybackSnapshotRepository(
         @ApplicationContext context: Context,
     ): PlaybackSnapshotRepository = FilePlaybackSnapshotRepository(context)
+
+    @Singleton
+    @Provides
+    fun provideMusicKnowledgeProvider(
+        provider: LastFmKnowledgeProvider,
+    ): MusicKnowledgeProvider = provider
+
+    @Singleton
+    @Provides
+    fun provideIntelligenceTelemetryStore(): IntelligenceTelemetryStore = IntelligenceTelemetryStore()
 
     @Singleton
     @Provides
