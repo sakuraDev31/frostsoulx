@@ -79,6 +79,15 @@ fun HomeScreen(
         }
     }
 
+    // Home owns two list states (For You and mood-specific). Reset the active one
+    // on a real Home-route re-entry; otherwise the shared header can expand over a
+    // previously scrolled list and make the top chips appear to have vanished.
+    LaunchedEffect(backStackEntry?.destination?.route) {
+        if (backStackEntry?.destination?.route == Screens.Home.route) {
+            lazyListState.scrollToItem(0)
+        }
+    }
+
     LaunchedEffect(uiState?.homePage?.continuation, uiState?.selectedChip, uiState?.isChipLoading, uiState?.chipLoadFailed, uiState?.isRefreshing) {
         if (uiState?.isChipLoading == true || uiState?.chipLoadFailed == true || uiState?.isRefreshing == true) return@LaunchedEffect
         val continuation = uiState?.homePage?.continuation ?: return@LaunchedEffect
