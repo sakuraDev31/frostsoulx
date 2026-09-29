@@ -405,7 +405,6 @@ fun LyricsMenu(
                 value = TranslatorLanguages.load(context)
             }
         }
-        var sourceExpanded by remember { mutableStateOf(false) }
         var languageExpanded by remember { mutableStateOf(false) }
         var selectedSource by rememberSaveable {
             mutableStateOf(
@@ -484,58 +483,71 @@ fun LyricsMenu(
 
                         Spacer(Modifier.height(12.dp))
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = stringResource(R.string.source),
-                                modifier = Modifier.width(96.dp),
-                            )
-
-                            ExposedDropdownMenuBox(
-                                expanded = sourceExpanded,
-                                onExpandedChange = {
-                                    if (!isTranslationInProgress) sourceExpanded = it
-                                },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                OutlinedTextField(
-                                    value =
-                                        when (selectedSource) {
-                                            LyricsTranslationSource.AI_TRANSLATION -> stringResource(R.string.ai_translation_menu)
-                                            LyricsTranslationSource.TRANSLATION -> stringResource(R.string.translate)
-                                        },
-                                    onValueChange = {},
-                                    enabled = !isTranslationInProgress,
-                                    readOnly = true,
-                                    singleLine = true,
-                                    trailingIcon = {
-                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = sourceExpanded)
+                        Text(
+                            text = "Translation source",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = AlertDialogDefaults.titleContentColor,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { selectedSource = LyricsTranslationSource.AI_TRANSLATION },
+                            enabled = isAiTranslationEnabled && !isTranslationInProgress,
+                            border =
+                                BorderStroke(
+                                    1.dp,
+                                    if (selectedSource == LyricsTranslationSource.AI_TRANSLATION) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.outline
                                     },
-                                    modifier =
-                                        Modifier
-                                            .menuAnchor()
-                                            .fillMaxWidth(),
+                                ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            modifier = Modifier.fillMaxWidth().animateContentSize(),
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = stringResource(R.string.ai_translation_menu),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    textAlign = TextAlign.Start,
                                 )
-
-                                ExposedDropdownMenu(
-                                    expanded = sourceExpanded,
-                                    onDismissRequest = { sourceExpanded = false },
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.ai_translation_menu)) },
-                                        enabled = isAiTranslationEnabled,
-                                        onClick = {
-                                            selectedSource = LyricsTranslationSource.AI_TRANSLATION
-                                            sourceExpanded = false
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.translate)) },
-                                        onClick = {
-                                            selectedSource = LyricsTranslationSource.TRANSLATION
-                                            sourceExpanded = false
-                                        },
-                                    )
-                                }
+                                Text(
+                                    text = "Uses your configured AI provider for more context-aware lyrics.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Start,
+                                    modifier = Modifier.padding(top = 3.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { selectedSource = LyricsTranslationSource.TRANSLATION },
+                            enabled = !isTranslationInProgress,
+                            border =
+                                BorderStroke(
+                                    1.dp,
+                                    if (selectedSource == LyricsTranslationSource.TRANSLATION) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.outline
+                                    },
+                                ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            modifier = Modifier.fillMaxWidth().animateContentSize(),
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = "Translate",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    textAlign = TextAlign.Start,
+                                )
+                                Text(
+                                    text = "Uses the standard fast translator and does not require an AI key.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Start,
+                                    modifier = Modifier.padding(top = 3.dp),
+                                )
                             }
                         }
 
@@ -657,7 +669,7 @@ fun LyricsMenu(
                                                     viewModel.updateLyrics(
                                                         mediaMetadata = mediaMetadataProvider(),
                                                         lyrics = translatedLyrics,
-                                                        source = LyricsEntity.Source.AI_TRANSLATION,
+                                                        source = LyricsEntity.Source.TRANSLATION,
                                                     )
                                                     showTranslateDialog = false
                                                 } catch (e: CancellationException) {

@@ -224,6 +224,7 @@ class LyricsMenuViewModel
                         -> LyricsUtils.lyricsOrNotFound(lyrics)
 
                         LyricsEntity.Source.USER_EDIT,
+                        LyricsEntity.Source.TRANSLATION,
                         LyricsEntity.Source.AI_TRANSLATION,
                         -> lyrics
                     }

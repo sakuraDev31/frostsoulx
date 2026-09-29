@@ -73,6 +73,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1571,12 +1572,13 @@ class MainActivity : ComponentActivity() {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         // app icon
                                                         Image(
-                                                            painter = painterResource(R.mipmap.ic_launcher_foreground),
+                                                            painter = painterResource(R.mipmap.ic_launcher_round),
                                                             contentDescription = null,
-                                                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                                             modifier =
                                                                 Modifier
                                                                     .size(35.dp)
+                                                                    .clip(CircleShape)
                                                                     .padding(end = 3.dp),
                                                         )
                                                         Text(

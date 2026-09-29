@@ -36,6 +36,7 @@ data class LyricsEntity(
         EMBEDDED("EMBEDDED"),
         USER_SELECTION("USER_SELECTION"),
         USER_EDIT("USER_EDIT"),
+        TRANSLATION("TRANSLATION"),
         AI_TRANSLATION("AI_TRANSLATION"),
     }
 }
