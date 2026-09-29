@@ -1572,7 +1572,7 @@ class MainActivity : ComponentActivity() {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         // app icon
                                                         Image(
-                                                            painter = painterResource(R.mipmap.ic_launcher_round),
+                                                            painter = painterResource(R.mipmap.ic_launcher_foreground),
                                                             contentDescription = null,
                                                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                                             modifier =

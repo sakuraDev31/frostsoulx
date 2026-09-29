@@ -402,7 +402,7 @@ fun LyricsMenu(
 
         val languages by produceState(initialValue = emptyList<TranslatorLang>()) {
             withContext(Dispatchers.IO) {
-                value = TranslatorLanguages.load(context)
+                value = runCatching { TranslatorLanguages.load(context) }.getOrDefault(emptyList())
             }
         }
         var languageExpanded by remember { mutableStateOf(false) }
