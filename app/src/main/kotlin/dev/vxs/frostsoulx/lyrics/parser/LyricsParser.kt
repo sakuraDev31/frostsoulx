@@ -19,16 +19,12 @@ object LyricsParser {
     private val yrcLine = Regex("""\[(\d{1,10}),(\d{1,10})](.*)""")
     private val yrcWord = Regex("""\((\d{1,10}),(\d{1,10})(?:,\d{1,10})?\)""")
     private val offset = Regex("""(?im)^\[offset:([+-]?\d+)]\s*$""")
-    private val ttmlParagraph =
-        Regex(
-            """<p(?:\s+[^>]*?)?(?:\s+begin=[\"']([^\"']+)[\"'])?(?:\s+[^>]*?)?(?:\s+end=[\"']([^\"']+)[\"'])?[^>]*>(.*?)</p>""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-        )
-    private val ttmlSpan =
-        Regex(
-            """<span(?:\s+[^>]*?)?(?:\s+begin=[\"']([^\"']+)[\"'])?(?:\s+[^>]*?)?(?:\s+end=[\"']([^\"']+)[\"'])?[^>]*>(.*?)</span>""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-        )
+    // Capture the complete attribute block first. The previous expression mixed
+    // catch-all groups with optional begin/end groups, so attribute order could make
+    // begin/end silently null and force the line onto the synthetic fallback clock.
+    private val ttmlParagraph = Regex("""<p\b([^>]*)>(.*?)</p>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    private val ttmlSpan = Regex("""<span\b([^>]*)>(.*?)</span>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    private val ttmlAttribute = Regex("""\b(begin|end)\s*=\s*[\"']([^\"']+)[\"']""", RegexOption.IGNORE_CASE)
     private val xmlTags = Regex("""<[^>]+>""")
     private val metadataLine = Regex("""^\[(ar|al|ti|by|re|ve|length):""", RegexOption.IGNORE_CASE)
 
@@ -132,15 +128,17 @@ object LyricsParser {
     private fun parseTtml(text: String): ParsedLyricsTrack {
         val lines =
             ttmlParagraph.findAll(text).mapIndexedNotNull { index, match ->
-                val start = parseTtmlClock(match.groupValues[1]) ?: index * DefaultLineDurationMs
-                val end = parseTtmlClock(match.groupValues[2]) ?: start + DefaultLineDurationMs
-                val body = match.groupValues[3]
+                val attributes = match.groupValues[1]
+                val start = parseTtmlAttribute(attributes, "begin") ?: index * DefaultLineDurationMs
+                val end = parseTtmlAttribute(attributes, "end") ?: start + DefaultLineDurationMs
+                val body = match.groupValues[2]
                 val words =
                     ttmlSpan.findAll(body).mapNotNull { span ->
-                        val wordStart = parseTtmlClock(span.groupValues[1]) ?: return@mapNotNull null
-                        val wordEnd = parseTtmlClock(span.groupValues[2]) ?: wordStart + MinimumWordDurationMs
+                        val spanAttributes = span.groupValues[1]
+                        val wordStart = parseTtmlAttribute(spanAttributes, "begin") ?: return@mapNotNull null
+                        val wordEnd = parseTtmlAttribute(spanAttributes, "end") ?: wordStart + MinimumWordDurationMs
                         LyricsWord(
-                            text = stripXml(span.groupValues[3]),
+                            text = stripXml(span.groupValues[2]),
                             startMs = wordStart,
                             endMs = wordEnd.coerceAtLeast(wordStart + MinimumWordDurationMs),
                         )
@@ -251,6 +249,15 @@ object LyricsParser {
             return hour * 3_600_000L + minute * 60_000L + (seconds * 1_000.0).toLong()
         }
         return null
+    }
+
+    private fun parseTtmlAttribute(attributes: String, name: String): Long? {
+        val value = ttmlAttribute.findAll(attributes)
+            .firstOrNull { it.groupValues[1].equals(name, ignoreCase = true) }
+            ?.groupValues
+            ?.getOrNull(2)
+            ?: return null
+        return parseTtmlClock(value)
     }
 
     private fun stripXml(value: String): String =
