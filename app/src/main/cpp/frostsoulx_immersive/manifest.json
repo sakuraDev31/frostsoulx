@@ -1,0 +1,28 @@
+{
+  "id": "frostsoulx.frostsoulx-audio-engine",
+  "name": "FrostSoulX Audio Engine",
+  "version": "1.0.0",
+  "api": 1,
+  "description": "Native FrostSoulX HOA/HRTF spatial engine with room simulation and safety limiting.",
+  "entry": "libfrostsoulx_immersive_audio.so",
+  "preload": [],
+  "params": [
+    { "id": "enabled", "label": "Engine enabled", "group": "Engine", "type": "toggle", "default": 1 },
+    { "id": "spatial_blend", "label": "Spatial blend", "group": "Spatial", "type": "slider", "min": 0, "max": 1, "default": 1, "step": 0.01 },
+    { "id": "stereo_width", "label": "Stereo width", "group": "Spatial", "type": "slider", "min": 0, "max": 1, "default": 0.5, "step": 0.01 },
+    { "id": "head_yaw", "label": "Head yaw", "group": "Head tracking", "type": "slider", "min": -180, "max": 180, "default": 0, "step": 0.1, "unit": "deg" },
+    { "id": "head_pitch", "label": "Head pitch", "group": "Head tracking", "type": "slider", "min": -90, "max": 90, "default": 0, "step": 0.1, "unit": "deg" },
+    { "id": "head_roll", "label": "Head roll", "group": "Head tracking", "type": "slider", "min": -180, "max": 180, "default": 0, "step": 0.1, "unit": "deg" },
+    { "id": "room_preset", "label": "Room preset", "group": "Room", "type": "choice", "options": ["Off", "Small room", "Studio", "Concert hall", "Cathedral", "Subway"], "default": 0 },
+    { "id": "room_mix", "label": "Room mix", "group": "Room", "type": "slider", "min": 0, "max": 1, "default": 0, "step": 0.01 },
+    { "id": "reflection_amount", "label": "Reflection amount", "group": "Room", "type": "slider", "min": 0, "max": 1, "default": 0.28, "step": 0.01 },
+    { "id": "reverb_time", "label": "Reverb time", "group": "Room", "type": "slider", "min": 0.2, "max": 8, "default": 1.35, "step": 0.05, "unit": "s" },
+    { "id": "room_size", "label": "Room size", "group": "Room", "type": "slider", "min": 0, "max": 1, "default": 0.5, "step": 0.01 },
+    { "id": "dampening", "label": "Dampening", "group": "Room", "type": "slider", "min": 0, "max": 1, "default": 0.5, "step": 0.01 }
+  ],
+  "presets": [
+    { "name": "Native dry", "values": { "enabled": 1, "spatial_blend": 1, "room_preset": 0, "room_mix": 0 } },
+    { "name": "Studio room", "values": { "enabled": 1, "spatial_blend": 1, "room_preset": 2, "room_mix": 0.18, "reflection_amount": 0.28, "reverb_time": 1.35 } },
+    { "name": "Concert hall", "values": { "enabled": 1, "spatial_blend": 1, "room_preset": 3, "room_mix": 0.35, "reflection_amount": 0.4, "reverb_time": 2.5 } }
+  ]
+}

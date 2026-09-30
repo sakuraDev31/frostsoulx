@@ -258,6 +258,12 @@ enum class ImmersiveRoomPreset(val nativeValue: Int, val label: String) {
     CATHEDRAL(4, "Cathedral"),
     SUBWAY(5, "Subway"),
     CLOSED_CAR(6, "Closed car"),
+    MEDIUM_HALL(7, "Medium hall"),
+    SUBWAY_PLATFORM(8, "Subway platform"),
+    LONG_TUNNEL(9, "Long tunnel"),
+    OPEN_ROAD(10, "Open road"),
+    CAVE(11, "Cave"),
+    STADIUM(12, "Stadium"),
     ;
 
     companion object {

@@ -57,3 +57,19 @@ target_compile_options(frostsoulx_immersive_jni PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 target_link_libraries(frostsoulx_immersive_jni PRIVATE
     frostsoulx_immersive_engine log)
+
+add_library(frostsoulx_audio_plugin SHARED
+    ${FROSTSOULX_IMMERSIVE_ROOT}/src/ae_plugin.cpp)
+set_target_properties(frostsoulx_audio_plugin PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "libfrostsoulx_immersive_audio"
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON)
+target_include_directories(frostsoulx_audio_plugin PRIVATE
+    ${FROSTSOULX_IMMERSIVE_ROOT}/engine-sdk
+    ${FROSTSOULX_IMMERSIVE_INCLUDE_DIR})
+target_link_libraries(frostsoulx_audio_plugin PRIVATE
+    frostsoulx_immersive_engine)
+target_compile_features(frostsoulx_audio_plugin PUBLIC cxx_std_17)
+target_compile_options(frostsoulx_audio_plugin PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)

@@ -487,6 +487,54 @@ fun StereoSurroundScreen(navController: NavController) {
                                     reverbTimePreference.value = 0.6f
                                     roomSizePreference.value = 0.25f
                                 }
+                                ImmersiveRoomPreset.MEDIUM_HALL -> {
+                                    draftRoomMix = 0.26f
+                                    draftReverbTime = 2.1f
+                                    draftRoomSize = 0.65f
+                                    roomMixPreference.value = 0.26f
+                                    reverbTimePreference.value = 2.1f
+                                    roomSizePreference.value = 0.65f
+                                }
+                                ImmersiveRoomPreset.SUBWAY_PLATFORM -> {
+                                    draftRoomMix = 0.34f
+                                    draftReverbTime = 2.8f
+                                    draftRoomSize = 0.80f
+                                    roomMixPreference.value = 0.34f
+                                    reverbTimePreference.value = 2.8f
+                                    roomSizePreference.value = 0.80f
+                                }
+                                ImmersiveRoomPreset.LONG_TUNNEL -> {
+                                    draftRoomMix = 0.38f
+                                    draftReverbTime = 5.5f
+                                    draftRoomSize = 0.95f
+                                    roomMixPreference.value = 0.38f
+                                    reverbTimePreference.value = 5.5f
+                                    roomSizePreference.value = 0.95f
+                                }
+                                ImmersiveRoomPreset.OPEN_ROAD -> {
+                                    draftRoomMix = 0.10f
+                                    draftReverbTime = 0.2f
+                                    draftRoomSize = 0.40f
+                                    roomMixPreference.value = 0.10f
+                                    reverbTimePreference.value = 0.2f
+                                    roomSizePreference.value = 0.40f
+                                }
+                                ImmersiveRoomPreset.CAVE -> {
+                                    draftRoomMix = 0.36f
+                                    draftReverbTime = 3.8f
+                                    draftRoomSize = 0.85f
+                                    roomMixPreference.value = 0.36f
+                                    reverbTimePreference.value = 3.8f
+                                    roomSizePreference.value = 0.85f
+                                }
+                                ImmersiveRoomPreset.STADIUM -> {
+                                    draftRoomMix = 0.42f
+                                    draftReverbTime = 4.2f
+                                    draftRoomSize = 1.0f
+                                    roomMixPreference.value = 0.42f
+                                    reverbTimePreference.value = 4.2f
+                                    roomSizePreference.value = 1.0f
+                                }
                             }
                         },
                         onRoomMixChange = { draftRoomMix = it; roomMixPreference.value = it; ImmersiveAudioRuntime.setRoomMix(it) },
@@ -1324,6 +1372,12 @@ private fun AcousticPresetCard(
                         ImmersiveRoomPreset.CATHEDRAL -> "4.80s T60"
                         ImmersiveRoomPreset.SUBWAY -> "2.40s T60"
                         ImmersiveRoomPreset.CLOSED_CAR -> "0.60s T60"
+                        ImmersiveRoomPreset.MEDIUM_HALL -> "2.10s T60"
+                        ImmersiveRoomPreset.SUBWAY_PLATFORM -> "2.80s T60"
+                        ImmersiveRoomPreset.LONG_TUNNEL -> "5.50s T60"
+                        ImmersiveRoomPreset.OPEN_ROAD -> "0.20s T60"
+                        ImmersiveRoomPreset.CAVE -> "3.80s T60"
+                        ImmersiveRoomPreset.STADIUM -> "4.20s T60"
                     },
                     color = if (selected) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
                     fontSize = 10.sp,
@@ -1341,6 +1395,12 @@ private fun AcousticPresetCard(
                     ImmersiveRoomPreset.CATHEDRAL -> "Monumental space\nethereal sustain"
                     ImmersiveRoomPreset.SUBWAY -> "Reflective tunnel\nhigh reflections"
                     ImmersiveRoomPreset.CLOSED_CAR -> "Cabin enclosure\nfront/rear focus"
+                    ImmersiveRoomPreset.MEDIUM_HALL -> "Performance hall\nbalanced warmth"
+                    ImmersiveRoomPreset.SUBWAY_PLATFORM -> "Vaulted station\nstone reflections"
+                    ImmersiveRoomPreset.LONG_TUNNEL -> "Corridor tube\ndeep resonance"
+                    ImmersiveRoomPreset.OPEN_ROAD -> "Open expanse\nground reflection"
+                    ImmersiveRoomPreset.CAVE -> "Subterranean rock\ndiffuse scatter"
+                    ImmersiveRoomPreset.STADIUM -> "Grand arena\nvast perimeter"
                 },
                 color = FrostSoulTheme.colors.onSurfaceMuted,
                 fontSize = 10.5.sp,

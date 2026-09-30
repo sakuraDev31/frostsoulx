@@ -256,6 +256,24 @@ void applyPhysicalPreset(Handle& handle, int preset) noexcept {
         case 6:
             handle.engine.setSpacePreset(Preset::ClosedCar);
             break;
+        case 7:
+            handle.engine.setSpacePreset(Preset::MediumHall);
+            break;
+        case 8:
+            handle.engine.setSpacePreset(Preset::SubwayPlatform);
+            break;
+        case 9:
+            handle.engine.setSpacePreset(Preset::LongTunnel);
+            break;
+        case 10:
+            handle.engine.setSpacePreset(Preset::OpenRoad);
+            break;
+        case 11:
+            handle.engine.setSpacePreset(Preset::Cave);
+            break;
+        case 12:
+            handle.engine.setSpacePreset(Preset::Stadium);
+            break;
         case 0:
         default:
             handle.engine.setSpacePreset(Preset::Anechoic);
