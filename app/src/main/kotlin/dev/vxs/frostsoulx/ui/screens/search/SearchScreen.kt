@@ -341,7 +341,7 @@ private fun SearchEntryField(
     pureBlack: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val shape = CircleShape
+    val shape = RoundedCornerShape(12.dp)
     val searchSurface = if (pureBlack) SearchTheme.SearchBarBackground else FrostSoulTheme.colors.surfaceRaised
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -349,11 +349,11 @@ private fun SearchEntryField(
             modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .height(48.dp)
+                .height(46.dp)
                 .clip(shape)
                 .background(searchSurface)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 14.dp),
     ) {
         FrostSoulIcon(
             painter = painterResource(R.drawable.search),

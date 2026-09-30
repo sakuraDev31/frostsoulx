@@ -49,6 +49,7 @@ import dev.vxs.frostsoulx.db.entities.*
 import dev.vxs.frostsoulx.extensions.filterBlockedArtists
 import dev.vxs.frostsoulx.extensions.toEnum
 import dev.vxs.frostsoulx.home.HomeAction
+import dev.vxs.frostsoulx.home.HomePageCache
 import dev.vxs.frostsoulx.home.HomePresentationPreferences
 import dev.vxs.frostsoulx.home.HomeScreenState
 import dev.vxs.frostsoulx.home.HomeUiState
@@ -442,9 +443,9 @@ class HomeViewModel
 
         private fun filterHomeChips(chips: List<HomePage.Chip>?): List<HomePage.Chip>? =
             chips?.filter {
-                !it.endpoint?.params.isNullOrBlank() &&
+                (!it.endpoint?.params.isNullOrBlank() || !it.endpoint?.browseId.isNullOrBlank()) &&
                     !it.title.contains("podcasts", ignoreCase = true)
-            }?.distinctBy { it.endpoint }
+            }?.distinctBy { it.title }
 
         private enum class HomeCandidateSource {
             HISTORY,
@@ -747,6 +748,20 @@ class HomeViewModel
 
             try {
                 recommendationJob?.cancel()
+
+                // Load cached home page immediately so offline mode shows chips and shelves without delay
+                if (homePage.value == null) {
+                    val cachedPage = HomePageCache.load(context)
+                    if (cachedPage != null && homePage.value == null) {
+                        withContext(Dispatchers.Main.immediate) {
+                            if (homePage.value == null) {
+                                if (selectedChip.value == null) homePage.value = cachedPage
+                                else previousHomePage.value = cachedPage
+                            }
+                        }
+                    }
+                }
+
                 coroutineScope {
                     // Cached/local ranking must not wait for filter downloads or YouTube.
                     launch { loadHistoryRecommendations(includeRemote = false, refreshTaste = refreshTaste) }
@@ -768,7 +783,8 @@ class HomeViewModel
                             if (page != null) {
                                 if (selectedChip.value == null) homePage.value = page
                                 else previousHomePage.value = page
-                            } else {
+                                HomePageCache.save(context, page)
+                            } else if (homePage.value == null) {
                                 loadError.value = R.string.error_unknown
                             }
                         }
@@ -798,7 +814,9 @@ class HomeViewModel
                 throw e
             } catch (e: Exception) {
                 reportException(e)
-                loadError.value = R.string.error_unknown
+                if (homePage.value == null) {
+                    loadError.value = R.string.error_unknown
+                }
             } finally {
                 isInitialLoadComplete.value = true
                 isLoading.value = false
@@ -1185,11 +1203,19 @@ class HomeViewModel
                     currentSession = sessionSignals.orEmpty(),
                     previousSession = previousHomeSessionSignals,
                 ),
+                limit = safeChips.orEmpty().size.coerceAtLeast(5),
             )
             if (sessionSignals != null) previousHomeSessionSignals = sessionSignals
             val chipsByTitle = safeChips.orEmpty().associateBy { it.title.trim().lowercase() }
-            val plannedChips = chipScores.mapNotNull { chipsByTitle[it.title.trim().lowercase()] }
-                .ifEmpty { safeChips.orEmpty() }
+            val plannedChips = buildList {
+                val prioritized = chipScores.mapNotNull { chipsByTitle[it.title.trim().lowercase()] }
+                addAll(prioritized)
+                safeChips.orEmpty().forEach { chip ->
+                    if (none { it.title.equals(chip.title, ignoreCase = true) }) {
+                        add(chip)
+                    }
+                }
+            }.ifEmpty { safeChips.orEmpty() }
             val sectionPlan = HomeIntelligencePlanner.planSections(
                 safeSections.mapIndexed { sectionIndex, section ->
                     val relatedChip = chipScores.firstOrNull { score ->
@@ -1198,10 +1224,9 @@ class HomeViewModel
                     HomeSectionCandidate(
                         id = section.endpoint?.browseId ?: section.title,
                         title = section.title,
-                        // A browse id prefix is not a reliable source identity: many unrelated
-                        // shelves share the same prefix and would otherwise be suppressed as
-                        // duplicates by the diversity planner.
-                        source = section.endpoint?.browseId ?: "home_section_$sectionIndex",
+                        // Avoid grouping all shelves as "FEmusic_home" which causes the planner
+                        // to suppress shelves after 2 sections as duplicates.
+                        source = section.endpoint?.browseId?.takeIf { it != "FEmusic_home" } ?: "home_section_$sectionIndex",
                         itemCount = section.items.size,
                         longTermAffinity = relatedChip?.longTerm ?: profile?.confidence ?: 0.5f,
                         currentSessionCompatibility = relatedChip?.currentSession ?: 0.5f,
@@ -1224,8 +1249,16 @@ class HomeViewModel
                     homeContentScores = scoreBySection,
                 ),
             )
-            val plannedSections = sectionPlan.selected.mapNotNull { planned ->
-                safeSections.firstOrNull { it.title == planned.title }
+            val plannedSections = buildList {
+                val prioritized = sectionPlan.selected.mapNotNull { planned ->
+                    safeSections.firstOrNull { it.title == planned.title }
+                }
+                addAll(prioritized)
+                safeSections.forEach { section ->
+                    if (none { it.title == section.title }) {
+                        add(section)
+                    }
+                }
             }.ifEmpty { safeSections }
             return page.copy(chips = plannedChips, sections = plannedSections)
         }
@@ -1245,8 +1278,12 @@ class HomeViewModel
                     } ?: return@launch
                     currentCoroutineContext().ensureActive()
                     if (generation != pageGeneration || homePage.value !== page) return@launch
-                    homePage.value = nextPage.copy(sections = page.sections + nextPage.sections)
+                    val combinedPage = nextPage.copy(sections = page.sections + nextPage.sections)
+                    homePage.value = combinedPage
                     updateAllYtItems()
+                    if (selectedChip.value == null) {
+                        HomePageCache.save(context, combinedPage)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {

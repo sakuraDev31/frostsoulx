@@ -8,7 +8,9 @@
 package dev.vxs.frostsoulx.ui.component
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -51,6 +53,7 @@ import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -63,6 +66,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
@@ -111,13 +115,24 @@ fun TopSearch(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     focusRequester: FocusRequester = remember { FocusRequester() },
     leftFocusRequester: FocusRequester? = null,
+    onCloseFinished: () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val animationProgress: Float by animateFloatAsState(
         targetValue = if (active) 1f else 0f,
-        animationSpec = tween(durationMillis = AnimationDurationMillis),
+        animationSpec =
+            spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
         label = "SearchBarAnimation",
     )
+
+    LaunchedEffect(animationProgress, active) {
+        if (!active && animationProgress <= 0.001f) {
+            onCloseFinished()
+        }
+    }
 
     val clampedProgress = animationProgress.coerceIn(0f, 1f)
 
@@ -242,9 +257,22 @@ fun TopSearch(
                     leftFocusRequester = leftFocusRequester,
                 )
 
-                if (animationProgress > 0) {
-                    Column(Modifier.alpha(animationProgress)) {
-                        HorizontalDivider(color = colors.dividerColor)
+                val contentAlpha =
+                    if (active) {
+                        ((animationProgress - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                    } else {
+                        ((animationProgress - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                    }
+
+                if (animationProgress > 0.001f && contentAlpha > 0f) {
+                    Column(
+                        Modifier
+                            .alpha(contentAlpha)
+                            .graphicsLayer {
+                                translationY = (1f - contentAlpha) * -12.dp.toPx()
+                            },
+                    ) {
+                        HorizontalDivider(color = colors.dividerColor.copy(alpha = contentAlpha))
                         content()
                     }
                 }
@@ -379,7 +407,7 @@ private fun TextRange.coerceInText(textLength: Int): TextRange =
 
 // Measurement specs
 val InputFieldHeight = 48.dp
-private val SearchBarCornerRadius: Dp = InputFieldHeight / 2
+private val SearchBarCornerRadius: Dp = 12.dp
 internal val SearchBarVerticalPadding: Dp = 8.dp
 internal val SearchBarHorizontalPadding: Dp = 16.dp
 val SearchBarIconOffsetX: Dp = 4.dp

@@ -81,6 +81,7 @@ import dev.vxs.frostsoulx.ui.screens.settings.SettingsScreen
 import dev.vxs.frostsoulx.ui.screens.settings.StorageSettings
 import dev.vxs.frostsoulx.ui.screens.settings.StereoSurroundScreen
 import dev.vxs.frostsoulx.ui.screens.settings.UpdateScreen
+import dev.vxs.frostsoulx.viewmodels.HomeViewModel
 import dev.vxs.frostsoulx.viewmodels.OnlineSearchSort
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,9 +94,14 @@ fun NavGraphBuilder.navigationBuilder(
     homeScrollConnection: NestedScrollConnection? = null,
     searchScrollConnection: NestedScrollConnection? = null,
     onlineSearchSort: OnlineSearchSort = OnlineSearchSort.DEFAULT,
+    homeViewModel: HomeViewModel,
 ) {
     composable(Screens.Home.route) {
-        HomeScreen(navController, headerScrollConnection = homeScrollConnection)
+        HomeScreen(
+            navController = navController,
+            headerScrollConnection = homeScrollConnection,
+            viewModel = homeViewModel,
+        )
     }
     composable(
         Screens.Library.route,
@@ -123,14 +129,10 @@ fun NavGraphBuilder.navigationBuilder(
         route = "home_collection/{kind}",
         arguments = listOf(navArgument("kind") { type = NavType.StringType }),
     ) { backStackEntry ->
-        val homeEntry = remember(backStackEntry) {
-            // Reuse Home's ranked shelves instead of starting another load/sync cycle.
-            runCatching { navController.getBackStackEntry(Screens.Home.route) }.getOrDefault(backStackEntry)
-        }
         FrostSoulHomeCollectionScreen(
             navController = navController,
             kind = backStackEntry.arguments?.getString("kind").orEmpty(),
-            viewModel = hiltViewModel(homeEntry),
+            viewModel = homeViewModel,
         )
     }
     composable("stats") {
