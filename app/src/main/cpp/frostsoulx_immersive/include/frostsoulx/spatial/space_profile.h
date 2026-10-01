@@ -157,11 +157,13 @@ public:
     static SpaceProfile createLongSubwayTunnel();
     static SpaceProfile createLongTunnel();
     static SpaceProfile createClosedCar();
+    static SpaceProfile createAnechoic();
     static SpaceProfile createOpenRoad();
     static SpaceProfile createCave();
     static SpaceProfile createStadium();
 
     enum class Preset {
+        Anechoic,
         Bathroom,
         LivingRoom,
         MediumHall,

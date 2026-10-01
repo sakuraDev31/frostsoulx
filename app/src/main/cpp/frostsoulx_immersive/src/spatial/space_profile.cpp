@@ -367,6 +367,21 @@ SpaceProfile SpaceProfile::createClosedCar() {
     return p;
 }
 
+SpaceProfile SpaceProfile::createAnechoic() {
+    SpaceProfile p("Anechoic", {30.0f, 30.0f, 20.0f});
+    p.setOpenness(1.0f);
+    p.setSourcePosition({2.0f, 0.0f, 1.5f});
+    p.setListenerPosition({0.0f, 0.0f, 1.5f});
+
+    const AcousticMaterial air = AcousticMaterial::OpenAir();
+    for (const RoomSurface surface : {RoomSurface::Floor, RoomSurface::Ceiling,
+                                      RoomSurface::Front, RoomSurface::Back,
+                                      RoomSurface::Left, RoomSurface::Right}) {
+        p.setBoundary(surface, {surface, air, 1.0f});
+    }
+    return p;
+}
+
 SpaceProfile SpaceProfile::createOpenRoad() {
     SpaceProfile p("Open Road", {100.0f, 40.0f, 20.0f});
     p.setOpenness(0.98f);
@@ -414,6 +429,7 @@ SpaceProfile SpaceProfile::createStadium() {
 
 SpaceProfile SpaceProfile::createPreset(Preset preset) {
     switch (preset) {
+        case Preset::Anechoic: return createAnechoic();
         case Preset::Bathroom: return createBathroom();
         case Preset::LivingRoom: return createLivingRoom();
         case Preset::MediumHall: return createMediumHall();
