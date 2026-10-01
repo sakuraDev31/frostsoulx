@@ -187,10 +187,20 @@ data class ImmersiveAudioDiagnostics(
     val quantumFrames: Int = 384,
     val processorEnabled: Boolean = false,
     val pcmEncoding: Int = 0,
+    val activeBackend: Int = 0,
+    val algorithmicLatencySamples: Int = 0,
+    val brirReady: Boolean = false,
     val b1AfterSilenceSkipping: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
     val b2AfterSonic: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
     val b5AudioTrack: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
 ) {
+    fun backendLabel(): String = when (activeBackend) {
+        1 -> "Steam Audio"
+        2 -> "Native HOA/HRTF"
+        3 -> "Full Convolution"
+        else -> if (processorEnabled) "Unavailable" else "Off / unavailable"
+    }
+
     fun truePeakWarningSource(): String {
         val inputL = inputTruePeakL > TRUE_PEAK_WARNING_LIMIT
         val inputR = inputTruePeakR > TRUE_PEAK_WARNING_LIMIT
@@ -245,6 +255,9 @@ data class ImmersiveAudioDiagnostics(
                 hostCallbackFrames = values[37].toInt().coerceAtLeast(0), quantumFrames = values[38].toInt().coerceIn(1, 1_000_000),
                 processorEnabled = values[39] > 0.5,
                 pcmEncoding = values[40].toInt(),
+                activeBackend = values.getOrNull(41)?.toInt() ?: 0,
+                algorithmicLatencySamples = values.getOrNull(42)?.toInt()?.coerceAtLeast(0) ?: 0,
+                brirReady = values.getOrNull(43)?.let { it > 0.5 } ?: false,
             )
         }
     }

@@ -2001,6 +2001,28 @@ private fun DspTelemetryCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
+                TelemetryMetricItem("Backend", diagnostics.backendLabel())
+                TelemetryMetricItem("BRIR", if (diagnostics.brirReady) "Ready" else "Unavailable")
+                TelemetryMetricItem(
+                    "Latency",
+                    if (diagnostics.algorithmicLatencySamples > 0 && diagnostics.sampleRate > 0) {
+                        String.format(
+                            Locale.US,
+                            "%.1f ms",
+                            diagnostics.algorithmicLatencySamples * 1000.0 / diagnostics.sampleRate,
+                        )
+                    } else {
+                        "Unavailable"
+                    },
+                )
+            }
+
+            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.2f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
                 TelemetryMetricItem("Avg Render Time", String.format(Locale.US, "%.2f ms", diagnostics.averageProcessingTimeMs))
                 TelemetryMetricItem("Processed Blocks", "${diagnostics.totalBlocks}")
                 TelemetryMetricItem("Deadline Misses", "${diagnostics.deadlineMisses}")

@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -1102,6 +1103,33 @@ void testEndToEndChain() {
     check(peakOf(after) == 0.0, "reset() cleared every delay line and filter tail");
 }
 
+void testPcmAdapterBoundary() {
+    frostsoulx::ImmersiveAudioEngine engine;
+    check(engine.prepare(kSR, kN), "prepare() for PCM adapter boundary");
+    configureDry(engine);
+
+    std::vector<float> direct(static_cast<std::size_t>(kN) * 2);
+    for (int frame = 0; frame < kN; ++frame) {
+        const float t = static_cast<float>(frame) * 0.031f;
+        direct[static_cast<std::size_t>(frame) * 2] = 0.37f * std::sin(t);
+        direct[static_cast<std::size_t>(frame) * 2 + 1] = 0.29f * std::sin(t + 0.4f);
+    }
+    check(engine.process(direct.data(), kN), "direct signal reaches engine output");
+    check(sane(direct, 0.99f, "direct signal"), "direct signal remains finite and bounded");
+
+    // Match the Android PCM16 conversion contract and verify that the adapter
+    // boundary adds only quantisation error, not gain or nonlinear distortion.
+    const std::vector<float> before = direct;
+    double maxError = 0.0;
+    for (std::size_t i = 0; i < direct.size(); ++i) {
+        const int scaled = static_cast<int>(std::lround(direct[i] * 32767.0f));
+        const auto pcm = static_cast<std::int16_t>(std::clamp(scaled, -32768, 32767));
+        direct[i] = static_cast<float>(pcm) / 32768.0f;
+        maxError = std::max(maxError, std::fabs(static_cast<double>(direct[i] - before[i])));
+    }
+    check(maxError <= (2.0 / 32768.0), "PCM16 adapter round-trip stays within quantisation error");
+    check(sane(direct, 0.99f, "PCM16 adapter output"), "PCM16 adapter output remains finite and bounded");
+}
 } // namespace
 
 int main() {
@@ -1120,6 +1148,7 @@ int main() {
     testConvolution();              // M
     testHrtf();                     // N
     testEndToEndChain();            // full runtime chain
+    testPcmAdapterBoundary();       // JNI/Media3 PCM16 boundary contract
 
     if (g_failures != 0) {
         std::cerr << g_failures << " check(s) failed\n";

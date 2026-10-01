@@ -224,7 +224,9 @@ inline float softLimitSample(float s, float threshold = 0.94f, float ceiling = 0
 }
 
 std::int16_t writePcm16(float sample) noexcept {
-    const float safe = softLimitSample(sample, 0.94f, 0.999f);
+    // The native engine is the single nonlinear limiter. JNI only performs
+    // final finite/range protection while converting back to PCM16.
+    const float safe = std::isfinite(sample) ? std::clamp(sample, -0.999f, 0.999f) : 0.0f;
     const auto scaled = static_cast<int>(std::lround(safe * 32767.0f));
     return static_cast<std::int16_t>(std::clamp(scaled, -32768, 32767));
 }
@@ -324,48 +326,15 @@ void applyTone(Handle& handle, float* interleavedStereo, int frames) noexcept {
 }
 
 void applyOutputSafety(Handle& handle, float* interleavedStereo, int frames) noexcept {
-    constexpr float kCeiling = 0.98f;
-    constexpr float kSoftThreshold = 0.94f;
-
-    float blockPeak = 0.0f;
+    // Do not apply a second attack/release/soft-limit stage here. That stage
+    // caused audible pumping and clipping-like distortion after the engine's
+    // own limiter. Keep this boundary deterministic and allocation-free.
+    handle.outputSafetyGain = 1.0f;
     for (int i = 0; i < frames * 2; ++i) {
-        const float sample = interleavedStereo[i];
-        if (std::isfinite(sample)) blockPeak = std::max(blockPeak, std::fabs(sample));
+        interleavedStereo[i] = std::isfinite(interleavedStereo[i])
+            ? std::clamp(interleavedStereo[i], -0.999f, 0.999f)
+            : 0.0f;
     }
-
-    // Bypass entirely if the block has plenty of headroom and limiter is idle
-    if (blockPeak <= kSoftThreshold && handle.outputSafetyGain >= 0.999f) {
-        handle.outputSafetyGain = 1.0f;
-        return;
-    }
-
-    const float targetGain = blockPeak > kCeiling ? (kCeiling / blockPeak) : 1.0f;
-    const float fs = handle.sampleRate > 0 ? static_cast<float>(handle.sampleRate) : 48000.0f;
-    // ~0.5ms attack to quickly catch transients without pops, ~80ms release for transparent recovery
-    const float attackCoeff = std::exp(-1.0f / (0.0005f * fs));
-    const float releaseCoeff = std::exp(-1.0f / (0.080f * fs));
-
-    float currentGain = handle.outputSafetyGain;
-    for (int i = 0; i < frames; ++i) {
-        const float sL = std::fabs(interleavedStereo[i * 2]);
-        const float sR = std::fabs(interleavedStereo[i * 2 + 1]);
-        const float instantPeak = std::max(sL, sR);
-        const float instTarget = instantPeak > kCeiling ? (kCeiling / instantPeak) : targetGain;
-        const float neededGain = std::min(targetGain, instTarget);
-
-        if (neededGain < currentGain) {
-            currentGain += (neededGain - currentGain) * (1.0f - attackCoeff);
-        } else {
-            currentGain += (1.0f - currentGain) * (1.0f - releaseCoeff);
-        }
-
-        const float outL = interleavedStereo[i * 2] * currentGain;
-        const float outR = interleavedStereo[i * 2 + 1] * currentGain;
-
-        interleavedStereo[i * 2] = std::isfinite(outL) ? softLimitSample(outL, kSoftThreshold, kCeiling) : 0.0f;
-        interleavedStereo[i * 2 + 1] = std::isfinite(outR) ? softLimitSample(outR, kSoftThreshold, kCeiling) : 0.0f;
-    }
-    handle.outputSafetyGain = currentGain;
 }
 
 } // namespace
@@ -571,7 +540,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReadDiagnostics(
     const uint64_t frames = handle != nullptr ? handle->diagnostics.processedFrames.load(std::memory_order_relaxed) : 0;
     const double denominator = frames > 0 ? static_cast<double>(frames) : 1.0;
     const double changedDenominator = frames > 0 ? static_cast<double>(frames) * 2.0 : 1.0;
-    const jdouble values[41] = {
+    const jdouble values[44] = {
         handle != nullptr ? std::sqrt(handle->diagnostics.inputSumSquaresL.load() / denominator) : 0.0,
         handle != nullptr ? std::sqrt(handle->diagnostics.inputSumSquaresR.load() / denominator) : 0.0,
         handle != nullptr ? std::sqrt(handle->diagnostics.outputSumSquaresL.load() / denominator) : 0.0,
@@ -614,9 +583,12 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReadDiagnostics(
         handle != nullptr ? static_cast<jdouble>(handle->quantumFrames.load()) : 0.0,
         handle != nullptr && handle->enabled.load() ? 1.0 : 0.0,
         handle != nullptr ? static_cast<jdouble>(handle->encoding) : 0.0,
+        handle != nullptr ? static_cast<jdouble>(static_cast<int>(handle->engine.backend())) : 0.0,
+        handle != nullptr ? static_cast<jdouble>(handle->engine.latencySamples()) : 0.0,
+        handle != nullptr && handle->engine.activeBrir().valid() ? 1.0 : 0.0,
     };
-    const jdoubleArray result = env->NewDoubleArray(41);
-    if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 41, values);
+    const jdoubleArray result = env->NewDoubleArray(44);
+    if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 44, values);
     return result;
 }
 

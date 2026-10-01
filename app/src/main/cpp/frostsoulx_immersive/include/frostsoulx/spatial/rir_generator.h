@@ -34,8 +34,6 @@ struct RirGeneratorConfig {
     float diffuseEnergyRatio = 0.5f;
     /// Head radius for ITD calculation (metres).
     float headRadius = rt::kHeadRadius;
-    /// When true, direct sound arrival is aligned to t = 0 for transparent binaural dry/wet blending without comb filtering.
-    bool alignDirectArrival = false;
 };
 
 /// A discrete physical acoustic propagation path (direct sound or geometric reflection).
