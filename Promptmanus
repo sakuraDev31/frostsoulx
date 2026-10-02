@@ -1,0 +1,187 @@
+TASK: Inspect and fix FrostSoulX spatial-audio gain staging.
+
+GOAL
+Fix gain/clipping behavior in the current spatial/convolution path without removing HRTF, BRIR/RIR, room simulation, or partitioned convolution.
+
+INSPECT
+Focus on:
+- immersive_audio_engine.cpp
+- partitioned_convolver.*
+- rir_generator.*
+- hrtf.*
+- spatial_renderer.*
+- space_profile.*
+- JNI integration
+- Kotlin spatial controls
+- CMake/Steam Audio integration
+
+CURRENT ARCHITECTURE
+
+PCM
+→ conditioning/EQ
+→ spatial processing
+→ limiter
+→ output
+
+Spatial processing includes HRTF, BRIR generation, reflections, diffuse tail, room simulation and partitioned convolution.
+
+IMPORTANT FINDING
+
+`spatialBlend` comes directly from the UI intensity slider.
+
+Current FullConvolution effectively does:
+
+output = dry * (1 - spatialBlend) + wet * spatialBlend
+
+But the generated BRIR already contains:
+- direct path
+- HRTF
+- reflections
+- diffuse tail
+
+Therefore dry + BRIR can double-count direct energy.
+
+The BRIR is also peak-normalized, which does not guarantee equal RMS/power.
+
+The current limiter is sample-peak smoothing + hard clamp, not a proper true-peak limiter.
+
+REQUIRED FIX
+
+Prefer treating the BRIR as the complete spatial response.
+
+Implement energy/power-aware normalization so spatialBlend changes spatial intensity rather than producing unexplained gain changes.
+
+Analyze as appropriate:
+- BRIR RMS/energy
+- peak
+- direct energy
+- reflection/diffuse energy
+- rendered output power
+
+Do NOT simply remove the BRIR direct path unless you verify that this is architecturally correct.
+
+Keep:
+
+0.0 = dry/bypass spatialization
+0.25 = subtle
+0.50 = balanced
+0.75 = strong
+1.0 = full spatialization
+
+Do not use spatialBlend as volume control.
+
+LIMITER
+
+Keep final protection AFTER spatial processing.
+
+Do not use the limiter to compensate for bad gain staging.
+
+Prefer a proper true-peak detector, approximately 4x oversampled, with around -1 dBTP ceiling.
+
+If full lookahead is too expensive, use the safest realtime-compatible implementation and document it.
+
+Do not add duplicate limiters or output gain after the final limiter.
+
+REALTIME SAFETY
+
+The audio callback must not:
+- allocate
+- resize containers
+- generate BRIRs
+- rebuild graphs
+- perform I/O
+- call JNI
+- wait on mutexes
+- perform expensive acoustic simulation
+
+Current room/orientation/reverb setters that trigger `reloadBrir()` must prepare changes off-thread and safely hand the prepared result to the realtime engine, preferably with atomic/lock-free exchange and crossfade.
+
+STEAM AUDIO
+
+Do not blindly remove it.
+
+Determine whether it is actually used.
+
+If retained, keep expensive acoustic simulation/background preparation separate from realtime rendering.
+
+The realtime path should consume prepared acoustic/IR data.
+
+DIAGNOSTICS
+
+Separate these boundaries:
+
+1. upstream PCM
+2. native DSP input
+3. post-spatial
+4. pre-limiter
+5. final output
+
+Do not report upstream clipping as native DSP clipping.
+
+Existing captures show native DSP input around 0.86–0.89 peak with DSP ON and zero native output clipping. Existing 2048-frame processing averaged about 1.46–1.50 ms with no deadline misses. Use these only as existing observations, not new measurements.
+
+Also inspect the native failure path and ensure DSP failure actually restores/bypasses the PCM output.
+
+TRUE PEAK
+
+Inspect the existing `truePeak()` / `oversampledTruePeak()` implementation.
+
+If it only uses linear interpolation, replace it with a proper realtime-compatible oversampling detector if practical.
+
+VALIDATION
+
+Test spatialBlend:
+
+0 / .25 / .5 / .75 / 1.0
+
+Signals:
+- sine
+- impulse
+- pink noise
+- music
+
+Rooms:
+- anechoic
+- bathroom
+- living room
+- hall
+- subway/tunnel
+- car
+- cave
+- stadium/open
+
+Check:
+- RMS
+- peak
+- true peak
+- gain change
+- clipping
+- NaN/Inf
+- processing time
+- deadline misses
+- spatial stability
+
+Verify HRTF, reflections, diffuse response and partitioned convolution remain functional.
+
+PERFORMANCE
+
+Preserve realtime performance.
+
+Do not optimize by deleting important DSP.
+
+FINAL REPORT
+
+Provide:
+1. Root cause
+2. Files changed
+3. New gain architecture
+4. BRIR normalization method
+5. spatialBlend behavior
+6. limiter/true-peak changes
+7. realtime-safety changes
+8. Steam Audio role
+9. diagnostics changes
+10. validation/benchmark results
+11. remaining limitations
+
+Do not fabricate tests or measurements.
