@@ -1434,8 +1434,8 @@ private fun SoundstageTabContent(
         SectionTitleHeader("BINAURAL SOUNDSTAGE", "Spatial width and listener focal point")
 
         AcousticParamSliderCard(
-            label = "Stereo Soundstage Width",
-            hint = "Expands cross-channel decorrelation (Narrow ↔ Ultra-Wide)",
+            label = "M/S Stereo Width",
+            hint = "Smoothed mid/side side-gain plus spatial width (Mono ↔ Ultra-Wide)",
             value = stereoWidth,
             range = 0f..1f,
             displayValue = "${(stereoWidth * 100).roundToInt()}%",

@@ -63,6 +63,15 @@ struct Diagnostics {
     std::atomic<float> preLimiterTruePeak{0.0f};
     std::atomic<float> limiterGainReductionDb{0.0f};
     std::atomic<float> gainBudgetDb{0.0f};
+    std::atomic<double> preEngineSumSquaresL{0.0};
+    std::atomic<double> preEngineSumSquaresR{0.0};
+    std::atomic<float> preEnginePeakL{0.0f};
+    std::atomic<float> preEnginePeakR{0.0f};
+    std::atomic<float> preEngineTruePeakL{0.0f};
+    std::atomic<float> preEngineTruePeakR{0.0f};
+    std::atomic<uint64_t> preEngineClipped{0};
+    std::atomic<uint64_t> preEngineNan{0};
+    std::atomic<uint64_t> preEngineInf{0};
 
     void reset() noexcept {
         inputSumSquaresL.store(0.0); inputSumSquaresR.store(0.0);
@@ -90,6 +99,10 @@ struct Diagnostics {
         transitionRamp.store(0.0f);
         preLimiterTruePeak.store(0.0f); limiterGainReductionDb.store(0.0f);
         gainBudgetDb.store(0.0f);
+        preEngineSumSquaresL.store(0.0); preEngineSumSquaresR.store(0.0);
+        preEnginePeakL.store(0.0f); preEnginePeakR.store(0.0f);
+        preEngineTruePeakL.store(0.0f); preEngineTruePeakR.store(0.0f);
+        preEngineClipped.store(0); preEngineNan.store(0); preEngineInf.store(0);
     }
 };
 
@@ -99,6 +112,7 @@ struct Handle {
     std::atomic<float> bassGainDb{0.0f};
     std::atomic<float> trebleGainDb{0.0f};
     std::atomic<float> outputGainDb{0.0f};
+    std::atomic<float> stereoWidth{0.5f};
     std::atomic<int> roomPreset{2};
     std::atomic<float> roomMix{0.18f};
     std::atomic<float> reflectionAmount{0.28f};
@@ -114,10 +128,17 @@ struct Handle {
     float previousInputR = 0.0f;
     float previousOutputL = 0.0f;
     float previousOutputR = 0.0f;
+    float previousPreEngineL = 0.0f;
+    float previousPreEngineR = 0.0f;
     bool hasPreviousSample = false;
     float toneLowL = 0.0f;
     float toneLowR = 0.0f;
+    float smoothedBass = 1.0f;
+    float smoothedTreble = 1.0f;
+    float smoothedOutput = 1.0f;
+    float smoothedMsSideGain = 1.0f;
     float outputSafetyGain = 1.0f;
+    uint32_t ditherState = 0x9E3779B9u;
 };
 
 void atomicAdd(std::atomic<double>& target, double value) noexcept {
@@ -171,6 +192,29 @@ float oversampledTruePeak(const Handle& handle, const float* interleavedStereo, 
         }
     }
     return peak;
+}
+
+void publishPreEngineTelemetry(Handle& handle, const float* interleavedStereo, int frames) noexcept {
+    for (int frame = 0; frame < frames; ++frame) {
+        const float left = interleavedStereo[frame * 2];
+        const float right = interleavedStereo[frame * 2 + 1];
+        if (std::isnan(left) || std::isnan(right)) handle.diagnostics.preEngineNan.fetch_add(1, std::memory_order_relaxed);
+        if (std::isinf(left) || std::isinf(right)) handle.diagnostics.preEngineInf.fetch_add(1, std::memory_order_relaxed);
+        if (std::isfinite(left)) {
+            atomicAdd(handle.diagnostics.preEngineSumSquaresL, static_cast<double>(left) * left);
+            atomicMax(handle.diagnostics.preEnginePeakL, std::fabs(left));
+            atomicMax(handle.diagnostics.preEngineTruePeakL, truePeak(handle.previousPreEngineL, left));
+            if (std::fabs(left) >= 1.0f) handle.diagnostics.preEngineClipped.fetch_add(1, std::memory_order_relaxed);
+            handle.previousPreEngineL = left;
+        }
+        if (std::isfinite(right)) {
+            atomicAdd(handle.diagnostics.preEngineSumSquaresR, static_cast<double>(right) * right);
+            atomicMax(handle.diagnostics.preEnginePeakR, std::fabs(right));
+            atomicMax(handle.diagnostics.preEngineTruePeakR, truePeak(handle.previousPreEngineR, right));
+            if (std::fabs(right) >= 1.0f) handle.diagnostics.preEngineClipped.fetch_add(1, std::memory_order_relaxed);
+            handle.previousPreEngineR = right;
+        }
+    }
 }
 
 void publishDiagnostics(Handle& handle, const float* input, const float* output, int frames) noexcept {
@@ -247,11 +291,19 @@ inline float softLimitSample(float s, float threshold = 0.94f, float ceiling = 0
     return std::copysign(compressed, s);
 }
 
-std::int16_t writePcm16(float sample) noexcept {
+float nextTpdfDither(Handle& handle) noexcept {
+    handle.ditherState = handle.ditherState * 1664525u + 1013904223u;
+    const float first = static_cast<float>(handle.ditherState) / 4294967296.0f;
+    handle.ditherState = handle.ditherState * 1664525u + 1013904223u;
+    const float second = static_cast<float>(handle.ditherState) / 4294967296.0f;
+    return (first - second) / 32767.0f;
+}
+
+std::int16_t writePcm16(Handle& handle, float sample) noexcept {
     // The native engine is the single nonlinear limiter. JNI only performs
     // final finite/range protection while converting back to PCM16.
     const float safe = std::isfinite(sample) ? std::clamp(sample, -0.999f, 0.999f) : 0.0f;
-    const auto scaled = static_cast<int>(std::lround(safe * 32767.0f));
+    const auto scaled = static_cast<int>(std::lround((safe + nextTpdfDither(handle)) * 32767.0f));
     return static_cast<std::int16_t>(std::clamp(scaled, -32768, 32767));
 }
 
@@ -324,30 +376,52 @@ void applyTone(Handle& handle, float* interleavedStereo, int frames) noexcept {
     const float outDb = handle.outputGainDb.load(std::memory_order_relaxed);
     handle.diagnostics.gainBudgetDb.store(bassDb + trebleDb + outDb, std::memory_order_relaxed);
 
-    if (std::fabs(bassDb) < 0.01f && std::fabs(trebleDb) < 0.01f && std::fabs(outDb) < 0.01f) {
-        return; // Direct bit-exact pass-through when neutral
-    }
-
-    const float bass = std::pow(10.0f, bassDb / 20.0f);
-    const float treble = std::pow(10.0f, trebleDb / 20.0f);
-    const float output = std::pow(10.0f, outDb / 20.0f);
+    const float targetBass = std::pow(10.0f, bassDb / 20.0f);
+    const float targetTreble = std::pow(10.0f, trebleDb / 20.0f);
+    const float targetOutput = std::pow(10.0f, outDb / 20.0f);
+    const float gainAlpha = std::clamp(
+        1.0f - std::exp(-1.0f / std::max(1.0f, static_cast<float>(handle.sampleRate) * 0.020f)),
+        0.0001f, 1.0f);
     const float lowAlpha = std::clamp(120.0f / std::max(8000.0f, static_cast<float>(handle.sampleRate)),
                                       0.005f, 0.03f);
+    const bool toneNeedsProcessing = std::fabs(targetBass - 1.0f) > 0.0001f ||
+        std::fabs(targetTreble - 1.0f) > 0.0001f || std::fabs(targetOutput - 1.0f) > 0.0001f ||
+        std::fabs(handle.smoothedBass - 1.0f) > 0.0001f ||
+        std::fabs(handle.smoothedTreble - 1.0f) > 0.0001f ||
+        std::fabs(handle.smoothedOutput - 1.0f) > 0.0001f;
+    if (toneNeedsProcessing) {
+        for (int frame = 0; frame < frames; ++frame) {
+            handle.smoothedBass += gainAlpha * (targetBass - handle.smoothedBass);
+            handle.smoothedTreble += gainAlpha * (targetTreble - handle.smoothedTreble);
+            handle.smoothedOutput += gainAlpha * (targetOutput - handle.smoothedOutput);
+            const float maxBoost = std::max({1.0f, handle.smoothedBass, handle.smoothedTreble, handle.smoothedOutput});
+            const float headroomTrim = (maxBoost > 1.0f) ? (1.0f / maxBoost) : 1.0f;
+            float& left = interleavedStereo[frame * 2];
+            float& right = interleavedStereo[frame * 2 + 1];
+            handle.toneLowL += lowAlpha * (left - handle.toneLowL);
+            handle.toneLowR += lowAlpha * (right - handle.toneLowR);
+            const float highL = left - handle.toneLowL;
+            const float highR = right - handle.toneLowR;
+            left = ((left + (handle.smoothedBass - 1.0f) * handle.toneLowL + (handle.smoothedTreble - 1.0f) * highL) * handle.smoothedOutput) * headroomTrim;
+            right = ((right + (handle.smoothedBass - 1.0f) * handle.toneLowR + (handle.smoothedTreble - 1.0f) * highR) * handle.smoothedOutput) * headroomTrim;
+        }
+    }
 
-    // Dynamic headroom trim to guarantee EQ boost never causes digital clipping
-    const float maxBoost = std::max({1.0f, bass, treble, output});
-    const float headroomTrim = (maxBoost > 1.0f) ? (1.0f / maxBoost) : 1.0f;
-
+    // Mid/Side width: M=(L+R)/sqrt(2), S=(L-R)/sqrt(2). Width 0.5 is unity.
+    const float targetSideGain = handle.stereoWidth.load(std::memory_order_relaxed) * 2.0f;
+    const float smoothAlpha = std::clamp(
+        1.0f - std::exp(-1.0f / std::max(1.0f, static_cast<float>(handle.sampleRate) * 0.020f)),
+        0.0001f, 1.0f);
     for (int frame = 0; frame < frames; ++frame) {
+        handle.smoothedMsSideGain += smoothAlpha * (targetSideGain - handle.smoothedMsSideGain);
         float& left = interleavedStereo[frame * 2];
         float& right = interleavedStereo[frame * 2 + 1];
-        handle.toneLowL += lowAlpha * (left - handle.toneLowL);
-        handle.toneLowR += lowAlpha * (right - handle.toneLowR);
-        const float highL = left - handle.toneLowL;
-        const float highR = right - handle.toneLowR;
-        left = ((left + (bass - 1.0f) * handle.toneLowL + (treble - 1.0f) * highL) * output) * headroomTrim;
-        right = ((right + (bass - 1.0f) * handle.toneLowR + (treble - 1.0f) * highR) * output) * headroomTrim;
+        const float mid = (left + right) * 0.70710678118f;
+        const float side = (left - right) * 0.70710678118f * handle.smoothedMsSideGain;
+        left = (mid + side) * 0.70710678118f;
+        right = (mid - side) * 0.70710678118f;
     }
+    publishPreEngineTelemetry(handle, interleavedStereo, frames);
 }
 
 void applyOutputSafety(Handle& handle, float* interleavedStereo, int frames) noexcept {
@@ -413,9 +487,15 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReset(
         handle->previousInputR = 0.0f;
         handle->previousOutputL = 0.0f;
         handle->previousOutputR = 0.0f;
+        handle->previousPreEngineL = 0.0f;
+        handle->previousPreEngineR = 0.0f;
         handle->hasPreviousSample = false;
         handle->toneLowL = 0.0f;
         handle->toneLowR = 0.0f;
+        handle->smoothedBass = 1.0f;
+        handle->smoothedTreble = 1.0f;
+        handle->smoothedOutput = 1.0f;
+        handle->smoothedMsSideGain = 1.0f;
         handle->outputSafetyGain = 1.0f;
     }
 }
@@ -434,6 +514,8 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeResetDiagnostics(
         handle->previousInputR = 0.0f;
         handle->previousOutputL = 0.0f;
         handle->previousOutputR = 0.0f;
+        handle->previousPreEngineL = 0.0f;
+        handle->previousPreEngineR = 0.0f;
         handle->hasPreviousSample = false;
     }
 }
@@ -526,7 +608,9 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetStereoWidth(
     JNIEnv*, jclass, jlong address, jfloat width) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        handle->engine.setStereoWidth(std::isfinite(width) ? std::clamp(width, 0.0f, 1.0f) : 0.5f);
+        const float safe = std::isfinite(width) ? std::clamp(width, 0.0f, 1.0f) : 0.5f;
+        handle->stereoWidth.store(safe, std::memory_order_relaxed);
+        handle->engine.setStereoWidth(safe);
     }
 }
 
@@ -572,7 +656,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReadDiagnostics(
     const uint64_t frames = handle != nullptr ? handle->diagnostics.processedFrames.load(std::memory_order_relaxed) : 0;
     const double denominator = frames > 0 ? static_cast<double>(frames) : 1.0;
     const double changedDenominator = frames > 0 ? static_cast<double>(frames) * 2.0 : 1.0;
-    const jdouble values[47] = {
+    const jdouble values[56] = {
         handle != nullptr ? std::sqrt(handle->diagnostics.inputSumSquaresL.load() / denominator) : 0.0,
         handle != nullptr ? std::sqrt(handle->diagnostics.inputSumSquaresR.load() / denominator) : 0.0,
         handle != nullptr ? std::sqrt(handle->diagnostics.outputSumSquaresL.load() / denominator) : 0.0,
@@ -621,9 +705,18 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReadDiagnostics(
         handle != nullptr ? handle->diagnostics.preLimiterTruePeak.load() : 0.0,
         handle != nullptr ? handle->diagnostics.limiterGainReductionDb.load() : 0.0,
         handle != nullptr ? handle->diagnostics.gainBudgetDb.load() : 0.0,
+        handle != nullptr ? std::sqrt(handle->diagnostics.preEngineSumSquaresL.load() / denominator) : 0.0,
+        handle != nullptr ? std::sqrt(handle->diagnostics.preEngineSumSquaresR.load() / denominator) : 0.0,
+        handle != nullptr ? handle->diagnostics.preEnginePeakL.load() : 0.0,
+        handle != nullptr ? handle->diagnostics.preEnginePeakR.load() : 0.0,
+        handle != nullptr ? handle->diagnostics.preEngineTruePeakL.load() : 0.0,
+        handle != nullptr ? handle->diagnostics.preEngineTruePeakR.load() : 0.0,
+        handle != nullptr ? static_cast<jdouble>(handle->diagnostics.preEngineClipped.load()) : 0.0,
+        handle != nullptr ? static_cast<jdouble>(handle->diagnostics.preEngineNan.load()) : 0.0,
+        handle != nullptr ? static_cast<jdouble>(handle->diagnostics.preEngineInf.load()) : 0.0,
     };
-    const jdoubleArray result = env->NewDoubleArray(47);
-    if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 47, values);
+    const jdoubleArray result = env->NewDoubleArray(56);
+    if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 56, values);
     return result;
 }
 
@@ -731,8 +824,8 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                 }
                 publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->scratch.data(), chunkFrames);
                 for (int frame = 0; frame < chunkFrames; ++frame) {
-                    samples16[frame * 2] = writePcm16(handle->scratch[frame * 2]);
-                    samples16[frame * 2 + 1] = writePcm16(handle->scratch[frame * 2 + 1]);
+                    samples16[frame * 2] = writePcm16(*handle, handle->scratch[frame * 2]);
+                    samples16[frame * 2 + 1] = writePcm16(*handle, handle->scratch[frame * 2 + 1]);
                 }
             }
 
