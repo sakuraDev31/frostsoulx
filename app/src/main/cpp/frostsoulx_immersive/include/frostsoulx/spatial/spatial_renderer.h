@@ -122,6 +122,7 @@ public:
 private:
     void renderBlock() noexcept;
     void updateSourceGains() noexcept;
+    void updateStereoSourceGains() noexcept;
 
     bool ready_ = false;
     double sampleRate_ = 0.0;
@@ -135,6 +136,8 @@ private:
     float sourceAzimuthCurrent_ = 0.0f;
     float sourceElevationCurrent_ = 0.0f;
     float sourceDistanceCurrent_ = 1.0f;
+    float leftSourceAzimuth_ = -25.0f;
+    float rightSourceAzimuth_ = 25.0f;
 
     HrtfDatabase hrtf_;
     SpeakerLayout layout_;

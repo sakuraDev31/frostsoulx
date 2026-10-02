@@ -600,12 +600,11 @@ struct ImmersiveAudioEngine::Impl {
         reverbLowpassL += damping * (delayedRevL - reverbLowpassL);
         reverbLowpassR += damping * (delayedRevR - reverbLowpassR);
 
-        const float monoInput = 0.5f * (left + right);
-        const float revInputL = monoInput + (reflectionL * reflectionAmount);
-        const float revInputR = monoInput + (reflectionR * reflectionAmount);
+        const float revInputL = (left * 0.72f) + (reflectionL * reflectionAmount) + (reflectionR * 0.18f);
+        const float revInputR = (right * 0.72f) + (reflectionR * reflectionAmount) + (reflectionL * 0.18f);
 
-        reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = revInputL + reverbLowpassL * reverbFeedback;
-        reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = revInputR + reverbLowpassR * reverbFeedback;
+        reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = revInputL + reverbLowpassR * (0.16f * reverbFeedback);
+        reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = revInputR + reverbLowpassL * (0.16f * reverbFeedback);
 
         reflectionDelayLeft[static_cast<std::size_t>(reflectionWriteIndex)] = left + reflectionCrossFeed * right;
         reflectionDelayRight[static_cast<std::size_t>(reflectionWriteIndex)] = right + reflectionCrossFeed * left;
@@ -613,8 +612,10 @@ struct ImmersiveAudioEngine::Impl {
         reflectionWriteIndex = (reflectionWriteIndex + 1) % reflectionRing;
         reverbWriteIndex = (reverbWriteIndex + 1) % reverbRing;
 
-        const float wetL = reflectionL + (0.70f * reverbLowpassL);
-        const float wetR = reflectionR + (0.70f * reverbLowpassR);
+        const float lateL = (0.70f * reverbLowpassL) + (0.30f * reverbLowpassR);
+        const float lateR = (0.70f * reverbLowpassR) + (0.30f * reverbLowpassL);
+        const float wetL = reflectionL + lateL;
+        const float wetR = reflectionR + lateR;
 
         const float dryMix = 1.0f - effectiveRoomMix;
         left = dryMix * left + effectiveRoomMix * wetL;

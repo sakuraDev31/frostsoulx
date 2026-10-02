@@ -190,10 +190,18 @@ void SpatialRenderer::setHeadOrientation(const HeadOrientation& o) noexcept {
 }
 
 void SpatialRenderer::updateSourceGains() noexcept {
-    const Vec3 source = SphericalCoord{
-        sourceAzimuthCurrent_, sourceElevationCurrent_, 1.0f
-    }.toCartesian().normalized();
-    encoder_.gainsFor(source, gainsL_.data());
+    updateStereoSourceGains();
+}
+
+void SpatialRenderer::updateStereoSourceGains() noexcept {
+    const float spread = std::clamp(widthCurrent_, 0.0f, 1.0f);
+    const float half = 8.0f + 42.0f * spread;
+    leftSourceAzimuth_ = sourceAzimuthCurrent_ - half;
+    rightSourceAzimuth_ = sourceAzimuthCurrent_ + half;
+    const Vec3 left = SphericalCoord{leftSourceAzimuth_, sourceElevationCurrent_, 1.0f}.toCartesian().normalized();
+    const Vec3 right = SphericalCoord{rightSourceAzimuth_, sourceElevationCurrent_, 1.0f}.toCartesian().normalized();
+    encoder_.gainsFor(left, gainsL_.data());
+    encoder_.gainsFor(right, gainsR_.data());
 }
 
 std::size_t SpatialRenderer::encodeObject(const SphericalCoord& dir,
@@ -222,10 +230,19 @@ void SpatialRenderer::renderBlock() noexcept {
     sourceDistanceCurrent_ += (sourceDistanceTarget_ - sourceDistanceCurrent_) * smooth;
     updateSourceGains();
 
+    widthCurrent_ += (widthTarget_ - widthCurrent_) * smooth;
+    updateStereoSourceGains();
     const float distanceGain = 1.0f / std::max(1.0f, sourceDistanceCurrent_);
     for (std::size_t i = 0; i < n; ++i) {
-        const float mono = 0.5f * (inFifo_[i * 2] + inFifo_[i * 2 + 1]) * distanceGain;
-        for (std::size_t c = 0; c < C; ++c) hoaPtrs_[c][i] = gainsL_[c] * mono;
+        const float inL = inFifo_[i * 2] * distanceGain;
+        const float inR = inFifo_[i * 2 + 1] * distanceGain;
+        const float mid = 0.70710678f * (inL + inR);
+        const float side = 0.70710678f * (inL - inR);
+        const float leftObj = 0.70710678f * (mid + side);
+        const float rightObj = 0.70710678f * (mid - side);
+        for (std::size_t c = 0; c < C; ++c) {
+            hoaPtrs_[c][i] = gainsL_[c] * leftObj + gainsR_[c] * rightObj;
+        }
     }
 
     // --- Sound-field rotation (head tracking) -------------------------------
