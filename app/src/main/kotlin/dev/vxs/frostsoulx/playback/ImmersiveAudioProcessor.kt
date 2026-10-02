@@ -218,6 +218,11 @@ data class ImmersiveAudioDiagnostics(
     val preEngineClipped: Long = 0L,
     val preEngineNan: Long = 0L,
     val preEngineInf: Long = 0L,
+    val brirRms: Float = 0f,
+    val brirPeak: Float = 0f,
+    val brirDirectRms: Float = 0f,
+    val brirLateRms: Float = 0f,
+    val brirNormalizationGain: Float = 0f,
     val b1AfterSilenceSkipping: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
     val b2AfterSonic: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
     val b3BeforeNativeDsp: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
@@ -324,6 +329,11 @@ data class ImmersiveAudioDiagnostics(
                 preEngineClipped = values.getOrNull(53)?.toLong()?.coerceAtLeast(0L) ?: 0L,
                 preEngineNan = values.getOrNull(54)?.toLong()?.coerceAtLeast(0L) ?: 0L,
                 preEngineInf = values.getOrNull(55)?.toLong()?.coerceAtLeast(0L) ?: 0L,
+                brirRms = f(56),
+                brirPeak = f(57),
+                brirDirectRms = f(58),
+                brirLateRms = f(59),
+                brirNormalizationGain = f(60),
             )
         }
     }

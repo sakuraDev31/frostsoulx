@@ -666,7 +666,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReadDiagnostics(
     const uint64_t frames = handle != nullptr ? handle->diagnostics.processedFrames.load(std::memory_order_relaxed) : 0;
     const double denominator = frames > 0 ? static_cast<double>(frames) : 1.0;
     const double changedDenominator = frames > 0 ? static_cast<double>(frames) * 2.0 : 1.0;
-    const jdouble values[56] = {
+    const jdouble values[61] = {
         handle != nullptr ? std::sqrt(handle->diagnostics.inputSumSquaresL.load() / denominator) : 0.0,
         handle != nullptr ? std::sqrt(handle->diagnostics.inputSumSquaresR.load() / denominator) : 0.0,
         handle != nullptr ? std::sqrt(handle->diagnostics.outputSumSquaresL.load() / denominator) : 0.0,
@@ -724,9 +724,14 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeReadDiagnostics(
         handle != nullptr ? static_cast<jdouble>(handle->diagnostics.preEngineClipped.load()) : 0.0,
         handle != nullptr ? static_cast<jdouble>(handle->diagnostics.preEngineNan.load()) : 0.0,
         handle != nullptr ? static_cast<jdouble>(handle->diagnostics.preEngineInf.load()) : 0.0,
+        handle != nullptr && handle->engine.activeBrir().valid() ? handle->engine.activeBrir().rms : 0.0,
+        handle != nullptr && handle->engine.activeBrir().valid() ? handle->engine.activeBrir().peak : 0.0,
+        handle != nullptr && handle->engine.activeBrir().valid() ? handle->engine.activeBrir().directRms : 0.0,
+        handle != nullptr && handle->engine.activeBrir().valid() ? handle->engine.activeBrir().lateRms : 0.0,
+        handle != nullptr && handle->engine.activeBrir().valid() ? handle->engine.activeBrir().normalizationGain : 0.0,
     };
-    const jdoubleArray result = env->NewDoubleArray(56);
-    if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 56, values);
+    const jdoubleArray result = env->NewDoubleArray(61);
+    if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 61, values);
     return result;
 }
 

@@ -15,6 +15,11 @@ struct StereoBrir {
     std::vector<float> right;
     double sampleRate = 48000.0;
     std::size_t taps = 0;
+    float rms = 0.0f;
+    float peak = 0.0f;
+    float directRms = 0.0f;
+    float lateRms = 0.0f;
+    float normalizationGain = 1.0f;
 
     bool valid() const noexcept {
         return taps > 0 && left.size() >= taps && right.size() >= taps;

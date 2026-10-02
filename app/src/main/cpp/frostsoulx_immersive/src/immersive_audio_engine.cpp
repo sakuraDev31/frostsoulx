@@ -118,6 +118,7 @@ struct ImmersiveAudioEngine::Impl {
     bool fullConvolutionReady = false;
     std::size_t irLengthTaps = 16384;
     float reflectionDensity = 0.5f;
+    float convolutionBlendCurrent = 1.0f;
 
     // Preallocated real-time scratch buffers for non-uniform convolution
     std::vector<float> convScratchInL;
@@ -344,6 +345,7 @@ struct ImmersiveAudioEngine::Impl {
         reflectionWriteIndex = 0;
         reverbWriteIndex = 0;
         limiterGain = 1.0f;
+        convolutionBlendCurrent = spatialBlend;
     }
 
     void releaseSteamAudio() noexcept {
@@ -568,15 +570,24 @@ struct ImmersiveAudioEngine::Impl {
             }
         }
 
-        // 3. Dry/wet blend & peak limiter
+        // 3. Equal-power dry/wet crossfade & peak limiter. The BRIR already
+        // contains the direct path, so linear dry + wet mixing double-counts
+        // direct energy at intermediate blend values.
+        const float targetBlend = clampUnit(spatialBlend);
+        const float blendStart = convolutionBlendCurrent;
+        const float blendStep = (targetBlend - blendStart) / static_cast<float>(std::max(maxN, 1));
         for (int i = 0; i < maxN; ++i) {
             const float dryL = convScratchInL[static_cast<std::size_t>(i)];
             const float dryR = convScratchInR[static_cast<std::size_t>(i)];
             const float wetL = convScratchOutL[static_cast<std::size_t>(i)];
             const float wetR = convScratchOutR[static_cast<std::size_t>(i)];
 
-            float outL = (1.0f - spatialBlend) * dryL + spatialBlend * wetL;
-            float outR = (1.0f - spatialBlend) * dryR + spatialBlend * wetR;
+            const float blend = clampUnit(blendStart + blendStep * static_cast<float>(i + 1));
+            const float angle = blend * 1.57079632679f;
+            const float dryWeight = std::cos(angle);
+            const float wetWeight = std::sin(angle);
+            float outL = dryWeight * dryL + wetWeight * wetL;
+            float outR = dryWeight * dryR + wetWeight * wetR;
 
             applyOutputLimiter(outL, outR);
 
@@ -588,6 +599,7 @@ struct ImmersiveAudioEngine::Impl {
             interleavedStereo[2 * i] = outL;
             interleavedStereo[2 * i + 1] = outR;
         }
+        convolutionBlendCurrent = targetBlend;
 
         lastState = 0;
         lastResult = ImmersiveProcessResult::FullConvolutionProcessed;
