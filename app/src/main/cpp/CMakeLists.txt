@@ -15,7 +15,6 @@ set(FROSTSOULX_ENGINE_SOURCES
     ${FROSTSOULX_IMMERSIVE_ROOT}/src/dsp/partitioned_convolver.cpp
     ${FROSTSOULX_IMMERSIVE_ROOT}/src/spatial/ambisonics.cpp
     ${FROSTSOULX_IMMERSIVE_ROOT}/src/spatial/hrtf.cpp
-    ${FROSTSOULX_IMMERSIVE_ROOT}/src/spatial/spatial_renderer.cpp
     ${FROSTSOULX_IMMERSIVE_ROOT}/src/spatial/space_profile.cpp
     ${FROSTSOULX_IMMERSIVE_ROOT}/src/spatial/rir_generator.cpp
     ${FROSTSOULX_IMMERSIVE_ROOT}/src/spatial/spatial_source.cpp)
