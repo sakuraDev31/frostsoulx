@@ -53,6 +53,25 @@ class ImmersivePipelineTelemetryTest {
     }
 
     @Test
+    fun b4UsesPreEngineConversionMeasurement() {
+        val diagnostics = ImmersiveAudioDiagnostics(
+            processorEnabled = true,
+            preEngineRmsL = 0.11f,
+            preEngineRmsR = 0.13f,
+            preEnginePeakL = 0.21f,
+            preEnginePeakR = 0.23f,
+            preEngineTruePeakL = 0.24f,
+            preEngineTruePeakR = 0.26f,
+            preEngineClipped = 2L,
+        )
+        val b4 = diagnostics.pipelineStages()[3]
+        assertEquals("PCM conversion → native DSP", b4.name)
+        assertEquals(0.12f, b4.input.rms, 0.0001f)
+        assertEquals(0.23f, b4.input.peak, 0.0001f)
+        assertEquals(2L, b4.input.clippedSamples)
+    }
+
+    @Test
     fun exportContainsBoundarySection() {
         val report = ImmersiveDiagnosticCapture(
             processorOn = true,
