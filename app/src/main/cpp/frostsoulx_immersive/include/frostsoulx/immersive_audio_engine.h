@@ -16,6 +16,9 @@ enum class ImmersiveProcessResult {
     SteamAudioUnavailable,
     InvalidOutput,
     SteamAudioProcessed,
+    /// Processed by the built-in HOA/HRTF spatial renderer. Reported when the
+    /// Steam Audio backend is not compiled in or failed to initialise.
+    NativeSpatialProcessed,
     /// Processed by the full-partitioned linear convolution acoustic space engine.
     FullConvolutionProcessed,
 };
@@ -24,6 +27,7 @@ enum class ImmersiveProcessResult {
 enum class SpatialBackend {
     None,            ///< not prepared
     SteamAudio,      ///< vendored Steam Audio binaural effect
+    Native,          ///< built-in HOA encode -> rotate -> HRTF convolution (low-device fallback)
     FullConvolution, ///< Full physical room acoustic BRIR partitioned linear convolution
 };
 
@@ -34,9 +38,6 @@ enum class RoomSimulationPreset {
     ConcertHall,
     Cathedral,
     Subway,
-    ClosedCar,
-    LongTunnel,
-    EightDOrbit,
 };
 
 // UI-friendly normalized controls in [0, 1].
@@ -62,8 +63,6 @@ public:
     void reset() noexcept;
     void setEnabled(bool enabled) noexcept;
     void setSpatialBlend(float blend) noexcept;
-    void setSourcePosition(float azimuthDeg, float elevationDeg) noexcept;
-    void setSourceDistance(float distanceMetres) noexcept;
 
     // Space simulation controls (control thread only).
     void setRoomSimulationPreset(RoomSimulationPreset preset) noexcept;

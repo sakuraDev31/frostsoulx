@@ -2,6 +2,7 @@
 
 #include "frostsoulx/dsp/partitioned_convolver.h"
 #include "frostsoulx/rt/rt_types.h"
+#include "frostsoulx/spatial/spatial_renderer.h"
 
 #include <algorithm>
 #include <array>
@@ -18,10 +19,8 @@ namespace frostsoulx {
 namespace {
 constexpr float kInputSanitizeLimit = 2.0f;
 constexpr float kOutputCeiling = 0.98f;
-// Single final protection stage for the full-BRIR path, targeting -1 dBTP.
-constexpr float kTruePeakCeiling = 0.8912509f;
-// Legacy sample-peak guard used by the non-BRIR room path. The full-BRIR
-// path uses kTruePeakCeiling in its single final protection stage.
+// Keep ordinary HRTF/room peaks out of the dynamics stage. The previous 0.90 threshold
+// caused continuous gain modulation on loud passages, which was audible as low-level clipping.
 constexpr float kLimiterThreshold = 0.96f;
 constexpr float kLimiterMinGain = 0.1f;
 constexpr float kZeroEpsilon = 1.0e-12f;
@@ -104,9 +103,11 @@ struct ImmersiveAudioEngine::Impl {
     float limiterReleaseCoeff = 0.9996f;
     float limiterAttackCoeff = 0.98f;
 
-    // Physical BRIR + partitioned convolution is the sole realtime spatial path.
+    // Built-in spatialiser used when Steam Audio is unavailable. Owns the
+    // HRTF/HRIR set, the HOA bus and the partitioned binaural convolution.
+    spatial::SpatialRenderer nativeRenderer;
     SpatialBackend backend = SpatialBackend::None;
-    SpatialBackend backendPreference = SpatialBackend::FullConvolution;
+    SpatialBackend backendPreference = SpatialBackend::Native;
 
     // True Acoustic Space & Full Partitioned Linear Convolution backend
     spatial::SpaceProfile activeSpace = spatial::SpaceProfile::createLivingRoom();
@@ -118,24 +119,6 @@ struct ImmersiveAudioEngine::Impl {
     std::size_t irLengthTaps = 16384;
     float reflectionDensity = 0.5f;
     float convolutionBlendCurrent = 1.0f;
-
-    // Automatic 8D Orbit preset state. Motion is generated on the native audio
-    // path, so Kotlin/JNI never has to update position per audio block.
-    static constexpr int kEightDBassDelayCapacity = 2048;
-    static constexpr float kEightDBassCrossoverHz = 150.0f;
-    static constexpr float kEightDOrbitPeriodSeconds = 6.0f;
-    static constexpr float kEightDMaxAzimuthDeg = 140.0f;
-    static constexpr float kEightDMaxElevationDeg = 65.0f;
-    float eightDOrbitPhase = 0.0f;
-    float eightDBassAlpha = 0.0f;
-    float eightDBassLow1L = 0.0f;
-    float eightDBassLow2L = 0.0f;
-    float eightDBassLow1R = 0.0f;
-    float eightDBassLow2R = 0.0f;
-    int eightDBassDelaySamples = 0;
-    int eightDBassWriteIndex = 0;
-    std::array<float, kEightDBassDelayCapacity> eightDBassDelayL{};
-    std::array<float, kEightDBassDelayCapacity> eightDBassDelayR{};
 
     // Preallocated real-time scratch buffers for non-uniform convolution
     std::vector<float> convScratchInL;
@@ -185,8 +168,6 @@ struct ImmersiveAudioEngine::Impl {
         damping = 0.42f;
 
         delayScale = 0.60f + 1.00f * roomSizeNorm;
-        if (roomPreset == RoomSimulationPreset::ClosedCar) delayScale = 0.55f + 0.35f * roomSizeNorm;
-        if (roomPreset == RoomSimulationPreset::LongTunnel) delayScale = 1.10f + 1.70f * roomSizeNorm;
         // Wider rooms should spread channels more; narrow rooms should mono-ish collapse.
         decorrelationSkew = 1.00f + 0.28f * widthNorm;
         reflectionCrossFeed = 0.26f - 0.24f * widthNorm;
@@ -264,46 +245,6 @@ struct ImmersiveAudioEngine::Impl {
                 reflectionTapCount = 6;
                 damping = 0.48f;
                 break;
-            case RoomSimulationPreset::ClosedCar:
-                // Compact cabin: dense early reflections, short decay and stronger damping.
-                tapDelaysMs[0] = 3.8f;
-                tapDelaysMs[1] = 6.7f;
-                tapDelaysMs[2] = 10.4f;
-                tapDelaysMs[3] = 15.8f;
-                tapGains[0] = 0.31f;
-                tapGains[1] = 0.24f;
-                tapGains[2] = 0.18f;
-                tapGains[3] = 0.12f;
-                reflectionTapCount = 4;
-                damping = 0.72f;
-                break;
-            case RoomSimulationPreset::LongTunnel:
-                // Long hard-wall tunnel: sparse early echoes followed by a longer tail.
-                tapDelaysMs[0] = 24.0f;
-                tapDelaysMs[1] = 52.0f;
-                tapDelaysMs[2] = 91.0f;
-                tapDelaysMs[3] = 146.0f;
-                tapDelaysMs[4] = 218.0f;
-                tapDelaysMs[5] = 305.0f;
-                tapGains[0] = 0.34f;
-                tapGains[1] = 0.28f;
-                tapGains[2] = 0.22f;
-                tapGains[3] = 0.17f;
-                tapGains[4] = 0.12f;
-                tapGains[5] = 0.08f;
-                reflectionTapCount = 6;
-                damping = 0.43f;
-                break;
-            case RoomSimulationPreset::EightDOrbit:
-                tapDelaysMs[0] = 11.0f;
-                tapDelaysMs[1] = 23.0f;
-                tapDelaysMs[2] = 39.0f;
-                tapGains[0] = 0.18f;
-                tapGains[1] = 0.12f;
-                tapGains[2] = 0.08f;
-                reflectionTapCount = 3;
-                damping = 0.58f;
-                break;
         }
 
         // Normalize combined reflection-tap gain so correlated content (sustained bass, held
@@ -346,8 +287,6 @@ struct ImmersiveAudioEngine::Impl {
                 case RoomSimulationPreset::ConcertHall: return 79.0f;
                 case RoomSimulationPreset::Cathedral: return 107.0f;
                 case RoomSimulationPreset::Subway: return 86.0f;
-                case RoomSimulationPreset::ClosedCar: return 24.0f;
-                case RoomSimulationPreset::LongTunnel: return 138.0f;
             }
             return 53.0f;
         }();
@@ -393,16 +332,6 @@ struct ImmersiveAudioEngine::Impl {
         // edge on top of the softclip/limiter overlap.
         limiterReleaseCoeff = std::exp(-1.0f / (0.080f * static_cast<float>(sampleRate)));
         limiterAttackCoeff = std::exp(-1.0f / (0.002f * static_cast<float>(sampleRate)));
-        eightDBassAlpha = 1.0f - std::exp(
-            -2.0f * static_cast<float>(M_PI) * kEightDBassCrossoverHz /
-            static_cast<float>(sampleRate));
-        eightDBassDelaySamples = 128;
-        eightDOrbitPhase = 0.0f;
-        eightDBassLow1L = eightDBassLow2L = 0.0f;
-        eightDBassLow1R = eightDBassLow2R = 0.0f;
-        eightDBassWriteIndex = 0;
-        eightDBassDelayL.fill(0.0f);
-        eightDBassDelayR.fill(0.0f);
         updateRoomModel();
     }
 
@@ -417,12 +346,6 @@ struct ImmersiveAudioEngine::Impl {
         reverbWriteIndex = 0;
         limiterGain = 1.0f;
         convolutionBlendCurrent = spatialBlend;
-        eightDOrbitPhase = 0.0f;
-        eightDBassLow1L = eightDBassLow2L = 0.0f;
-        eightDBassLow1R = eightDBassLow2R = 0.0f;
-        eightDBassWriteIndex = 0;
-        eightDBassDelayL.fill(0.0f);
-        eightDBassDelayR.fill(0.0f);
     }
 
     void releaseSteamAudio() noexcept {
@@ -468,12 +391,6 @@ struct ImmersiveAudioEngine::Impl {
         reflectionWriteIndex = 0;
         reverbWriteIndex = 0;
         limiterGain = 1.0f;
-        eightDOrbitPhase = 0.0f;
-        eightDBassLow1L = eightDBassLow2L = 0.0f;
-        eightDBassLow1R = eightDBassLow2R = 0.0f;
-        eightDBassWriteIndex = 0;
-        eightDBassDelayL.fill(0.0f);
-        eightDBassDelayR.fill(0.0f);
 
         lastResult = ImmersiveProcessResult::NotPrepared;
         lastState = -1;
@@ -481,96 +398,27 @@ struct ImmersiveAudioEngine::Impl {
 
     void applyOutputLimiter(float& left, float& right) noexcept {
         const float peak = std::max(std::fabs(left), std::fabs(right));
-        const float targetGain = (std::isfinite(peak) && peak > kLimiterThreshold)
+        const float targetGain = peak > kLimiterThreshold
             ? std::max(kLimiterThreshold / peak, kLimiterMinGain)
             : 1.0f;
 
-        // Gain reduction is immediate. The previous attack ramp plus hard clamp
-        // could flatten convolution/HRTF transients before final safety.
         if (targetGain < limiterGain) {
-            limiterGain = targetGain;
+            limiterGain = limiterGain + (targetGain - limiterGain) * (1.0f - limiterAttackCoeff);
         } else {
-            limiterGain = std::min(
-                1.0f,
-                limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
+            limiterGain = std::min(1.0f, limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
         }
 
         left *= limiterGain;
         right *= limiterGain;
-
-        // Emergency numerical protection only. Scale both channels together.
-        const float postPeak = std::max(std::fabs(left), std::fabs(right));
-        if (std::isfinite(postPeak) && postPeak > kOutputCeiling) {
-            const float safetyGain = kOutputCeiling / postPeak;
-            left *= safetyGain;
-            right *= safetyGain;
-            limiterGain *= safetyGain;
-        }
-    }
-
-    void applyBlockOutputLimiter(float* interleavedStereo, int frames) noexcept {
-        if (interleavedStereo == nullptr || frames <= 0) return;
-
-        float peak = 0.0f;
-        auto cubicPeak = [](float p0, float p1, float p2, float p3) noexcept {
-            float local = std::max(std::fabs(p1), std::fabs(p2));
-            for (int q = 1; q <= 3; ++q) {
-                const float t = 0.25f * static_cast<float>(q);
-                const float t2 = t * t;
-                const float t3 = t2 * t;
-                const float y = 0.5f * ((2.0f * p1) +
-                    (-p0 + p2) * t +
-                    (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
-                    (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
-                local = std::max(local, std::fabs(y));
-            }
-            return local;
-        };
-
-        for (int i = 0; i < frames; ++i) {
-            const int n1 = std::min(i + 1, frames - 1);
-            const int n2 = std::min(i + 2, frames - 1);
-            const float p0l = i > 0 ? interleavedStereo[2 * (i - 1)] : interleavedStereo[2 * i];
-            const float p0r = i > 0 ? interleavedStereo[2 * (i - 1) + 1] : interleavedStereo[2 * i + 1];
-            peak = std::max(peak, cubicPeak(p0l, interleavedStereo[2 * i],
-                interleavedStereo[2 * n1], interleavedStereo[2 * n2]));
-            peak = std::max(peak, cubicPeak(p0r, interleavedStereo[2 * i + 1],
-                interleavedStereo[2 * n1 + 1], interleavedStereo[2 * n2 + 1]));
-        }
-
-        const float targetGain = (std::isfinite(peak) && peak > kTruePeakCeiling)
-            ? std::max(kTruePeakCeiling / peak, kLimiterMinGain) : 1.0f;
-
-        if (targetGain < limiterGain) {
-            limiterGain = targetGain;
-        } else {
-            limiterGain = std::min(
-                1.0f,
-                limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
-        }
-
-        for (int i = 0; i < frames * 2; ++i) {
-            const float sample = interleavedStereo[i];
-            interleavedStereo[i] = std::isfinite(sample) ? sample * limiterGain : 0.0f;
-        }
-
-        float postPeak = 0.0f;
-        for (int i = 0; i < frames * 2; ++i) postPeak = std::max(postPeak, std::fabs(interleavedStereo[i]));
-        if (std::isfinite(postPeak) && postPeak > kOutputCeiling) {
-            const float safetyGain = kOutputCeiling / postPeak;
-            for (int i = 0; i < frames * 2; ++i) interleavedStereo[i] *= safetyGain;
-            limiterGain *= safetyGain;
-        }
+        left = std::clamp(left, -kOutputCeiling, kOutputCeiling);
+        right = std::clamp(right, -kOutputCeiling, kOutputCeiling);
     }
 
     void applyRoomModel(float& left, float& right) noexcept {
         // Room processing must be transparent when disabled or when spatial intensity is
         // effectively zero. Applying softClipSample here used to distort ordinary loud
         // samples continuously, even though the room stage was visually set to Off.
-        // Room simulation is an acoustic field layered around the direct
-        // programme. It must remain independent from spatialBlend so a user can
-        // reduce binaural intensity without making the room disappear.
-        const float effectiveRoomMix = roomMix;
+        const float effectiveRoomMix = roomMix * spatialBlend;
         if (roomPreset == RoomSimulationPreset::Off || effectiveRoomMix <= kZeroEpsilon) {
             return;
         }
@@ -592,26 +440,20 @@ struct ImmersiveAudioEngine::Impl {
             reflectionR += reflectionDelayRight[static_cast<std::size_t>(readR)] * gain;
         }
 
-        const int revOffsetsL[4] = {reverbTapL, std::max(1, static_cast<int>(reverbTapL * 1.37f)), std::max(1, static_cast<int>(reverbTapL * 1.79f)), std::max(1, static_cast<int>(reverbTapL * 2.23f))};
-        const int revOffsetsR[4] = {reverbTapR, std::max(1, static_cast<int>(reverbTapR * 1.31f)), std::max(1, static_cast<int>(reverbTapR * 1.73f)), std::max(1, static_cast<int>(reverbTapR * 2.17f))};
-        float delayedRevL = 0.0f;
-        float delayedRevR = 0.0f;
-        constexpr float kLateTapGain[4] = {0.48f, 0.27f, 0.16f, 0.09f};
-        for (int tap = 0; tap < 4; ++tap) {
-            const int readL = (reverbWriteIndex - std::min(revOffsetsL[tap], reverbRing - 1) + reverbRing) % reverbRing;
-            const int readR = (reverbWriteIndex - std::min(revOffsetsR[tap], reverbRing - 1) + reverbRing) % reverbRing;
-            delayedRevL += reverbDelayLeft[static_cast<std::size_t>(readL)] * kLateTapGain[tap];
-            delayedRevR += reverbDelayRight[static_cast<std::size_t>(readR)] * kLateTapGain[tap];
-        }
+        const int revReadL = (reverbWriteIndex - reverbTapL + reverbRing) % reverbRing;
+        const int revReadR = (reverbWriteIndex - reverbTapR + reverbRing) % reverbRing;
+        const float delayedRevL = reverbDelayLeft[static_cast<std::size_t>(revReadL)];
+        const float delayedRevR = reverbDelayRight[static_cast<std::size_t>(revReadR)];
 
         reverbLowpassL += damping * (delayedRevL - reverbLowpassL);
         reverbLowpassR += damping * (delayedRevR - reverbLowpassR);
 
-        const float revInputL = (left * 0.72f) + (reflectionL * reflectionAmount) + (reflectionR * 0.18f);
-        const float revInputR = (right * 0.72f) + (reflectionR * reflectionAmount) + (reflectionL * 0.18f);
+        const float monoInput = 0.5f * (left + right);
+        const float revInputL = monoInput + (reflectionL * reflectionAmount);
+        const float revInputR = monoInput + (reflectionR * reflectionAmount);
 
-        reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = revInputL + reverbLowpassR * (0.28f * reverbFeedback);
-        reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = revInputR + reverbLowpassL * (0.28f * reverbFeedback);
+        reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = revInputL + reverbLowpassL * reverbFeedback;
+        reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = revInputR + reverbLowpassR * reverbFeedback;
 
         reflectionDelayLeft[static_cast<std::size_t>(reflectionWriteIndex)] = left + reflectionCrossFeed * right;
         reflectionDelayRight[static_cast<std::size_t>(reflectionWriteIndex)] = right + reflectionCrossFeed * left;
@@ -619,20 +461,74 @@ struct ImmersiveAudioEngine::Impl {
         reflectionWriteIndex = (reflectionWriteIndex + 1) % reflectionRing;
         reverbWriteIndex = (reverbWriteIndex + 1) % reverbRing;
 
-        const float lateL = (0.70f * reverbLowpassL) + (0.30f * reverbLowpassR);
-        const float lateR = (0.70f * reverbLowpassR) + (0.30f * reverbLowpassL);
+        const float wetL = reflectionL + (0.70f * reverbLowpassL);
+        const float wetR = reflectionR + (0.70f * reverbLowpassR);
 
-        // Preserve the direct field. Early reflections provide localization
-        // broadening and room identity; the late field provides envelopment.
-        // Neither replaces the programme, so increasing room intensity cannot
-        // make the music collapse into a washed-out wet signal.
-        const float earlyGain = 0.62f * effectiveRoomMix * reflectionAmount;
-        const float lateGain = 0.48f * effectiveRoomMix;
-        left += earlyGain * reflectionL + lateGain * lateL;
-        right += earlyGain * reflectionR + lateGain * lateR;
+        const float dryMix = 1.0f - effectiveRoomMix;
+        left = dryMix * left + effectiveRoomMix * wetL;
+        right = dryMix * right + effectiveRoomMix * wetR;
 
         if (std::fabs(left) < kZeroEpsilon) left = 0.0f;
         if (std::fabs(right) < kZeroEpsilon) right = 0.0f;
+    }
+
+    /// Native spatial path: sanitise -> SpatialRenderer (HOA encode -> HOA
+    /// rotation -> HRTF/HRIR partitioned convolution, with VBAP available for
+    /// object/discrete panning) -> room processing -> safety limiter.
+    ///
+    /// Real-time safe: operates in place on the caller's interleaved buffer
+    /// and on storage reserved by prepare(). No allocation, locking, I/O or
+    /// logging.
+    bool processNative(float* interleavedStereo, int frames) noexcept {
+        if (!nativeRenderer.ready()) {
+            lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
+            return false;
+        }
+
+        const std::size_t samples = static_cast<std::size_t>(frames) * 2u;
+
+        // 1. Sanitise in place so no NaN/Inf ever reaches the convolver state.
+        for (std::size_t i = 0; i < samples; ++i) {
+            interleavedStereo[i] = sanitizeInputSample(interleavedStereo[i]);
+        }
+
+        // 2. Spatialise in place. The renderer owns its own block adapter, so
+        //    `frames` may be any value in [1, maxFrames]; it applies the
+        //    delay-matched dry/wet spatial blend and its own unity-gain
+        //    normalisation, so no extra headroom trim is needed here (that
+        //    keeps blend=0 + room Off bit-transparent apart from latency).
+        nativeRenderer.process(interleavedStereo, frames);
+
+        // 3. Room processing, then the safety limiter as the final stage.
+        for (int frame = 0; frame < frames; ++frame) {
+            const std::size_t li = static_cast<std::size_t>(frame) * 2u;
+            float outL = interleavedStereo[li];
+            float outR = interleavedStereo[li + 1];
+
+            if (!std::isfinite(outL) || !std::isfinite(outR)) {
+                lastResult = ImmersiveProcessResult::InvalidOutput;
+                return false;
+            }
+
+            applyRoomModel(outL, outR);
+            applyOutputLimiter(outL, outR);
+
+            if (!std::isfinite(outL) || !std::isfinite(outR)) {
+                lastResult = ImmersiveProcessResult::InvalidOutput;
+                return false;
+            }
+
+            interleavedStereo[li] = outL;
+            interleavedStereo[li + 1] = outR;
+        }
+
+        // Note: unlike the Steam Audio path there is deliberately no
+        // "input energy implies output energy" check here. The renderer has
+        // one block of algorithmic latency (`latencySamples()`), so the first
+        // block after prepare()/reset() is legitimately silent.
+        lastState = 0;
+        lastResult = ImmersiveProcessResult::NativeSpatialProcessed;
+        return true;
     }
 
     /// Full-Partitioned Linear Convolution Path (Stage 4).
@@ -653,20 +549,27 @@ struct ImmersiveAudioEngine::Impl {
             convScratchInR[static_cast<std::size_t>(i)] = sanitizeInputSample(interleavedStereo[2 * i + 1]);
         }
 
-        // 2. Fixed 128-sample head-block convolution using preallocated scratch.
+        // 2. Multi-tier partitioned linear convolution (128-sample head block)
         constexpr int kBlock = 128;
         for (int offset = 0; offset < maxN; offset += kBlock) {
             const int chunk = std::min(kBlock, maxN - offset);
-            if (chunk < kBlock) {
-                std::fill(convScratchInL.begin() + offset + chunk, convScratchInL.begin() + offset + kBlock, 0.0f);
-                std::fill(convScratchInR.begin() + offset + chunk, convScratchInR.begin() + offset + kBlock, 0.0f);
+            if (chunk == kBlock) {
+                convLeft.processBlock(convScratchInL.data() + offset, convScratchOutL.data() + offset);
+                convRight.processBlock(convScratchInR.data() + offset, convScratchOutR.data() + offset);
+            } else {
+                float inChunkL[kBlock] = {};
+                float inChunkR[kBlock] = {};
+                float outChunkL[kBlock] = {};
+                float outChunkR[kBlock] = {};
+                std::copy_n(convScratchInL.data() + offset, chunk, inChunkL);
+                std::copy_n(convScratchInR.data() + offset, chunk, inChunkR);
+                convLeft.processBlock(inChunkL, outChunkL);
+                convRight.processBlock(inChunkR, outChunkR);
+                std::copy_n(outChunkL, chunk, convScratchOutL.data() + offset);
+                std::copy_n(outChunkR, chunk, convScratchOutR.data() + offset);
             }
-            convLeft.processBlock(convScratchInL.data() + offset, convScratchOutL.data() + offset);
-            convRight.processBlock(convScratchInR.data() + offset, convScratchOutR.data() + offset);
         }
 
-        // 3. Linear spatial blend & peak limiter. The BRIR already contains
-        // the direct arrival, so avoid equal-power correlated gain.
         // 3. Equal-power dry/wet crossfade & peak limiter. The BRIR already
         // contains the direct path, so linear dry + wet mixing double-counts
         // direct energy at intermediate blend values.
@@ -680,10 +583,13 @@ struct ImmersiveAudioEngine::Impl {
             const float wetR = convScratchOutR[static_cast<std::size_t>(i)];
 
             const float blend = clampUnit(blendStart + blendStep * static_cast<float>(i + 1));
-            const float dryWeight = 1.0f - blend;
-            const float wetWeight = blend;
-            const float outL = dryWeight * dryL + wetWeight * wetL;
-            const float outR = dryWeight * dryR + wetWeight * wetR;
+            const float angle = blend * 1.57079632679f;
+            const float dryWeight = std::cos(angle);
+            const float wetWeight = std::sin(angle);
+            float outL = dryWeight * dryL + wetWeight * wetL;
+            float outR = dryWeight * dryR + wetWeight * wetR;
+
+            applyOutputLimiter(outL, outR);
 
             if (!std::isfinite(outL) || !std::isfinite(outR)) {
                 lastResult = ImmersiveProcessResult::InvalidOutput;
@@ -693,18 +599,6 @@ struct ImmersiveAudioEngine::Impl {
             interleavedStereo[2 * i] = outL;
             interleavedStereo[2 * i + 1] = outR;
         }
-
-        // The complete convolved block is available, so perform one gain decision
-        // for the block rather than modulating gain sample-by-sample.
-        applyBlockOutputLimiter(interleavedStereo, maxN);
-
-        for (int i = 0; i < maxN * 2; ++i) {
-            if (!std::isfinite(interleavedStereo[i])) {
-                lastResult = ImmersiveProcessResult::InvalidOutput;
-                return false;
-            }
-        }
-
         convolutionBlendCurrent = targetBlend;
 
         lastState = 0;
@@ -725,6 +619,7 @@ ImmersiveAudioEngine::~ImmersiveAudioEngine() {
 
 bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
     if (sampleRate < 8000 || maxFrames <= 0) return false;
+
     impl_->release();
     impl_->sampleRate = sampleRate;
     impl_->maxFrames = maxFrames;
@@ -738,18 +633,105 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
     impl_->outputChannels[0] = impl_->outputLeft.data();
     impl_->outputChannels[1] = impl_->outputRight.data();
     impl_->initializeRoomBuffers();
-    dsp::NonUniformConvolver::Config convCfg;
-    convCfg.headBlock = 128; convCfg.maxTaps = 32768; convCfg.growth = 4; convCfg.maxTiers = 4; convCfg.crossfadeBlocks = 8;
-    impl_->fullConvolutionReady = impl_->convLeft.prepare(convCfg) && impl_->convRight.prepare(convCfg);
-    if (!impl_->fullConvolutionReady) { impl_->release(); return false; }
-    impl_->convScratchInL.resize(static_cast<std::size_t>(impl_->frameCapacity), 0.0f);
-    impl_->convScratchInR.resize(static_cast<std::size_t>(impl_->frameCapacity), 0.0f);
-    impl_->convScratchOutL.resize(static_cast<std::size_t>(impl_->frameCapacity), 0.0f);
-    impl_->convScratchOutR.resize(static_cast<std::size_t>(impl_->frameCapacity), 0.0f);
-    impl_->reloadBrir();
-    if (!impl_->activeBrir.valid()) { impl_->release(); return false; }
-    impl_->backend = SpatialBackend::FullConvolution;
-    impl_->backendPreference = SpatialBackend::FullConvolution;
+
+    // Native spatial renderer: HOA encode -> sound-field rotation -> HRTF
+    // convolution. This is the fallback path when Steam Audio is not
+    // available, and it is what makes the engine's spatial chain testable on
+    // the host where the vendored Android .so cannot be loaded.
+    bool nativeReady = false;
+    {
+        spatial::SpatialRendererConfig scfg;
+        scfg.ambisonicOrder = 2;
+        scfg.array = spatial::VirtualArray::Dodeca12;
+        scfg.hrirTaps = 128;
+        scfg.renderBlock = 128;
+        nativeReady = impl_->nativeRenderer.prepare(static_cast<double>(sampleRate),
+                                                    maxFrames, scfg);
+        if (nativeReady) {
+            impl_->nativeRenderer.setStereoWidth(impl_->widthNorm);
+            impl_->nativeRenderer.setSpatialBlend(impl_->spatialBlend);
+        }
+    }
+
+    // Full Partitioned Linear Convolver preparation (4 non-uniform tiers)
+    {
+        dsp::NonUniformConvolver::Config convCfg;
+        convCfg.headBlock = 128;
+        convCfg.maxTaps = 32768;
+        convCfg.growth = 4;
+        convCfg.maxTiers = 4;
+        convCfg.crossfadeBlocks = 8;
+        impl_->fullConvolutionReady = impl_->convLeft.prepare(convCfg) && impl_->convRight.prepare(convCfg);
+        if (impl_->fullConvolutionReady) {
+            impl_->convScratchInL.resize(static_cast<std::size_t>(impl_->frameCapacity), 0.0f);
+            impl_->convScratchInR.resize(static_cast<std::size_t>(impl_->frameCapacity), 0.0f);
+            impl_->convScratchOutL.resize(static_cast<std::size_t>(impl_->frameCapacity), 0.0f);
+            impl_->convScratchOutR.resize(static_cast<std::size_t>(impl_->frameCapacity), 0.0f);
+            impl_->reloadBrir();
+        }
+    }
+
+    if (impl_->backendPreference == SpatialBackend::FullConvolution && impl_->fullConvolutionReady) {
+        impl_->backend = SpatialBackend::FullConvolution;
+    } else {
+        impl_->backend = nativeReady ? SpatialBackend::Native : SpatialBackend::None;
+    }
+
+#if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
+    // Try Steam Audio. If any stage fails we tear down only the Steam objects
+    // and keep running on the native renderer — a missing/!broken libphonon is
+    // not a reason to fail closed when the built-in spatialiser is ready.
+    const bool steamReady = [&]() noexcept {
+        IPLContextSettings contextSettings{};
+        contextSettings.version = STEAMAUDIO_VERSION;
+        if (iplContextCreate(&contextSettings, &impl_->context) != IPL_STATUS_SUCCESS || impl_->context == nullptr) {
+            return false;
+        }
+
+        IPLAudioSettings audioSettings{};
+        audioSettings.samplingRate = sampleRate;
+        // Steam Audio effects use a fixed frame size; process() pads/splits
+        // variable Media3 blocks before applying the effect.
+        audioSettings.frameSize = Impl::kSteamAudioFrameSize;
+
+        IPLHRTFSettings hrtfSettings{};
+        hrtfSettings.type = IPL_HRTFTYPE_DEFAULT;
+        hrtfSettings.volume = 1.0f;
+        if (iplHRTFCreate(impl_->context, &audioSettings, &hrtfSettings, &impl_->hrtf) != IPL_STATUS_SUCCESS || impl_->hrtf == nullptr) {
+            return false;
+        }
+
+        IPLBinauralEffectSettings effectSettings{};
+        effectSettings.hrtf = impl_->hrtf;
+        if (iplBinauralEffectCreate(impl_->context, &audioSettings, &effectSettings, &impl_->effect) != IPL_STATUS_SUCCESS || impl_->effect == nullptr) {
+            return false;
+        }
+        return true;
+    }();
+
+    if (steamReady) {
+        impl_->backend = SpatialBackend::SteamAudio;
+    } else {
+        impl_->releaseSteamAudio();
+        if (!nativeReady) {
+            impl_->release();
+            return false;
+        }
+        impl_->backend = SpatialBackend::Native;
+    }
+#else
+    // No Steam Audio: run the built-in renderer rather than failing closed.
+    if (!nativeReady) {
+        impl_->release();
+        return false;
+    }
+#endif
+
+    if (impl_->backend == SpatialBackend::None) {
+        impl_->release();
+        return false;
+    }
+
     impl_->prepared = true;
     impl_->lastResult = ImmersiveProcessResult::Disabled;
     return true;
@@ -761,6 +743,7 @@ void ImmersiveAudioEngine::reset() noexcept {
         iplBinauralEffectReset(impl_->effect);
     }
 #endif
+    impl_->nativeRenderer.reset();
     if (impl_->fullConvolutionReady) {
         impl_->convLeft.reset();
         impl_->convRight.reset();
@@ -779,33 +762,16 @@ void ImmersiveAudioEngine::setEnabled(bool enabled) noexcept {
 
 void ImmersiveAudioEngine::setSpatialBlend(float blend) noexcept {
     impl_->spatialBlend = std::isfinite(blend) ? std::clamp(blend, 0.0f, 1.0f) : 0.0f;
-    impl_->convolutionBlendCurrent = std::min(impl_->convolutionBlendCurrent, 1.0f);
+    // The native renderer performs its own delay-matched dry/wet crossfade.
+    impl_->nativeRenderer.setSpatialBlend(impl_->spatialBlend);
 }
-void ImmersiveAudioEngine::setSourcePosition(float azimuthDeg, float elevationDeg) noexcept {
-    const float az = std::isfinite(azimuthDeg) ? azimuthDeg : 0.0f;
-    const float el = std::isfinite(elevationDeg) ? elevationDeg : 0.0f;
-    const spatial::Vec3 delta = impl_->activeSpace.sourcePosition() - impl_->activeSpace.listenerPosition();
-    const float distance = std::max(0.25f, delta.length());
-    const auto local = spatial::SphericalCoord{az, el, distance}.toCartesian();
-    impl_->activeSpace.setSourcePosition(impl_->activeSpace.listenerPosition() + local);
-    if (impl_->fullConvolutionReady) impl_->reloadBrir();
-}
-
-void ImmersiveAudioEngine::setSourceDistance(float distanceMetres) noexcept {
-    if (!std::isfinite(distanceMetres)) return;
-    const spatial::Vec3 delta = impl_->activeSpace.sourcePosition() - impl_->activeSpace.listenerPosition();
-    const auto current = spatial::SphericalCoord::fromCartesian(delta);
-    const auto local = spatial::SphericalCoord{current.azimuthDeg, current.elevationDeg, std::clamp(distanceMetres, 0.25f, 50.0f)}.toCartesian();
-    impl_->activeSpace.setSourcePosition(impl_->activeSpace.listenerPosition() + local);
-    if (impl_->fullConvolutionReady) impl_->reloadBrir();
-}
-
 
 void ImmersiveAudioEngine::setHeadOrientation(float yawDeg, float pitchDeg, float rollDeg) noexcept {
     spatial::HeadOrientation o;
     o.yawDeg = std::isfinite(yawDeg) ? yawDeg : 0.0f;
     o.pitchDeg = std::isfinite(pitchDeg) ? pitchDeg : 0.0f;
     o.rollDeg = std::isfinite(rollDeg) ? rollDeg : 0.0f;
+    impl_->nativeRenderer.setHeadOrientation(o);
     impl_->activeSpace.setListenerOrientation(o);
     if (impl_->backend == SpatialBackend::FullConvolution && impl_->fullConvolutionReady) {
         impl_->reloadBrir();
@@ -821,6 +787,10 @@ SpatialBackend ImmersiveAudioEngine::backend() const noexcept {
 }
 
 int ImmersiveAudioEngine::latencySamples() const noexcept {
+    if (!impl_->prepared) return 0;
+    if (impl_->backend == SpatialBackend::Native) {
+        return static_cast<int>(impl_->nativeRenderer.latencySamples());
+    }
     return 0;
 }
 
@@ -873,6 +843,7 @@ void ImmersiveAudioEngine::setDampening(float dampening) noexcept {
 
 void ImmersiveAudioEngine::setStereoWidth(float width) noexcept {
     impl_->widthNorm = clampUnit(width);
+    impl_->nativeRenderer.setStereoWidth(impl_->widthNorm);
     impl_->updateRoomModel();
 }
 
@@ -897,21 +868,142 @@ int ImmersiveAudioEngine::lastEffectState() const noexcept {
 }
 
 bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcept {
-    if (!impl_->prepared) { impl_->lastResult = ImmersiveProcessResult::NotPrepared; return false; }
-    if (!impl_->enabled) { impl_->lastResult = ImmersiveProcessResult::Disabled; return false; }
+    if (!impl_->prepared) {
+        impl_->lastResult = ImmersiveProcessResult::NotPrepared;
+        return false;
+    }
+    if (!impl_->enabled) {
+        impl_->lastResult = ImmersiveProcessResult::Disabled;
+        return false;
+    }
     if (interleavedStereo == nullptr || frames <= 0 || frames > impl_->maxFrames) {
-        impl_->lastResult = ImmersiveProcessResult::InvalidInput; return false;
+        impl_->lastResult = ImmersiveProcessResult::InvalidInput;
+        return false;
     }
-    if (impl_->backend != SpatialBackend::FullConvolution || !impl_->fullConvolutionReady) {
-        impl_->lastResult = ImmersiveProcessResult::NotPrepared; return false;
+
+    // Full-Partitioned Linear Convolution: physical room BRIR convolution.
+    if (impl_->backend == SpatialBackend::FullConvolution) {
+        return impl_->processFullConvolution(interleavedStereo, frames);
     }
-    return impl_->processFullConvolution(interleavedStereo, frames);
+
+    // Native backend: built-in HOA/HRTF renderer -> room -> limiter.
+    if (impl_->backend == SpatialBackend::Native) {
+        return impl_->processNative(interleavedStereo, frames);
+    }
+
+#if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
+    if (impl_->backend != SpatialBackend::SteamAudio || impl_->effect == nullptr) {
+        impl_->lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
+        return false;
+    }
+
+    bool anyInputEnergy = false;
+    bool anyOutputEnergy = false;
+    int frameOffset = 0;
+    while (frameOffset < frames) {
+        const int activeFrames = std::min(Impl::kSteamAudioFrameSize, frames - frameOffset);
+        const int steamFrames = Impl::kSteamAudioFrameSize;
+        std::fill(impl_->inputLeft.begin(), impl_->inputLeft.begin() + steamFrames, 0.0f);
+        std::fill(impl_->inputRight.begin(), impl_->inputRight.begin() + steamFrames, 0.0f);
+        std::fill(impl_->outputLeft.begin(), impl_->outputLeft.begin() + steamFrames, 0.0f);
+        std::fill(impl_->outputRight.begin(), impl_->outputRight.begin() + steamFrames, 0.0f);
+        for (int frame = 0; frame < activeFrames; ++frame) {
+            impl_->inputLeft[static_cast<std::size_t>(frame)] = sanitizeInputSample(interleavedStereo[(frameOffset + frame) * 2]);
+            impl_->inputRight[static_cast<std::size_t>(frame)] = sanitizeInputSample(interleavedStereo[(frameOffset + frame) * 2 + 1]);
+        }
+
+        IPLAudioBuffer input{};
+        input.numChannels = 2;
+        input.numSamples = steamFrames;
+        input.data = impl_->inputChannels;
+        IPLAudioBuffer output{};
+        output.numChannels = 2;
+        output.numSamples = steamFrames;
+        output.data = impl_->outputChannels;
+
+        IPLBinauralEffectParams params{};
+        params.direction = IPLVector3{0.0f, 0.0f, 1.0f};
+        params.interpolation = IPL_HRTFINTERPOLATION_BILINEAR;
+        params.spatialBlend = impl_->spatialBlend;
+        params.hrtf = impl_->hrtf;
+        params.peakDelays = nullptr;
+
+        const IPLAudioEffectState state = iplBinauralEffectApply(impl_->effect, &params, &input, &output);
+        impl_->lastState = static_cast<int>(state);
+        if (state != IPL_AUDIOEFFECTSTATE_TAILCOMPLETE && state != IPL_AUDIOEFFECTSTATE_TAILREMAINING) {
+            // Steam Audio stopped working at runtime. Hand the remaining and
+            // all subsequent blocks to the built-in renderer rather than
+            // dropping spatialisation entirely.
+            if (impl_->nativeRenderer.ready()) {
+                impl_->backend = SpatialBackend::Native;
+                return impl_->processNative(interleavedStereo + static_cast<std::size_t>(frameOffset) * 2u,
+                                            frames - frameOffset);
+            }
+            impl_->lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
+            return false;
+        }
+
+        bool inputHasEnergy = false;
+        bool outputHasEnergy = false;
+        // Fixed headroom keeps normal HRTF output below the safety limiter. The limiter is now
+        // reserved for exceptional peaks instead of acting as a continuous tone shaper.
+        constexpr float kSteamAudioOutputGain = 0.50118723f; // -6 dB
+        for (int frame = 0; frame < activeFrames; ++frame) {
+            const float inputLeft = impl_->inputLeft[static_cast<std::size_t>(frame)];
+            const float inputRight = impl_->inputRight[static_cast<std::size_t>(frame)];
+            float outputLeft = impl_->outputLeft[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
+            float outputRight = impl_->outputRight[static_cast<std::size_t>(frame)] * kSteamAudioOutputGain;
+            if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
+                impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
+                return false;
+            }
+
+            impl_->applyRoomModel(outputLeft, outputRight);
+            impl_->applyOutputLimiter(outputLeft, outputRight);
+
+            if (!std::isfinite(outputLeft) || !std::isfinite(outputRight)) {
+                impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
+                return false;
+            }
+
+            inputHasEnergy = inputHasEnergy || std::fabs(inputLeft) > 1.0e-8f || std::fabs(inputRight) > 1.0e-8f;
+            outputHasEnergy = outputHasEnergy || std::fabs(outputLeft) > 1.0e-8f || std::fabs(outputRight) > 1.0e-8f;
+
+            interleavedStereo[(frameOffset + frame) * 2] = outputLeft;
+            interleavedStereo[(frameOffset + frame) * 2 + 1] = outputRight;
+        }
+        if (inputHasEnergy && !outputHasEnergy) {
+            impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
+            return false;
+        }
+        anyInputEnergy = anyInputEnergy || inputHasEnergy;
+        anyOutputEnergy = anyOutputEnergy || outputHasEnergy;
+        frameOffset += activeFrames;
+    }
+    if (anyInputEnergy && !anyOutputEnergy) {
+        impl_->lastResult = ImmersiveProcessResult::InvalidOutput;
+        return false;
+    }
+    impl_->lastResult = ImmersiveProcessResult::SteamAudioProcessed;
+    return true;
+#else
+    // Prepared with no usable backend: should be unreachable because
+    // prepare() fails when neither backend initialises.
+    impl_->lastResult = ImmersiveProcessResult::SteamAudioUnavailable;
+    return false;
+#endif
 }
 
 void ImmersiveAudioEngine::setSpatialBackendPreference(SpatialBackend backend) noexcept {
     impl_->backendPreference = backend;
     if (backend == SpatialBackend::FullConvolution && impl_->fullConvolutionReady) {
         impl_->backend = SpatialBackend::FullConvolution;
+    } else if (backend == SpatialBackend::Native && impl_->nativeRenderer.ready()) {
+        impl_->backend = SpatialBackend::Native;
+#if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
+    } else if (backend == SpatialBackend::SteamAudio && impl_->effect != nullptr) {
+        impl_->backend = SpatialBackend::SteamAudio;
+#endif
     } else if (backend == SpatialBackend::None) {
         impl_->backend = SpatialBackend::None;
     }

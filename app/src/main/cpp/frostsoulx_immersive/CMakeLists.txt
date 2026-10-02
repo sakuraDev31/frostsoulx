@@ -20,6 +20,7 @@ set(FROSTSOULX_ENGINE_SOURCES
     src/dsp/partitioned_convolver.cpp
     src/spatial/ambisonics.cpp
     src/spatial/hrtf.cpp
+    src/spatial/spatial_renderer.cpp
     src/spatial/space_profile.cpp
     src/spatial/rir_generator.cpp
     src/spatial/spatial_source.cpp

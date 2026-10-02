@@ -113,9 +113,6 @@ struct Handle {
     std::atomic<float> trebleGainDb{0.0f};
     std::atomic<float> outputGainDb{0.0f};
     std::atomic<float> stereoWidth{0.5f};
-    std::atomic<float> sourceAzimuth{0.0f};
-    std::atomic<float> sourceElevation{0.0f};
-    std::atomic<float> sourceDistance{1.0f};
     std::atomic<int> roomPreset{2};
     std::atomic<float> roomMix{0.18f};
     std::atomic<float> reflectionAmount{0.28f};
@@ -178,46 +175,23 @@ float truePeak(float previous, float current) noexcept {
                      std::fabs(previous * 0.25f + current * 0.75f)});
 }
 
-inline float cubicInterpolate4x(float y0, float y1, float y2, float y3, float t) noexcept {
-    const float t2 = t * t;
-    const float t3 = t2 * t;
-    return 0.5f * ((2.0f * y1) +
-        (-y0 + y2) * t +
-        (2.0f * y0 - 5.0f * y1 + 4.0f * y2 - y3) * t2 +
-        (-y0 + 3.0f * y1 - 3.0f * y2 + y3) * t3);
-}
-
 float oversampledTruePeak(const Handle& handle, const float* interleavedStereo, int frames) noexcept {
-    if (interleavedStereo == nullptr || frames <= 0) return 0.0f;
-
     float peak = 0.0f;
-    const float previousL = handle.hasPreviousSample ? handle.previousOutputL : interleavedStereo[0];
-    const float previousR = handle.hasPreviousSample ? handle.previousOutputR : interleavedStereo[1];
-
+    float previousL = handle.hasPreviousSample ? handle.previousOutputL : interleavedStereo[0];
+    float previousR = handle.hasPreviousSample ? handle.previousOutputR : interleavedStereo[1];
     for (int frame = 0; frame < frames; ++frame) {
-        const float y1L = interleavedStereo[frame * 2];
-        const float y1R = interleavedStereo[frame * 2 + 1];
-        if (!std::isfinite(y1L) || !std::isfinite(y1R)) continue;
-
-        peak = std::max(peak, std::max(std::fabs(y1L), std::fabs(y1R)));
-
-        if (frame + 1 >= frames) continue;
-        const float y2L = interleavedStereo[(frame + 1) * 2];
-        const float y2R = interleavedStereo[(frame + 1) * 2 + 1];
-        const float y0L = frame == 0 ? previousL : interleavedStereo[(frame - 1) * 2];
-        const float y0R = frame == 0 ? previousR : interleavedStereo[(frame - 1) * 2 + 1];
-        const float y3L = frame + 2 < frames ? interleavedStereo[(frame + 2) * 2] : y2L;
-        const float y3R = frame + 2 < frames ? interleavedStereo[(frame + 2) * 2 + 1] : y2R;
-        if (!std::isfinite(y0L) || !std::isfinite(y0R) ||
-            !std::isfinite(y2L) || !std::isfinite(y2R) ||
-            !std::isfinite(y3L) || !std::isfinite(y3R)) continue;
-
-        for (const float t : {0.25f, 0.5f, 0.75f}) {
-            peak = std::max(peak, std::fabs(cubicInterpolate4x(y0L,y1L,y2L,y3L,t)));
-            peak = std::max(peak, std::fabs(cubicInterpolate4x(y0R,y1R,y2R,y3R,t)));
+        const float currentL = interleavedStereo[frame * 2];
+        const float currentR = interleavedStereo[frame * 2 + 1];
+        if (std::isfinite(currentL)) {
+            peak = std::max(peak, truePeak(previousL, currentL));
+            previousL = currentL;
+        }
+        if (std::isfinite(currentR)) {
+            peak = std::max(peak, truePeak(previousR, currentR));
+            previousR = currentR;
         }
     }
-    return std::isfinite(peak) ? peak : 0.0f;
+    return peak;
 }
 
 void publishPreEngineTelemetry(Handle& handle, const float* interleavedStereo, int frames) noexcept {
@@ -313,6 +287,14 @@ float readPcm16LE(const std::uint8_t* bytes) noexcept {
     return static_cast<float>(sample) / 32768.0f;
 }
 
+inline float softLimitSample(float s, float threshold = 0.94f, float ceiling = 0.98f) noexcept {
+    const float absS = std::fabs(s);
+    if (absS <= threshold) return s;
+    const float range = ceiling - threshold;
+    const float compressed = threshold + range * std::tanh((absS - threshold) / range);
+    return std::copysign(compressed, s);
+}
+
 float nextTpdfDither(Handle& handle) noexcept {
     handle.ditherState = handle.ditherState * 1664525u + 1013904223u;
     const float first = static_cast<float>(handle.ditherState) / 4294967296.0f;
@@ -385,59 +367,16 @@ void applyPhysicalPreset(Handle& handle, int preset) noexcept {
             handle.engine.setSpacePreset(Preset::Anechoic);
             break;
     }
-
-    switch (preset) {
-        case 6:
-            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::ClosedCar);
-            handle.engine.setRoomMix(0.14f);
-            handle.engine.setReflectionAmount(0.45f);
-            handle.engine.setReverbTimeSeconds(0.60f);
-            handle.engine.setRoomSize(0.25f);
-            handle.engine.setDampening(0.72f);
-            break;
-        case 9:
-            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::LongTunnel);
-            handle.engine.setRoomMix(0.38f);
-            handle.engine.setReflectionAmount(0.62f);
-            handle.engine.setReverbTimeSeconds(5.50f);
-            handle.engine.setRoomSize(0.95f);
-            handle.engine.setDampening(0.43f);
-            break;
-        case 13:
-            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::EightDOrbit);
-            handle.engine.setSpatialBlend(1.0f);
-            handle.engine.setRoomMix(0.38f);
-            handle.engine.setReflectionAmount(0.62f);
-            handle.engine.setReverbTimeSeconds(2.40f);
-            handle.engine.setRoomSize(0.50f);
-            handle.engine.setDampening(0.58f);
-            break;
-        case 5:
-        case 8:
-            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Subway);
-            handle.engine.setRoomMix(0.30f);
-            handle.engine.setReflectionAmount(0.55f);
-            handle.engine.setReverbTimeSeconds(2.40f);
-            handle.engine.setRoomSize(0.70f);
-            handle.engine.setDampening(0.48f);
-            break;
-        case 0:
-            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Off);
-            break;
-        default:
-            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Studio);
-            break;
-    }
 }
 
 void applyCarFader(Handle& handle, float fader) noexcept {
     const float safe = std::isfinite(fader) ? std::clamp(fader, -1.0f, 1.0f) : 0.0f;
     handle.carFader.store(safe, std::memory_order_relaxed);
     if (handle.roomPreset.load(std::memory_order_relaxed) == 6) {
-        // Cabin fader: center = front, ends = rear hemisphere. This uses the
-        // active HRTF azimuth model rather than the disabled BRIR backend.
-        const float rearAzimuth = safe * 180.0f;
-        handle.engine.setSourcePosition(rearAzimuth, -3.0f);
+        // The canonical ClosedCar profile uses front/back Z geometry. Keep the
+        // existing UI fader meaningful by moving the virtual source between the
+        // front and rear cabin positions while retaining the physical BRIR path.
+        handle.engine.setSourcePosition(0.4f, -0.3f, 0.6f + 0.4f * safe);
     }
 }
 
@@ -492,8 +431,27 @@ void applyTone(Handle& handle, float* interleavedStereo, int frames) noexcept {
         left = (mid + side) * 0.70710678118f;
         right = (mid - side) * 0.70710678118f;
     }
-    }
+    publishPreEngineTelemetry(handle, interleavedStereo, frames);
+}
 
+void applyOutputSafety(Handle& handle, float* interleavedStereo, int frames) noexcept {
+    constexpr float kTruePeakCeiling = 0.8912509f; // -1.0 dBTP
+    const float peak = oversampledTruePeak(handle, interleavedStereo, frames);
+    handle.diagnostics.preLimiterTruePeak.store(peak, std::memory_order_relaxed);
+    const float requestedGain = peak > kTruePeakCeiling
+        ? kTruePeakCeiling / std::max(peak, 1.0e-12f) : 1.0f;
+    const float gain = std::min(handle.outputSafetyGain, requestedGain);
+    handle.outputSafetyGain = std::min(1.0f, gain + 0.015f);
+    const float reductionDb = gain < 1.0f
+        ? -20.0f * std::log10(std::max(gain, 1.0e-12f)) : 0.0f;
+    handle.diagnostics.limiterGainReductionDb.store(reductionDb, std::memory_order_relaxed);
+    for (int i = 0; i < frames * 2; ++i) {
+        const float sample = interleavedStereo[i];
+        interleavedStereo[i] = std::isfinite(sample)
+            ? std::clamp(sample * gain, -kTruePeakCeiling, kTruePeakCeiling)
+            : 0.0f;
+    }
+}
 
 } // namespace
 
@@ -602,7 +560,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomPreset(
     JNIEnv*, jclass, jlong address, jint preset) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        const int safePreset = std::clamp(static_cast<int>(preset), 0, 12);
+        const int safePreset = std::clamp(static_cast<int>(preset), 0, 6);
         applyPhysicalPreset(*handle, safePreset);
         applyCarFader(*handle, handle->carFader.load(std::memory_order_relaxed));
     }
@@ -653,28 +611,6 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetDampening(
     JNIEnv*, jclass, jlong address, jfloat dampening) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         handle->engine.setDampening(std::isfinite(dampening) ? std::clamp(dampening, 0.0f, 1.0f) : 0.5f);
-    }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSourcePosition(
-    JNIEnv*, jclass, jlong address, jfloat azimuthDeg, jfloat elevationDeg) {
-    if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        const float az = std::isfinite(azimuthDeg) ? std::clamp(azimuthDeg, -180.0f, 180.0f) : 0.0f;
-        const float el = std::isfinite(elevationDeg) ? std::clamp(elevationDeg, -45.0f, 90.0f) : 0.0f;
-        handle->sourceAzimuth.store(az, std::memory_order_relaxed);
-        handle->sourceElevation.store(el, std::memory_order_relaxed);
-        handle->engine.setSourcePosition(az, el);
-    }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSourceDistance(
-    JNIEnv*, jclass, jlong address, jfloat distanceMetres) {
-    if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        const float distance = std::isfinite(distanceMetres) ? std::clamp(distanceMetres, 1.0f, 10.0f) : 1.0f;
-        handle->sourceDistance.store(distance, std::memory_order_relaxed);
-        handle->engine.setSourceDistance(distance);
     }
 }
 
@@ -841,8 +777,6 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                 continue;
             }
 
-            // Capture the actual native DSP input before tone/M/S or spatial processing.
-            publishPreEngineTelemetry(*handle, handle->inputSnapshot.data(), chunkFrames);
             std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, handle->scratch.begin());
             applyTone(*handle, handle->scratch.data(), chunkFrames);
 
@@ -857,9 +791,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                     std::memory_order_relaxed);
                 publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->inputSnapshot.data(), chunkFrames);
             } else {
-                for (int i = 0; i < samples; ++i) {
-                    if (!std::isfinite(handle->scratch[static_cast<std::size_t>(i)])) handle->scratch[static_cast<std::size_t>(i)] = 0.0f;
-                }
+                applyOutputSafety(*handle, handle->scratch.data(), chunkFrames);
                 std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, samplesFloat);
                 handle->diagnostics.nativeStatus.store(
                     resultCode(handle->engine.lastProcessResult()),
@@ -892,8 +824,6 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                 continue;
             }
 
-            // Capture the actual native DSP input before tone/M/S or spatial processing.
-            publishPreEngineTelemetry(*handle, handle->inputSnapshot.data(), chunkFrames);
             std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, handle->scratch.begin());
             applyTone(*handle, handle->scratch.data(), chunkFrames);
 
@@ -908,9 +838,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                     std::memory_order_relaxed);
                 publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->inputSnapshot.data(), chunkFrames);
             } else {
-                for (int i = 0; i < samples; ++i) {
-                    if (!std::isfinite(handle->scratch[static_cast<std::size_t>(i)])) handle->scratch[static_cast<std::size_t>(i)] = 0.0f;
-                }
+                applyOutputSafety(*handle, handle->scratch.data(), chunkFrames);
                 handle->diagnostics.nativeStatus.store(
                     resultCode(handle->engine.lastProcessResult()),
                     std::memory_order_relaxed);
