@@ -20,6 +20,22 @@ data class ImmersiveStageDiagnostics(
     val encoding: Int = 0,
 )
 
+data class ImmersivePipelineStageTelemetry(
+    val id: String,
+    val name: String,
+    val available: Boolean,
+    val input: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
+    val output: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
+    val processingTimeMs: Double? = null,
+    val unavailableReason: String? = null,
+)
+
+private fun unavailableStage(id: String, name: String, reason: String) =
+    ImmersivePipelineStageTelemetry(id, name, available = false, unavailableReason = reason)
+
+private fun observedStage(id: String, name: String, output: ImmersiveStageDiagnostics) =
+    ImmersivePipelineStageTelemetry(id, name, available = output.available, output = output)
+
 /** Transparent Media3 processor used only to observe a real PCM boundary. */
 class ImmersiveStageMeterAudioProcessor(private val stage: ImmersiveStageMeter) : AudioProcessor {
     private var format = AudioProcessor.AudioFormat.NOT_SET
@@ -190,8 +206,13 @@ data class ImmersiveAudioDiagnostics(
     val activeBackend: Int = 0,
     val algorithmicLatencySamples: Int = 0,
     val brirReady: Boolean = false,
+    val preLimiterTruePeak: Float = 0f,
+    val limiterGainReductionDb: Float = 0f,
+    val gainBudgetDb: Float = 0f,
     val b1AfterSilenceSkipping: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
     val b2AfterSonic: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
+    val b3BeforeNativeDsp: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
+    val b5AfterNativeDsp: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
     val b5AudioTrack: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
 ) {
     fun backendLabel(): String = when (activeBackend) {
@@ -200,6 +221,30 @@ data class ImmersiveAudioDiagnostics(
         3 -> "Full Convolution"
         else -> if (processorEnabled) "Unavailable" else "Off / unavailable"
     }
+
+    fun pipelineStages(): List<ImmersivePipelineStageTelemetry> = listOf(
+        ImmersivePipelineStageTelemetry("B1", "After silence skipping", b1AfterSilenceSkipping.available,
+            output = b1AfterSilenceSkipping,
+            unavailableReason = if (!b1AfterSilenceSkipping.available) "Input boundary is before Media3 silence skipping" else null),
+        ImmersivePipelineStageTelemetry("B2", "After Sonic time/pitch", b2AfterSonic.available,
+            input = b1AfterSilenceSkipping, output = b2AfterSonic,
+            unavailableReason = if (!b2AfterSonic.available) "Waiting for PCM" else null),
+        ImmersivePipelineStageTelemetry("B3", "Before native DSP", b3BeforeNativeDsp.available,
+            input = b2AfterSonic, output = b3BeforeNativeDsp,
+            unavailableReason = if (!b3BeforeNativeDsp.available) "Waiting for PCM" else null),
+        ImmersivePipelineStageTelemetry("B4", "Native DSP input → output", processorEnabled,
+            input = ImmersiveStageDiagnostics(processorEnabled, inputRms, inputPeak, maxOf(inputTruePeakL, inputTruePeakR), clippedInput, nanCount, infCount, processedFrames, sampleRate, pcmEncoding),
+            output = ImmersiveStageDiagnostics(processorEnabled, outputRms, outputPeak, maxOf(outputTruePeakL, outputTruePeakR), clippedOutput, nanCount, infCount, processedFrames, sampleRate, pcmEncoding),
+            processingTimeMs = averageProcessingTimeMs,
+            unavailableReason = if (!processorEnabled) "Processor off" else null),
+        ImmersivePipelineStageTelemetry("B5", "After native DSP", b5AfterNativeDsp.available,
+            input = ImmersiveStageDiagnostics(processorEnabled, outputRms, outputPeak, maxOf(outputTruePeakL, outputTruePeakR), clippedOutput, nanCount, infCount, processedFrames, sampleRate, pcmEncoding),
+            output = b5AfterNativeDsp,
+            unavailableReason = if (!b5AfterNativeDsp.available) "Waiting for PCM" else null),
+        ImmersivePipelineStageTelemetry("B6", "AudioTrack enqueue", false, input = b5AfterNativeDsp,
+            unavailableReason = "AudioTrack internal PCM is not observable from the app"),
+        unavailableStage("B7", "Physical device output", "DAC/speaker output is not observable by Android app code"),
+    )
 
     fun truePeakWarningSource(): String {
         val inputL = inputTruePeakL > TRUE_PEAK_WARNING_LIMIT
@@ -258,6 +303,9 @@ data class ImmersiveAudioDiagnostics(
                 activeBackend = values.getOrNull(41)?.toInt() ?: 0,
                 algorithmicLatencySamples = values.getOrNull(42)?.toInt()?.coerceAtLeast(0) ?: 0,
                 brirReady = values.getOrNull(43)?.let { it > 0.5 } ?: false,
+                preLimiterTruePeak = values.getOrNull(44)?.toFloat()?.takeIf(Float::isFinite) ?: 0f,
+                limiterGainReductionDb = values.getOrNull(45)?.toFloat()?.takeIf(Float::isFinite) ?: 0f,
+                gainBudgetDb = values.getOrNull(46)?.toFloat()?.takeIf(Float::isFinite) ?: 0f,
             )
         }
     }
@@ -533,10 +581,19 @@ object ImmersiveAudioRuntime {
     @Volatile private var outputGainDb = 0f
     @Volatile private var b1Meter: ImmersiveStageMeter? = null
     @Volatile private var b2Meter: ImmersiveStageMeter? = null
+    @Volatile private var b3Meter: ImmersiveStageMeter? = null
+    @Volatile private var b5Meter: ImmersiveStageMeter? = null
 
-    fun attachStageMeters(b1: ImmersiveStageMeter, b2: ImmersiveStageMeter) {
+    fun attachStageMeters(
+        b1: ImmersiveStageMeter,
+        b2: ImmersiveStageMeter,
+        b3: ImmersiveStageMeter,
+        b5: ImmersiveStageMeter,
+    ) {
         b1Meter = b1
         b2Meter = b2
+        b3Meter = b3
+        b5Meter = b5
     }
 
     fun attach(value: ImmersiveAudioProcessor) {
@@ -632,7 +689,9 @@ object ImmersiveAudioRuntime {
         return native.copy(
             b1AfterSilenceSkipping = b1Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
             b2AfterSonic = b2Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
-            // AudioTrack consumes PCM inside the platform; post-device PCM is not observable here.
+            b3BeforeNativeDsp = b3Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
+            b5AfterNativeDsp = b5Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
+            // AudioTrack and physical device output are intentionally unavailable.
             b5AudioTrack = ImmersiveStageDiagnostics(),
         )
     }
@@ -640,6 +699,8 @@ object ImmersiveAudioRuntime {
         processor?.resetDiagnostics()
         b1Meter?.reset()
         b2Meter?.reset()
+        b3Meter?.reset()
+        b5Meter?.reset()
     }
 
     fun isEnabled(): Boolean = enabled

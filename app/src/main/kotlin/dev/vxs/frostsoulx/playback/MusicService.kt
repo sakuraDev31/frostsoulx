@@ -8228,9 +8228,12 @@ class MusicService :
                 val sonic = SonicAudioProcessor()
                 val b1Meter = ImmersiveStageMeter()
                 val b2Meter = ImmersiveStageMeter()
-                ImmersiveAudioRuntime.attachStageMeters(b1Meter, b2Meter)
+                val b3Meter = ImmersiveStageMeter()
+                val b5Meter = ImmersiveStageMeter()
+                ImmersiveAudioRuntime.attachStageMeters(b1Meter, b2Meter, b3Meter, b5Meter)
                 val afterSilence = ImmersiveStageMeterAudioProcessor(b1Meter)
                 val afterSonic = ImmersiveStageMeterAudioProcessor(b2Meter)
+                val beforeNativeDsp = ImmersiveStageMeterAudioProcessor(b3Meter)
                 // Keep the adapter in the chain even when the engine is OFF. Its OFF branch
                 // copies PCM byte-for-byte while collecting real input/output telemetry; the
                 // native DSP itself remains disabled until the runtime toggle enables it.
@@ -8240,7 +8243,9 @@ class MusicService :
                     afterSilence,
                     sonic,
                     afterSonic,
+                    beforeNativeDsp,
                     surround,
+                    ImmersiveStageMeterAudioProcessor(b5Meter),
                 )
                 return DefaultAudioSink
                     .Builder(context)

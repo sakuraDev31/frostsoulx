@@ -39,6 +39,11 @@ data class ImmersiveDiagnosticCapture(
         fun db(value: Float): String = if (!value.isFinite() || value <= 1.0e-9f) "-inf dB" else String.format(Locale.US, "%.2f dB", 20.0 * log10(value.toDouble()))
         fun raw(value: Float): String = String.format(Locale.US, "%.6f", value)
         fun row(label: String, left: Float, right: Float): String = String.format(Locale.US, "%-18s L=%-14s R=%s\n", label, db(left), db(right))
+        fun boundary(prefix: String, m: ImmersiveStageDiagnostics): String = if (!m.available) {
+            "$prefix=Unavailable"
+        } else {
+            "$prefix RMS=${raw(m.rms)} peak=${raw(m.peak)} truePeak=${raw(m.truePeak)} clipped=${m.clippedSamples} NaN=${m.nanCount} Inf=${m.infCount} frames=${m.frames}"
+        }
 
         return buildString {
             appendLine("FROSTSOULX DSP A/B SIGNAL REPORT")
@@ -92,6 +97,15 @@ data class ImmersiveDiagnosticCapture(
             appendLine("Deadline misses: ${d.deadlineMisses}")
             appendLine("Underruns: unavailable from AudioProcessor boundary")
             appendLine("Native process failures: ${d.nativeProcessFailures}")
+            appendLine()
+            appendLine("B1–B7 SIGNAL BOUNDARIES")
+            d.pipelineStages().forEach { stage ->
+                appendLine("${stage.id} ${stage.name}: ${if (stage.available) "LIVE" else "UNAVAILABLE"}")
+                appendLine("  ${boundary("input", stage.input)}")
+                appendLine("  ${boundary("output", stage.output)}")
+                stage.processingTimeMs?.let { appendLine("  processingMs=${raw(it.toFloat())}") }
+                stage.unavailableReason?.let { appendLine("  reason=$it") }
+            }
             appendLine()
             appendLine("TRUE-PEAK WARNING")
             appendLine(if (d.truePeakWarningSource() == "NONE") "None ($state)" else "WARNING: above -0.1 dBTP at ${d.truePeakWarningSource()} ($state)")

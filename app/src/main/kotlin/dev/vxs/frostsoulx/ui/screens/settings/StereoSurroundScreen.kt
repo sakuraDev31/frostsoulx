@@ -115,6 +115,8 @@ import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
 import dev.vxs.frostsoulx.constants.StereoSurroundTrebleGainDbKey
 import dev.vxs.frostsoulx.playback.ImmersiveActiveCapture
 import dev.vxs.frostsoulx.playback.ImmersiveAudioDiagnostics
+import dev.vxs.frostsoulx.playback.ImmersiveStageDiagnostics
+import dev.vxs.frostsoulx.playback.ImmersivePipelineStageTelemetry
 import dev.vxs.frostsoulx.playback.ImmersiveAudioPreset
 import dev.vxs.frostsoulx.playback.ImmersiveAudioProcessor
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
@@ -1715,9 +1717,16 @@ private fun StudioLabTabContent(
     onResetDiagnostics: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionTitleHeader("REAL-TIME STEREO METERS", "Dual-stage peak & RMS audio telemetry")
+        SectionTitleHeader("B1–B7 SIGNAL LAB", "Measured PCM boundaries from Media3 through the native DSP")
 
-        RealtimeAudioMetersCard(diagnostics)
+        PipelineTelemetryCard(
+            diagnostics = diagnostics,
+            activeCapture = activeCapture,
+            latestCapture = latestCapture,
+            onCapture = onCapture,
+            onExport = onExport,
+            onResetDiagnostics = onResetDiagnostics,
+        )
 
         SectionTitleHeader("OUTPUT SAFETY & SHAPING", "True peak ceiling & native frequency trim")
 
@@ -1732,16 +1741,6 @@ private fun StudioLabTabContent(
             onOutputGainChange = onOutputGainChange,
         )
 
-        SectionTitleHeader("DSP PERFORMANCE TELEMETRY", "Buffer latencies and signal boundaries")
-
-        DspTelemetryCard(
-            diagnostics = diagnostics,
-            activeCapture = activeCapture,
-            latestCapture = latestCapture,
-            onCapture = onCapture,
-            onExport = onExport,
-            onResetDiagnostics = onResetDiagnostics,
-        )
     }
 }
 
@@ -1822,7 +1821,25 @@ private fun RealtimeAudioMetersCard(diagnostics: ImmersiveAudioDiagnostics) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("HEADROOM SAFETY", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
-                Text("ZERO CLIPPING · CLEAN", color = FrostSoulTheme.colors.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                Text(
+                    text = when {
+                        diagnostics.clippedOutput > 0L -> "OUTPUT CLIP COUNT ${diagnostics.clippedOutput}"
+                        diagnostics.limiterGainReductionDb > 0.01f -> "LIMITING ${String.format(Locale.US, "%.2f", diagnostics.limiterGainReductionDb)} dB"
+                        diagnostics.processCallCount == 0L -> "WAITING FOR PCM"
+                        else -> "NO CLIP OBSERVED"
+                    },
+                    color = if (diagnostics.clippedOutput > 0L) Color(0xFFFF5252) else FrostSoulTheme.colors.accent,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TelemetryMetricItem("Pre-limiter TP", String.format(Locale.US, "%.4f", diagnostics.preLimiterTruePeak))
+                TelemetryMetricItem("Gain budget", String.format(Locale.US, "%.2f dB", diagnostics.gainBudgetDb))
             }
         }
     }
@@ -1967,7 +1984,62 @@ private fun OutputSafetyToneCard(
 }
 
 @Composable
-private fun DspTelemetryCard(
+private fun PipelineStageTelemetryRow(stage: ImmersivePipelineStageTelemetry) {
+    val colors = FrostSoulTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.surfaceRaised)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("${stage.id}  ${stage.name}", color = colors.onSurface, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (stage.available) "LIVE" else "UNAVAILABLE",
+                color = if (stage.available) colors.accent else colors.onSurfaceMuted,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        if (stage.available || stage.input.available || stage.output.available) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StageBoundaryMetrics("IN", stage.input, Modifier.weight(1f))
+                StageBoundaryMetrics("OUT", stage.output, Modifier.weight(1f))
+            }
+        }
+        if (!stage.available) {
+            Text(
+                stage.unavailableReason ?: "Measurement unavailable",
+                color = colors.onSurfaceMuted,
+                fontSize = 10.sp,
+            )
+        }
+        stage.processingTimeMs?.let {
+            Text("Processing ${String.format(Locale.US, "%.3f ms", it)}", color = colors.onSurfaceMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
+    }
+}
+
+@Composable
+private fun StageBoundaryMetrics(label: String, metrics: ImmersiveStageDiagnostics, modifier: Modifier = Modifier) {
+    val colors = FrostSoulTheme.colors
+    Column(modifier = modifier) {
+        Text(label, color = colors.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        if (!metrics.available) {
+            Text("Unavailable", color = colors.onSurfaceMuted, fontSize = 10.sp)
+        } else {
+            Text("RMS ${String.format(Locale.US, "%.4f", metrics.rms)}  Peak ${String.format(Locale.US, "%.4f", metrics.peak)}", color = colors.onSurface, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Text("TP ${String.format(Locale.US, "%.4f", metrics.truePeak)}  Clip ${metrics.clippedSamples}", color = colors.onSurfaceMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Text("NaN ${metrics.nanCount}  Inf ${metrics.infCount}  Frames ${metrics.frames}", color = colors.onSurfaceMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
+    }
+}
+
+@Composable
+private fun PipelineTelemetryCard(
     diagnostics: ImmersiveAudioDiagnostics,
     activeCapture: ImmersiveActiveCapture?,
     latestCapture: ImmersiveDiagnosticCapture?,
@@ -1986,6 +2058,18 @@ private fun DspTelemetryCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            Text(
+                "LIVE PROCESSING BOUNDARIES",
+                color = FrostSoulTheme.colors.onSurfaceMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            diagnostics.pipelineStages().forEach { stage ->
+                PipelineStageTelemetryRow(stage)
+            }
+
+            HorizontalDivider(color = FrostSoulTheme.colors.outline.copy(alpha = 0.2f))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
