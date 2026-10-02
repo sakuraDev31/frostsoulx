@@ -403,6 +403,15 @@ void applyPhysicalPreset(Handle& handle, int preset) noexcept {
             handle.engine.setRoomSize(0.95f);
             handle.engine.setDampening(0.43f);
             break;
+        case 13:
+            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::EightDOrbit);
+            handle.engine.setSpatialBlend(1.0f);
+            handle.engine.setRoomMix(0.18f);
+            handle.engine.setReflectionAmount(0.24f);
+            handle.engine.setReverbTimeSeconds(0.80f);
+            handle.engine.setRoomSize(0.50f);
+            handle.engine.setDampening(0.58f);
+            break;
         case 5:
         case 8:
             handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Subway);

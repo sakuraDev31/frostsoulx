@@ -453,6 +453,17 @@ fun StereoSurroundScreen(navController: NavController) {
                                     reverbTimePreference.value = 0.8f
                                     roomSizePreference.value = 0.35f
                                 }
+                                ImmersiveRoomPreset.EIGHT_D_ORBIT -> {
+                                    draftIntensity = 1f
+                                    intensityPreference.value = 1f
+                                    ImmersiveAudioRuntime.setIntensity(1f)
+                                    draftRoomMix = 0.18f
+                                    draftReverbTime = 0.8f
+                                    draftRoomSize = 0.5f
+                                    roomMixPreference.value = 0.18f
+                                    reverbTimePreference.value = 0.8f
+                                    roomSizePreference.value = 0.5f
+                                }
                                 ImmersiveRoomPreset.STUDIO -> {
                                     draftRoomMix = 0.18f
                                     draftReverbTime = 1.35f
@@ -1393,6 +1404,7 @@ private fun AcousticPresetCard(
                         ImmersiveRoomPreset.OPEN_ROAD -> "0.20s T60"
                         ImmersiveRoomPreset.CAVE -> "3.80s T60"
                         ImmersiveRoomPreset.STADIUM -> "4.20s T60"
+                        ImmersiveRoomPreset.EIGHT_D_ORBIT -> "8s HRTF orbit"
                     },
                     color = if (selected) FrostSoulTheme.colors.accent else FrostSoulTheme.colors.onSurfaceMuted,
                     fontSize = 10.sp,
@@ -1416,6 +1428,7 @@ private fun AcousticPresetCard(
                     ImmersiveRoomPreset.OPEN_ROAD -> "Open expanse\nground reflection"
                     ImmersiveRoomPreset.CAVE -> "Subterranean rock\ndiffuse scatter"
                     ImmersiveRoomPreset.STADIUM -> "Grand arena\nvast perimeter"
+                    ImmersiveRoomPreset.EIGHT_D_ORBIT -> "Automatic HRTF orbit\nbass stays anchored"
                 },
                 color = FrostSoulTheme.colors.onSurfaceMuted,
                 fontSize = 10.5.sp,

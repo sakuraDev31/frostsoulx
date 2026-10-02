@@ -122,6 +122,24 @@ struct ImmersiveAudioEngine::Impl {
     float reflectionDensity = 0.5f;
     float convolutionBlendCurrent = 1.0f;
 
+    // Automatic 8D Orbit preset state. Motion is generated on the native audio
+    // path, so Kotlin/JNI never has to update position per audio block.
+    static constexpr int kEightDBassDelayCapacity = 2048;
+    static constexpr float kEightDBassCrossoverHz = 150.0f;
+    static constexpr float kEightDOrbitPeriodSeconds = 8.0f;
+    static constexpr float kEightDMaxAzimuthDeg = 75.0f;
+    static constexpr float kEightDMaxElevationDeg = 50.0f;
+    float eightDOrbitPhase = 0.0f;
+    float eightDBassAlpha = 0.0f;
+    float eightDBassLow1L = 0.0f;
+    float eightDBassLow2L = 0.0f;
+    float eightDBassLow1R = 0.0f;
+    float eightDBassLow2R = 0.0f;
+    int eightDBassDelaySamples = 0;
+    int eightDBassWriteIndex = 0;
+    std::array<float, kEightDBassDelayCapacity> eightDBassDelayL{};
+    std::array<float, kEightDBassDelayCapacity> eightDBassDelayR{};
+
     // Preallocated real-time scratch buffers for non-uniform convolution
     std::vector<float> convScratchInL;
     std::vector<float> convScratchInR;
@@ -279,6 +297,16 @@ struct ImmersiveAudioEngine::Impl {
                 reflectionTapCount = 6;
                 damping = 0.43f;
                 break;
+            case RoomSimulationPreset::EightDOrbit:
+                tapDelaysMs[0] = 11.0f;
+                tapDelaysMs[1] = 23.0f;
+                tapDelaysMs[2] = 39.0f;
+                tapGains[0] = 0.18f;
+                tapGains[1] = 0.12f;
+                tapGains[2] = 0.08f;
+                reflectionTapCount = 3;
+                damping = 0.58f;
+                break;
         }
 
         // Normalize combined reflection-tap gain so correlated content (sustained bass, held
@@ -368,6 +396,16 @@ struct ImmersiveAudioEngine::Impl {
         // edge on top of the softclip/limiter overlap.
         limiterReleaseCoeff = std::exp(-1.0f / (0.080f * static_cast<float>(sampleRate)));
         limiterAttackCoeff = std::exp(-1.0f / (0.002f * static_cast<float>(sampleRate)));
+        eightDBassAlpha = 1.0f - std::exp(
+            -2.0f * static_cast<float>(M_PI) * kEightDBassCrossoverHz /
+            static_cast<float>(sampleRate));
+        eightDBassDelaySamples = 128;
+        eightDOrbitPhase = 0.0f;
+        eightDBassLow1L = eightDBassLow2L = 0.0f;
+        eightDBassLow1R = eightDBassLow2R = 0.0f;
+        eightDBassWriteIndex = 0;
+        eightDBassDelayL.fill(0.0f);
+        eightDBassDelayR.fill(0.0f);
         updateRoomModel();
     }
 
@@ -382,6 +420,12 @@ struct ImmersiveAudioEngine::Impl {
         reverbWriteIndex = 0;
         limiterGain = 1.0f;
         convolutionBlendCurrent = spatialBlend;
+        eightDOrbitPhase = 0.0f;
+        eightDBassLow1L = eightDBassLow2L = 0.0f;
+        eightDBassLow1R = eightDBassLow2R = 0.0f;
+        eightDBassWriteIndex = 0;
+        eightDBassDelayL.fill(0.0f);
+        eightDBassDelayR.fill(0.0f);
     }
 
     void releaseSteamAudio() noexcept {
@@ -427,6 +471,12 @@ struct ImmersiveAudioEngine::Impl {
         reflectionWriteIndex = 0;
         reverbWriteIndex = 0;
         limiterGain = 1.0f;
+        eightDOrbitPhase = 0.0f;
+        eightDBassLow1L = eightDBassLow2L = 0.0f;
+        eightDBassLow1R = eightDBassLow2R = 0.0f;
+        eightDBassWriteIndex = 0;
+        eightDBassDelayL.fill(0.0f);
+        eightDBassDelayR.fill(0.0f);
 
         lastResult = ImmersiveProcessResult::NotPrepared;
         lastState = -1;
@@ -599,7 +649,54 @@ struct ImmersiveAudioEngine::Impl {
         //    delay-matched dry/wet spatial blend and its own unity-gain
         //    normalisation, so no extra headroom trim is needed here (that
         //    keeps blend=0 + room Off bit-transparent apart from latency).
+        // Automatic 8D Orbit processing before the native renderer.
+        const bool eightDOrbit = roomPreset == RoomSimulationPreset::EightDOrbit;
+        if (eightDOrbit) {
+            const float phaseAdvance = 2.0f * static_cast<float>(M_PI) *
+                static_cast<float>(frames) /
+                (kEightDOrbitPeriodSeconds * static_cast<float>(sampleRate));
+            const float phaseMid = eightDOrbitPhase + 0.5f * phaseAdvance;
+            const float azimuth = -kEightDMaxAzimuthDeg * std::cos(phaseMid);
+            const float elevation = 5.0f +
+                (kEightDMaxElevationDeg - 5.0f) * std::fabs(std::sin(phaseMid));
+            nativeRenderer.setSourcePosition(azimuth, elevation);
+            nativeRenderer.setSourceDistance(1.0f);
+
+            eightDBassDelaySamples = std::clamp(
+                static_cast<int>(nativeRenderer.latencySamples()),
+                0, kEightDBassDelayCapacity - 1);
+            const float alpha = std::clamp(eightDBassAlpha, 0.001f, 1.0f);
+            for (int frame = 0; frame < frames; ++frame) {
+                const std::size_t i = static_cast<std::size_t>(frame) * 2u;
+                const float inL = interleavedStereo[i];
+                const float inR = interleavedStereo[i + 1];
+                eightDBassLow1L += alpha * (inL - eightDBassLow1L);
+                eightDBassLow2L += alpha * (eightDBassLow1L - eightDBassLow2L);
+                eightDBassLow1R += alpha * (inR - eightDBassLow1R);
+                eightDBassLow2R += alpha * (eightDBassLow1R - eightDBassLow2R);
+                const int write = eightDBassWriteIndex;
+                eightDBassDelayL[write] = eightDBassLow2L;
+                eightDBassDelayR[write] = eightDBassLow2R;
+                interleavedStereo[i] = inL - eightDBassLow2L;
+                interleavedStereo[i + 1] = inR - eightDBassLow2R;
+                eightDBassWriteIndex = (write + 1) % kEightDBassDelayCapacity;
+            }
+            eightDOrbitPhase = std::fmod(
+                eightDOrbitPhase + phaseAdvance, 2.0f * static_cast<float>(M_PI));
+        }
+
         nativeRenderer.process(interleavedStereo, frames);
+
+        if (eightDOrbit) {
+            int read = eightDBassWriteIndex - eightDBassDelaySamples - frames;
+            while (read < 0) read += kEightDBassDelayCapacity;
+            for (int frame = 0; frame < frames; ++frame) {
+                const std::size_t i = static_cast<std::size_t>(frame) * 2u;
+                const int idx = (read + frame) % kEightDBassDelayCapacity;
+                interleavedStereo[i] += eightDBassDelayL[idx];
+                interleavedStereo[i + 1] += eightDBassDelayR[idx];
+            }
+        }
 
         // 3. Active physical-space layer, then the safety limiter as the final stage.
         for (int frame = 0; frame < frames; ++frame) {

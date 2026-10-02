@@ -40,6 +40,7 @@ enum class RoomSimulationPreset {
     Subway,
     ClosedCar,
     LongTunnel,
+    EightDOrbit,
 };
 
 // UI-friendly normalized controls in [0, 1].

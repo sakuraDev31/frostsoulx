@@ -353,6 +353,7 @@ enum class ImmersiveRoomPreset(val nativeValue: Int, val label: String) {
     OPEN_ROAD(10, "Open road"),
     CAVE(11, "Cave"),
     STADIUM(12, "Stadium"),
+    EIGHT_D_ORBIT(13, "8D Orbit"),
     ;
 
     companion object {
