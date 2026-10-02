@@ -578,7 +578,6 @@ struct ImmersiveAudioEngine::Impl {
                 return false;
             }
 
-            applyRoomModel(outL, outR);
             applyOutputLimiter(outL, outR);
 
             if (!std::isfinite(outL) || !std::isfinite(outR)) {
@@ -749,11 +748,9 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
         }
     }
 
-    if (impl_->backendPreference == SpatialBackend::FullConvolution && impl_->fullConvolutionReady) {
-        impl_->backend = SpatialBackend::FullConvolution;
-    } else {
-        impl_->backend = nativeReady ? SpatialBackend::Native : SpatialBackend::None;
-    }
+    // The live route is intentionally pinned to the Spatial Panner renderer.
+    // Full convolution remains available as an offline/reference implementation.
+    impl_->backend = nativeReady ? SpatialBackend::Native : SpatialBackend::None;
 
 #if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
     // Try Steam Audio. If any stage fails we tear down only the Steam objects
@@ -787,7 +784,7 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
         return true;
     }();
 
-    if (steamReady) {
+    if (false) {
         impl_->backend = SpatialBackend::SteamAudio;
     } else {
         impl_->releaseSteamAudio();
@@ -843,6 +840,14 @@ void ImmersiveAudioEngine::setSpatialBlend(float blend) noexcept {
     // The native renderer performs its own delay-matched dry/wet crossfade.
     impl_->nativeRenderer.setSpatialBlend(impl_->spatialBlend);
 }
+void ImmersiveAudioEngine::setSourcePosition(float azimuthDeg, float elevationDeg) noexcept {
+    impl_->nativeRenderer.setSourcePosition(azimuthDeg, elevationDeg);
+}
+
+void ImmersiveAudioEngine::setSourceDistance(float distanceMetres) noexcept {
+    impl_->nativeRenderer.setSourceDistance(distanceMetres);
+}
+
 
 void ImmersiveAudioEngine::setHeadOrientation(float yawDeg, float pitchDeg, float rollDeg) noexcept {
     spatial::HeadOrientation o;
@@ -959,12 +964,10 @@ bool ImmersiveAudioEngine::process(float* interleavedStereo, int frames) noexcep
         return false;
     }
 
-    // Full-Partitioned Linear Convolution: physical room BRIR convolution.
-    if (impl_->backend == SpatialBackend::FullConvolution) {
-        return impl_->processFullConvolution(interleavedStereo, frames);
-    }
+    // Spatial Panner is the only active realtime spatial runtime.
+    if (impl_->backend != SpatialBackend::Native) impl_->backend = SpatialBackend::Native;
 
-    // Native backend: built-in HOA/HRTF renderer -> room -> limiter.
+    // Native spatial-panner renderer -> final safety stage.
     if (impl_->backend == SpatialBackend::Native) {
         return impl_->processNative(interleavedStereo, frames);
     }

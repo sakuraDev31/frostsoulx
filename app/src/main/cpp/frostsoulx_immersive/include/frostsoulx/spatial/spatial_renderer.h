@@ -78,6 +78,8 @@ public:
     /// 0 collapses both to the front (mono image), 1 places them at +/-90 deg.
     /// Smoothed internally; safe to call from the control thread.
     void setStereoWidth(float width) noexcept;
+    void setSourcePosition(float azimuthDeg, float elevationDeg) noexcept;
+    void setSourceDistance(float distanceMetres) noexcept;
 
     /// Dry/spatialised balance, [0, 1]. 0 is fully dry (bit-transparent apart
     /// from the renderer's fixed latency), 1 is fully spatialised.
@@ -127,6 +129,12 @@ private:
     std::size_t hoaChannels_ = 9;
     std::size_t block_ = 128;
     float outputGain_ = 1.0f;
+    float sourceAzimuthTarget_ = 0.0f;
+    float sourceElevationTarget_ = 0.0f;
+    float sourceDistanceTarget_ = 1.0f;
+    float sourceAzimuthCurrent_ = 0.0f;
+    float sourceElevationCurrent_ = 0.0f;
+    float sourceDistanceCurrent_ = 1.0f;
 
     HrtfDatabase hrtf_;
     SpeakerLayout layout_;

@@ -113,6 +113,9 @@ struct Handle {
     std::atomic<float> trebleGainDb{0.0f};
     std::atomic<float> outputGainDb{0.0f};
     std::atomic<float> stereoWidth{0.5f};
+    std::atomic<float> sourceAzimuth{0.0f};
+    std::atomic<float> sourceElevation{0.0f};
+    std::atomic<float> sourceDistance{1.0f};
     std::atomic<int> roomPreset{2};
     std::atomic<float> roomMix{0.18f};
     std::atomic<float> reflectionAmount{0.28f};
@@ -457,7 +460,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeCreate(
     auto handle = std::make_unique<Handle>();
     handle->sampleRate = sampleRate;
     handle->encoding = encoding;
-    handle->engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
+    handle->engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::Native);
     if (!handle->engine.prepare(sampleRate, kMaxQuantumFrames)) return 0L;
     applyPhysicalPreset(*handle, 2);
     handle->engine.setEnabled(false);
@@ -607,6 +610,28 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetDampening(
     JNIEnv*, jclass, jlong address, jfloat dampening) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         handle->engine.setDampening(std::isfinite(dampening) ? std::clamp(dampening, 0.0f, 1.0f) : 0.5f);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSourcePosition(
+    JNIEnv*, jclass, jlong address, jfloat azimuthDeg, jfloat elevationDeg) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        const float az = std::isfinite(azimuthDeg) ? std::clamp(azimuthDeg, -180.0f, 180.0f) : 0.0f;
+        const float el = std::isfinite(elevationDeg) ? std::clamp(elevationDeg, -45.0f, 90.0f) : 0.0f;
+        handle->sourceAzimuth.store(az, std::memory_order_relaxed);
+        handle->sourceElevation.store(el, std::memory_order_relaxed);
+        handle->engine.setSourcePosition(az, el);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSourceDistance(
+    JNIEnv*, jclass, jlong address, jfloat distanceMetres) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        const float distance = std::isfinite(distanceMetres) ? std::clamp(distanceMetres, 1.0f, 10.0f) : 1.0f;
+        handle->sourceDistance.store(distance, std::memory_order_relaxed);
+        handle->engine.setSourceDistance(distance);
     }
 }
 

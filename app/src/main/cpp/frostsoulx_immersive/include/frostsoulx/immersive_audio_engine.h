@@ -63,6 +63,8 @@ public:
     void reset() noexcept;
     void setEnabled(bool enabled) noexcept;
     void setSpatialBlend(float blend) noexcept;
+    void setSourcePosition(float azimuthDeg, float elevationDeg) noexcept;
+    void setSourceDistance(float distanceMetres) noexcept;
 
     // Space simulation controls (control thread only).
     void setRoomSimulationPreset(RoomSimulationPreset preset) noexcept;

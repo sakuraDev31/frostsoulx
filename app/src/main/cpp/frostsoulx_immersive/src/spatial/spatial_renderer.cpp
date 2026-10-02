@@ -168,6 +168,19 @@ void SpatialRenderer::setStereoWidth(float width) noexcept {
     widthTarget_ = rt::clampUnit(width);
 }
 
+void SpatialRenderer::setSourcePosition(float azimuthDeg, float elevationDeg) noexcept {
+    if (!std::isfinite(azimuthDeg) || !std::isfinite(elevationDeg)) return;
+    while (azimuthDeg > 180.0f) azimuthDeg -= 360.0f;
+    while (azimuthDeg < -180.0f) azimuthDeg += 360.0f;
+    sourceAzimuthTarget_ = azimuthDeg;
+    sourceElevationTarget_ = std::clamp(elevationDeg, -45.0f, 90.0f);
+}
+
+void SpatialRenderer::setSourceDistance(float distanceMetres) noexcept {
+    if (!std::isfinite(distanceMetres)) return;
+    sourceDistanceTarget_ = std::clamp(distanceMetres, 1.0f, 10.0f);
+}
+
 void SpatialRenderer::setSpatialBlend(float blend) noexcept {
     blendTarget_ = rt::clampUnit(blend);
 }
@@ -177,13 +190,10 @@ void SpatialRenderer::setHeadOrientation(const HeadOrientation& o) noexcept {
 }
 
 void SpatialRenderer::updateSourceGains() noexcept {
-    // Two virtual sources symmetric about the median plane. Width 0 puts both
-    // dead ahead (mono), width 1 puts them fully lateral at +/-90 deg.
-    const float az = 15.0f + 75.0f * widthCurrent_;
-    const Vec3 l = SphericalCoord{az, 0.0f, 1.0f}.toCartesian();
-    const Vec3 r = SphericalCoord{-az, 0.0f, 1.0f}.toCartesian();
-    encoder_.gainsFor(l.normalized(), gainsL_.data());
-    encoder_.gainsFor(r.normalized(), gainsR_.data());
+    const Vec3 source = SphericalCoord{
+        sourceAzimuthCurrent_, sourceElevationCurrent_, 1.0f
+    }.toCartesian().normalized();
+    encoder_.gainsFor(source, gainsL_.data());
 }
 
 std::size_t SpatialRenderer::encodeObject(const SphericalCoord& dir,
@@ -203,25 +213,19 @@ void SpatialRenderer::renderBlock() noexcept {
     const std::size_t C = hoaChannels_;
     const std::size_t n = block_;
 
-    // --- Encode the two virtual sources into the HOA bus --------------------
+    // --- Encode one mono point source into the HOA bus ----------------------
     for (std::size_t c = 0; c < C; ++c) rt::vecClear(hoaPtrs_[c], n);
 
-    // Smooth the width across the block so slider moves never zipper.
-    float w = widthCurrent_;
-    const bool widthMoving = std::fabs(widthTarget_ - w) > 1.0e-6f;
+    const float smooth = std::min(1.0f, widthCoeff_ * static_cast<float>(n));
+    sourceAzimuthCurrent_ += (sourceAzimuthTarget_ - sourceAzimuthCurrent_) * smooth;
+    sourceElevationCurrent_ += (sourceElevationTarget_ - sourceElevationCurrent_) * smooth;
+    sourceDistanceCurrent_ += (sourceDistanceTarget_ - sourceDistanceCurrent_) * smooth;
+    updateSourceGains();
 
+    const float distanceGain = 1.0f / std::max(1.0f, sourceDistanceCurrent_);
     for (std::size_t i = 0; i < n; ++i) {
-        const float l = inFifo_[i * 2];
-        const float r = inFifo_[i * 2 + 1];
-        for (std::size_t c = 0; c < C; ++c) {
-            hoaPtrs_[c][i] = gainsL_[c] * l + gainsR_[c] * r;
-        }
-    }
-
-    if (widthMoving) {
-        w += (widthTarget_ - w) * std::min(1.0f, widthCoeff_ * static_cast<float>(n));
-        widthCurrent_ = rt::clampUnit(w);
-        updateSourceGains();
+        const float mono = 0.5f * (inFifo_[i * 2] + inFifo_[i * 2 + 1]) * distanceGain;
+        for (std::size_t c = 0; c < C; ++c) hoaPtrs_[c][i] = gainsL_[c] * mono;
     }
 
     // --- Sound-field rotation (head tracking) -------------------------------

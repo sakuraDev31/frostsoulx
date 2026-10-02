@@ -72,6 +72,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
@@ -184,6 +185,9 @@ fun StereoSurroundScreen(navController: NavController) {
     var draftRoomSize by remember { mutableFloatStateOf(persistedRoomSize.coerceIn(0f, 1f)) }
     var draftDampening by remember { mutableFloatStateOf(persistedDampening.coerceIn(0f, 1f)) }
     var draftStereoWidth by remember { mutableFloatStateOf(persistedStereoWidth.coerceIn(0f, 1f)) }
+    var draftSourceAzimuth by remember { mutableFloatStateOf(ImmersiveAudioRuntime.sourceAzimuth()) }
+    var draftSourceElevation by remember { mutableFloatStateOf(ImmersiveAudioRuntime.sourceElevation()) }
+    var draftSourceDistance by remember { mutableFloatStateOf(ImmersiveAudioRuntime.sourceDistance()) }
     var draftCarFader by remember { mutableFloatStateOf(persistedCarFader.coerceIn(-1f, 1f)) }
     var draftQuantum by remember { mutableIntStateOf(persistedQuantum.coerceIn(ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES, ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES)) }
     var draftBassGainDb by remember { mutableFloatStateOf(persistedBassGainDb.coerceIn(-12f, 12f)) }
@@ -556,10 +560,16 @@ fun StereoSurroundScreen(navController: NavController) {
                 }
                 ImmersiveCategory.Soundstage -> {
                     SoundstageTabContent(
+                        sourceAzimuth = draftSourceAzimuth,
+                        sourceElevation = draftSourceElevation,
+                        sourceDistance = draftSourceDistance,
                         stereoWidth = draftStereoWidth,
                         carFader = draftCarFader,
                         quantumFrames = draftQuantum,
                         savedPresets = savedPresets,
+                        onSourceAzimuthChange = { draftSourceAzimuth = it; ImmersiveAudioRuntime.setSourcePosition(draftSourceAzimuth, draftSourceElevation) },
+                        onSourceElevationChange = { draftSourceElevation = it; ImmersiveAudioRuntime.setSourcePosition(draftSourceAzimuth, draftSourceElevation) },
+                        onSourceDistanceChange = { draftSourceDistance = it; ImmersiveAudioRuntime.setSourceDistance(it) },
                         onStereoWidthChange = { draftStereoWidth = it; stereoWidthPreference.value = it; ImmersiveAudioRuntime.setStereoWidth(it) },
                         onCarFaderChange = { draftCarFader = it; carFaderPreference.value = it; ImmersiveAudioRuntime.setCarFader(it) },
                         onQuantumChange = {
@@ -1229,7 +1239,10 @@ private fun AcousticsTabContent(
     onDampeningChange: (Float) -> Unit,
     onResetAcoustics: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(
+        modifier = Modifier.alpha(0.42f),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
         SectionTitleHeader("ACOUSTIC ENVIRONMENTS", "Physics-based room impulse simulation & binaural acoustics")
 
         // Environment Preset Cards Carousel
@@ -1419,10 +1432,16 @@ private fun AcousticPresetCard(
 
 @Composable
 private fun SoundstageTabContent(
+    sourceAzimuth: Float,
+    sourceElevation: Float,
+    sourceDistance: Float,
     stereoWidth: Float,
     carFader: Float,
     quantumFrames: Int,
     savedPresets: List<ImmersiveAudioPreset>,
+    onSourceAzimuthChange: (Float) -> Unit,
+    onSourceElevationChange: (Float) -> Unit,
+    onSourceDistanceChange: (Float) -> Unit,
     onStereoWidthChange: (Float) -> Unit,
     onCarFaderChange: (Float) -> Unit,
     onQuantumChange: (Int) -> Unit,
@@ -1434,26 +1453,34 @@ private fun SoundstageTabContent(
         SectionTitleHeader("BINAURAL SOUNDSTAGE", "Spatial width and listener focal point")
 
         AcousticParamSliderCard(
-            label = "M/S Stereo Width",
-            hint = "Smoothed mid/side side-gain plus spatial width (Mono ↔ Ultra-Wide)",
-            value = stereoWidth,
-            range = 0f..1f,
-            displayValue = "${(stereoWidth * 100).roundToInt()}%",
-            onValueChange = onStereoWidthChange,
+            label = "Azimuth",
+            hint = "Spatial Panner: 0° front, +90° right, -90° left, ±180° rear",
+            value = sourceAzimuth,
+            range = -180f..180f,
+            displayValue = sourceAzimuth.roundToInt().toString() + "°",
+            onValueChange = onSourceAzimuthChange,
         )
 
         AcousticParamSliderCard(
-            label = "Front / Rear Stage Fader",
-            hint = "Shifts the virtual sound source between front and rear stage",
-            value = carFader,
-            range = -1f..1f,
-            displayValue = when {
-                carFader < -0.05f -> "Front ${((-carFader) * 100).roundToInt()}%"
-                carFader > 0.05f -> "Rear ${(carFader * 100).roundToInt()}%"
-                else -> "Center"
-            },
-            onValueChange = onCarFaderChange,
+            label = "Elevation",
+            hint = "Vertical source angle supported by the current HRTF model",
+            value = sourceElevation,
+            range = -45f..90f,
+            displayValue = sourceElevation.roundToInt().toString() + "°",
+            onValueChange = onSourceElevationChange,
         )
+
+        AcousticParamSliderCard(
+            label = "Distance",
+            hint = "Point-source distance cue with 1/r attenuation",
+            value = sourceDistance,
+            range = 1f..10f,
+            displayValue = String.format(Locale.US, "%.2f m", sourceDistance),
+            onValueChange = onSourceDistanceChange,
+        )
+
+        LegacyFadedControlCard("M/S Stereo Width", "Not used by the active point-source renderer")
+        LegacyFadedControlCard("Front / Rear Stage Fader", "Not used by the active point-source renderer")
 
         SectionTitleHeader("PROCESSING BUFFER (LATENCY)", "Quantum block size for real-time DSP")
 
@@ -1470,6 +1497,21 @@ private fun SoundstageTabContent(
             onSavePreset = onSavePreset,
             onDeletePreset = onDeletePreset,
         )
+    }
+}
+
+@Composable
+private fun LegacyFadedControlCard(label: String, hint: String) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface.copy(alpha = 0.45f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text("Unavailable · Spatial Panner runtime", color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 11.sp)
+            Text(hint, color = FrostSoulTheme.colors.onSurfaceMuted, fontSize = 10.5.sp)
+        }
     }
 }
 
