@@ -10,10 +10,10 @@ permissions:
 
 env:
   GRADLE_OPTS: >-
-    -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseG1GC -XX:MaxMetaspaceSize=512m"
+    -Dorg.gradle.jvmargs="-Xmx5g -XX:+UseG1GC -XX:MaxMetaspaceSize=2g"
     -Dorg.gradle.daemon=false
-    -Dorg.gradle.parallel=true
-    -Dorg.gradle.configureondemand=true
+    -Dorg.gradle.parallel=false
+    -Dorg.gradle.configureondemand=false
     -Dorg.gradle.caching=true
 
 jobs:
@@ -108,6 +108,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           RELEASE_DIR="${{ steps.release_dir.outputs.release_dir }}"
           mkdir -p "$RELEASE_DIR/out"
 
@@ -126,6 +127,7 @@ jobs:
         run: |
           APK_PATH="${{ steps.release_dir.outputs.release_dir }}/out/app-gms-mobile-arm64-release.apk"
           SIZE_MB=$(du -m "$APK_PATH" | cut -f1)
+
           echo "::notice::APK Size: ${SIZE_MB}MB"
           echo "apk_size_mb=${SIZE_MB}" >> "$GITHUB_ENV"
 
