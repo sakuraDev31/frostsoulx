@@ -170,6 +170,8 @@ struct ImmersiveAudioEngine::Impl {
         damping = 0.42f;
 
         delayScale = 0.60f + 1.00f * roomSizeNorm;
+        if (roomPreset == RoomSimulationPreset::ClosedCar) delayScale = 0.55f + 0.35f * roomSizeNorm;
+        if (roomPreset == RoomSimulationPreset::LongTunnel) delayScale = 1.10f + 1.70f * roomSizeNorm;
         // Wider rooms should spread channels more; narrow rooms should mono-ish collapse.
         decorrelationSkew = 1.00f + 0.28f * widthNorm;
         reflectionCrossFeed = 0.26f - 0.24f * widthNorm;
@@ -247,6 +249,36 @@ struct ImmersiveAudioEngine::Impl {
                 reflectionTapCount = 6;
                 damping = 0.48f;
                 break;
+            case RoomSimulationPreset::ClosedCar:
+                // Compact cabin: dense early reflections, short decay and stronger damping.
+                tapDelaysMs[0] = 3.8f;
+                tapDelaysMs[1] = 6.7f;
+                tapDelaysMs[2] = 10.4f;
+                tapDelaysMs[3] = 15.8f;
+                tapGains[0] = 0.31f;
+                tapGains[1] = 0.24f;
+                tapGains[2] = 0.18f;
+                tapGains[3] = 0.12f;
+                reflectionTapCount = 4;
+                damping = 0.72f;
+                break;
+            case RoomSimulationPreset::LongTunnel:
+                // Long hard-wall tunnel: sparse early echoes followed by a longer tail.
+                tapDelaysMs[0] = 24.0f;
+                tapDelaysMs[1] = 52.0f;
+                tapDelaysMs[2] = 91.0f;
+                tapDelaysMs[3] = 146.0f;
+                tapDelaysMs[4] = 218.0f;
+                tapDelaysMs[5] = 305.0f;
+                tapGains[0] = 0.34f;
+                tapGains[1] = 0.28f;
+                tapGains[2] = 0.22f;
+                tapGains[3] = 0.17f;
+                tapGains[4] = 0.12f;
+                tapGains[5] = 0.08f;
+                reflectionTapCount = 6;
+                damping = 0.43f;
+                break;
         }
 
         // Normalize combined reflection-tap gain so correlated content (sustained bass, held
@@ -289,6 +321,8 @@ struct ImmersiveAudioEngine::Impl {
                 case RoomSimulationPreset::ConcertHall: return 79.0f;
                 case RoomSimulationPreset::Cathedral: return 107.0f;
                 case RoomSimulationPreset::Subway: return 86.0f;
+                case RoomSimulationPreset::ClosedCar: return 24.0f;
+                case RoomSimulationPreset::LongTunnel: return 138.0f;
             }
             return 53.0f;
         }();
@@ -567,7 +601,7 @@ struct ImmersiveAudioEngine::Impl {
         //    keeps blend=0 + room Off bit-transparent apart from latency).
         nativeRenderer.process(interleavedStereo, frames);
 
-        // 3. Room processing, then the safety limiter as the final stage.
+        // 3. Active physical-space layer, then the safety limiter as the final stage.
         for (int frame = 0; frame < frames; ++frame) {
             const std::size_t li = static_cast<std::size_t>(frame) * 2u;
             float outL = interleavedStereo[li];
@@ -578,6 +612,7 @@ struct ImmersiveAudioEngine::Impl {
                 return false;
             }
 
+            applyRoomModel(outL, outR);
             applyOutputLimiter(outL, outR);
 
             if (!std::isfinite(outL) || !std::isfinite(outR)) {

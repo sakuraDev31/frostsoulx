@@ -1240,7 +1240,7 @@ private fun AcousticsTabContent(
     onResetAcoustics: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.alpha(0.42f),
+        modifier = Modifier,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         SectionTitleHeader("ACOUSTIC ENVIRONMENTS", "Physics-based room impulse simulation & binaural acoustics")
@@ -1480,7 +1480,18 @@ private fun SoundstageTabContent(
         )
 
         LegacyFadedControlCard("M/S Stereo Width", "Not used by the active point-source renderer")
-        LegacyFadedControlCard("Front / Rear Stage Fader", "Not used by the active point-source renderer")
+        AcousticParamSliderCard(
+            label = "Closed Car Front ↔ Rear",
+            hint = "Active only for Closed Car. Center = front, ends = rear hemisphere.",
+            value = carFader,
+            range = -1f..1f,
+            displayValue = when {
+                carFader < -0.05f -> "Rear −"
+                carFader > 0.05f -> "Rear +"
+                else -> "Front"
+            },
+            onValueChange = onCarFaderChange,
+        )
 
         SectionTitleHeader("PROCESSING BUFFER (LATENCY)", "Quantum block size for real-time DSP")
 

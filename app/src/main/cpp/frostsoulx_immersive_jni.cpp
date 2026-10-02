@@ -342,7 +342,7 @@ int resultCode(frostsoulx::ImmersiveProcessResult result) noexcept {
 void applyPhysicalPreset(Handle& handle, int preset) noexcept {
     using Preset = frostsoulx::spatial::SpaceProfile::Preset;
     handle.roomPreset.store(preset, std::memory_order_relaxed);
-    handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
+    handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::Native);
     switch (preset) {
         case 1:
             handle.engine.setSpacePreset(Preset::Bathroom);
@@ -385,16 +385,50 @@ void applyPhysicalPreset(Handle& handle, int preset) noexcept {
             handle.engine.setSpacePreset(Preset::Anechoic);
             break;
     }
+
+    switch (preset) {
+        case 6:
+            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::ClosedCar);
+            handle.engine.setRoomMix(0.14f);
+            handle.engine.setReflectionAmount(0.45f);
+            handle.engine.setReverbTimeSeconds(0.60f);
+            handle.engine.setRoomSize(0.25f);
+            handle.engine.setDampening(0.72f);
+            break;
+        case 9:
+            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::LongTunnel);
+            handle.engine.setRoomMix(0.38f);
+            handle.engine.setReflectionAmount(0.62f);
+            handle.engine.setReverbTimeSeconds(5.50f);
+            handle.engine.setRoomSize(0.95f);
+            handle.engine.setDampening(0.43f);
+            break;
+        case 5:
+        case 8:
+            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Subway);
+            handle.engine.setRoomMix(0.30f);
+            handle.engine.setReflectionAmount(0.55f);
+            handle.engine.setReverbTimeSeconds(2.40f);
+            handle.engine.setRoomSize(0.70f);
+            handle.engine.setDampening(0.48f);
+            break;
+        case 0:
+            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Off);
+            break;
+        default:
+            handle.engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Studio);
+            break;
+    }
 }
 
 void applyCarFader(Handle& handle, float fader) noexcept {
     const float safe = std::isfinite(fader) ? std::clamp(fader, -1.0f, 1.0f) : 0.0f;
     handle.carFader.store(safe, std::memory_order_relaxed);
     if (handle.roomPreset.load(std::memory_order_relaxed) == 6) {
-        // The canonical ClosedCar profile uses front/back Z geometry. Keep the
-        // existing UI fader meaningful by moving the virtual source between the
-        // front and rear cabin positions while retaining the physical BRIR path.
-        handle.engine.setSourcePosition(0.4f, -0.3f, 0.6f + 0.4f * safe);
+        // Cabin fader: center = front, ends = rear hemisphere. This uses the
+        // active HRTF azimuth model rather than the disabled BRIR backend.
+        const float rearAzimuth = safe * 180.0f;
+        handle.engine.setSourcePosition(rearAzimuth, -3.0f);
     }
 }
 
@@ -559,7 +593,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomPreset(
     JNIEnv*, jclass, jlong address, jint preset) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        const int safePreset = std::clamp(static_cast<int>(preset), 0, 6);
+        const int safePreset = std::clamp(static_cast<int>(preset), 0, 12);
         applyPhysicalPreset(*handle, safePreset);
         applyCarFader(*handle, handle->carFader.load(std::memory_order_relaxed));
     }
