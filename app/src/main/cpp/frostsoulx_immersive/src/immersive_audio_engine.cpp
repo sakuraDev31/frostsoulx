@@ -21,6 +21,9 @@ constexpr float kInputSanitizeLimit = 2.0f;
 constexpr float kOutputCeiling = 0.98f;
 // Single final protection stage for the full-BRIR path, targeting -1 dBTP.
 constexpr float kTruePeakCeiling = 0.8912509f;
+// Legacy sample-peak guard used by the non-BRIR room path. The full-BRIR
+// path uses kTruePeakCeiling in its single final protection stage.
+constexpr float kLimiterThreshold = 0.96f;
 constexpr float kLimiterMinGain = 0.1f;
 constexpr float kZeroEpsilon = 1.0e-12f;
 
