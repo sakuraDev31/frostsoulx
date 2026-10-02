@@ -126,9 +126,9 @@ struct ImmersiveAudioEngine::Impl {
     // path, so Kotlin/JNI never has to update position per audio block.
     static constexpr int kEightDBassDelayCapacity = 2048;
     static constexpr float kEightDBassCrossoverHz = 150.0f;
-    static constexpr float kEightDOrbitPeriodSeconds = 8.0f;
-    static constexpr float kEightDMaxAzimuthDeg = 75.0f;
-    static constexpr float kEightDMaxElevationDeg = 50.0f;
+    static constexpr float kEightDOrbitPeriodSeconds = 6.0f;
+    static constexpr float kEightDMaxAzimuthDeg = 140.0f;
+    static constexpr float kEightDMaxElevationDeg = 65.0f;
     float eightDOrbitPhase = 0.0f;
     float eightDBassAlpha = 0.0f;
     float eightDBassLow1L = 0.0f;
@@ -592,10 +592,17 @@ struct ImmersiveAudioEngine::Impl {
             reflectionR += reflectionDelayRight[static_cast<std::size_t>(readR)] * gain;
         }
 
-        const int revReadL = (reverbWriteIndex - reverbTapL + reverbRing) % reverbRing;
-        const int revReadR = (reverbWriteIndex - reverbTapR + reverbRing) % reverbRing;
-        const float delayedRevL = reverbDelayLeft[static_cast<std::size_t>(revReadL)];
-        const float delayedRevR = reverbDelayRight[static_cast<std::size_t>(revReadR)];
+        const int revOffsetsL[4] = {reverbTapL, std::max(1, static_cast<int>(reverbTapL * 1.37f)), std::max(1, static_cast<int>(reverbTapL * 1.79f)), std::max(1, static_cast<int>(reverbTapL * 2.23f))};
+        const int revOffsetsR[4] = {reverbTapR, std::max(1, static_cast<int>(reverbTapR * 1.31f)), std::max(1, static_cast<int>(reverbTapR * 1.73f)), std::max(1, static_cast<int>(reverbTapR * 2.17f))};
+        float delayedRevL = 0.0f;
+        float delayedRevR = 0.0f;
+        constexpr float kLateTapGain[4] = {0.48f, 0.27f, 0.16f, 0.09f};
+        for (int tap = 0; tap < 4; ++tap) {
+            const int readL = (reverbWriteIndex - std::min(revOffsetsL[tap], reverbRing - 1) + reverbRing) % reverbRing;
+            const int readR = (reverbWriteIndex - std::min(revOffsetsR[tap], reverbRing - 1) + reverbRing) % reverbRing;
+            delayedRevL += reverbDelayLeft[static_cast<std::size_t>(readL)] * kLateTapGain[tap];
+            delayedRevR += reverbDelayRight[static_cast<std::size_t>(readR)] * kLateTapGain[tap];
+        }
 
         reverbLowpassL += damping * (delayedRevL - reverbLowpassL);
         reverbLowpassR += damping * (delayedRevR - reverbLowpassR);
@@ -603,8 +610,8 @@ struct ImmersiveAudioEngine::Impl {
         const float revInputL = (left * 0.72f) + (reflectionL * reflectionAmount) + (reflectionR * 0.18f);
         const float revInputR = (right * 0.72f) + (reflectionR * reflectionAmount) + (reflectionL * 0.18f);
 
-        reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = revInputL + reverbLowpassR * (0.16f * reverbFeedback);
-        reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = revInputR + reverbLowpassL * (0.16f * reverbFeedback);
+        reverbDelayLeft[static_cast<std::size_t>(reverbWriteIndex)] = revInputL + reverbLowpassR * (0.28f * reverbFeedback);
+        reverbDelayRight[static_cast<std::size_t>(reverbWriteIndex)] = revInputR + reverbLowpassL * (0.28f * reverbFeedback);
 
         reflectionDelayLeft[static_cast<std::size_t>(reflectionWriteIndex)] = left + reflectionCrossFeed * right;
         reflectionDelayRight[static_cast<std::size_t>(reflectionWriteIndex)] = right + reflectionCrossFeed * left;
@@ -851,8 +858,8 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
     bool nativeReady = false;
     {
         spatial::SpatialRendererConfig scfg;
-        scfg.ambisonicOrder = 2;
-        scfg.array = spatial::VirtualArray::Dodeca12;
+        scfg.ambisonicOrder = 3;
+        scfg.array = spatial::VirtualArray::Sphere26;
         scfg.hrirTaps = 128;
         scfg.renderBlock = 128;
         nativeReady = impl_->nativeRenderer.prepare(static_cast<double>(sampleRate),
