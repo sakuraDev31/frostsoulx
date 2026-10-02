@@ -268,68 +268,62 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
     // -------------------------------------------------------------------------
     // 3. Energy/power-aware normalization
     // -------------------------------------------------------------------------
-    // The BRIR contains the direct path. Peak-normalizing the complete
-    // response can boost a sparse room and then count that direct energy again
-    // when the caller blends BRIR with dry audio. Use the direct field as the
-    // reference, permit at most +3 dB of late-field power, and never boost.
-    std::size_t directOnset = 0;
+    // Preserve physical direct-field level. Constrain only late-field energy
+    // relative to the direct field. Never boost quiet BRIRs.
+    std::size_t directWindow = 0;
     for (const auto& path : paths) {
         if (path.order == 0) {
-            directOnset = std::min(cfg_.maxTaps,
+            const std::size_t onset = std::min(cfg_.maxTaps,
                 static_cast<std::size_t>(std::max(0.0f, path.delaySeconds * fs)));
+            directWindow = std::min(cfg_.maxTaps,
+                onset + std::max<std::size_t>(hrirTaps * 2u,
+                    static_cast<std::size_t>(0.020 * fs)));
             break;
         }
     }
-    const std::size_t directWindow = std::min(cfg_.maxTaps,
-        directOnset + std::max<std::size_t>(hrirTaps * 2u,
-            static_cast<std::size_t>(0.020 * fs)));
+
     double directPower = 0.0;
     double latePower = 0.0;
-    float directPeak = 0.0f;
-    float maxPeak = 0.0f;
     for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
         const double l = static_cast<double>(brir.left[i]);
-        const double r = static_cast<double>(brir.right[i]);
-        const double power = 0.5 * (l * l + r * r);
+        const double rr = static_cast<double>(brir.right[i]);
+        const double power = 0.5 * (l * l + rr * rr);
         if (i < directWindow) directPower += power;
         else latePower += power;
-        if (i < directWindow) directPeak = std::max(directPeak,
-            std::max(std::fabs(brir.left[i]), std::fabs(brir.right[i])));
-        maxPeak = std::max(maxPeak, std::max(std::fabs(brir.left[i]), std::fabs(brir.right[i])));
     }
-    const double tapCount = static_cast<double>(std::max<std::size_t>(cfg_.maxTaps, 1));
-    brir.directRms = static_cast<float>(std::sqrt(directPower / tapCount));
-    brir.lateRms = static_cast<float>(std::sqrt(latePower / tapCount));
 
-    const float norm = directPeak > 1.0e-5f
-        ? std::clamp(0.98f / directPeak, 0.05f, 32.0f) : 1.0f;
-    for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
-        brir.left[i] *= norm;
-        brir.right[i] *= norm;
-    }
-    directPower *= static_cast<double>(norm) * static_cast<double>(norm);
-    latePower *= static_cast<double>(norm) * static_cast<double>(norm);
-    const double lateBudget = std::max(directPower, 1.0e-12);
-    const float lateScale = latePower > lateBudget
-        ? static_cast<float>(std::sqrt(lateBudget / latePower)) : 1.0f;
-    if (lateScale < 1.0f) {
+    const double safeDirectPower = std::max(directPower, 1.0e-12);
+    constexpr double kMaxLateToDirectEnergy = 1.0;
+    if (latePower > safeDirectPower * kMaxLateToDirectEnergy) {
+        const float lateScale = static_cast<float>(
+            std::sqrt((safeDirectPower * kMaxLateToDirectEnergy) / latePower));
         for (std::size_t i = directWindow; i < cfg_.maxTaps; ++i) {
             brir.left[i] *= lateScale;
             brir.right[i] *= lateScale;
         }
+        latePower *= static_cast<double>(lateScale) * static_cast<double>(lateScale);
     }
-    maxPeak = 0.0f;
+
+    float maxPeak = 0.0f;
     for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
         maxPeak = std::max(maxPeak, std::max(std::fabs(brir.left[i]), std::fabs(brir.right[i])));
     }
+
+    float normalizationGain = 1.0f;
     if (maxPeak > 0.98f) {
-        const float ceilingScale = 0.98f / maxPeak;
+        normalizationGain = 0.98f / maxPeak;
         for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {
-            brir.left[i] *= ceilingScale;
-            brir.right[i] *= ceilingScale;
+            brir.left[i] *= normalizationGain;
+            brir.right[i] *= normalizationGain;
         }
+        directPower *= static_cast<double>(normalizationGain) * static_cast<double>(normalizationGain);
+        latePower *= static_cast<double>(normalizationGain) * static_cast<double>(normalizationGain);
     }
-    brir.normalizationGain = norm;
+
+    const double tapCount = static_cast<double>(std::max<std::size_t>(cfg_.maxTaps, 1));
+    brir.directRms = static_cast<float>(std::sqrt(directPower / tapCount));
+    brir.lateRms = static_cast<float>(std::sqrt(latePower / tapCount));
+    brir.normalizationGain = normalizationGain;
     double normalizedPower = 0.0;
     brir.peak = 0.0f;
     for (std::size_t i = 0; i < cfg_.maxTaps; ++i) {

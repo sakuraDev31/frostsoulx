@@ -446,27 +446,8 @@ void applyTone(Handle& handle, float* interleavedStereo, int frames) noexcept {
         left = (mid + side) * 0.70710678118f;
         right = (mid - side) * 0.70710678118f;
     }
-    publishPreEngineTelemetry(handle, interleavedStereo, frames);
-}
-
-void applyOutputSafety(Handle& handle, float* interleavedStereo, int frames) noexcept {
-    constexpr float kTruePeakCeiling = 0.8912509f; // -1.0 dBTP
-    const float peak = oversampledTruePeak(handle, interleavedStereo, frames);
-    handle.diagnostics.preLimiterTruePeak.store(peak, std::memory_order_relaxed);
-    const float requestedGain = peak > kTruePeakCeiling
-        ? kTruePeakCeiling / std::max(peak, 1.0e-12f) : 1.0f;
-    const float gain = std::min(handle.outputSafetyGain, requestedGain);
-    handle.outputSafetyGain = std::min(1.0f, gain + 0.015f);
-    const float reductionDb = gain < 1.0f
-        ? -20.0f * std::log10(std::max(gain, 1.0e-12f)) : 0.0f;
-    handle.diagnostics.limiterGainReductionDb.store(reductionDb, std::memory_order_relaxed);
-    for (int i = 0; i < frames * 2; ++i) {
-        const float sample = interleavedStereo[i];
-        interleavedStereo[i] = std::isfinite(sample)
-            ? std::clamp(sample * gain, -kTruePeakCeiling, kTruePeakCeiling)
-            : 0.0f;
     }
-}
+
 
 } // namespace
 
@@ -792,6 +773,8 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                 continue;
             }
 
+            // Capture the actual native DSP input before tone/M/S or spatial processing.
+            publishPreEngineTelemetry(*handle, handle->inputSnapshot.data(), chunkFrames);
             std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, handle->scratch.begin());
             applyTone(*handle, handle->scratch.data(), chunkFrames);
 
@@ -806,7 +789,9 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                     std::memory_order_relaxed);
                 publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->inputSnapshot.data(), chunkFrames);
             } else {
-                applyOutputSafety(*handle, handle->scratch.data(), chunkFrames);
+                for (int i = 0; i < samples; ++i) {
+                    if (!std::isfinite(handle->scratch[static_cast<std::size_t>(i)])) handle->scratch[static_cast<std::size_t>(i)] = 0.0f;
+                }
                 std::copy(handle->scratch.begin(), handle->scratch.begin() + samples, samplesFloat);
                 handle->diagnostics.nativeStatus.store(
                     resultCode(handle->engine.lastProcessResult()),
@@ -839,6 +824,8 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                 continue;
             }
 
+            // Capture the actual native DSP input before tone/M/S or spatial processing.
+            publishPreEngineTelemetry(*handle, handle->inputSnapshot.data(), chunkFrames);
             std::copy(handle->inputSnapshot.begin(), handle->inputSnapshot.begin() + samples, handle->scratch.begin());
             applyTone(*handle, handle->scratch.data(), chunkFrames);
 
@@ -853,7 +840,9 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                     std::memory_order_relaxed);
                 publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->inputSnapshot.data(), chunkFrames);
             } else {
-                applyOutputSafety(*handle, handle->scratch.data(), chunkFrames);
+                for (int i = 0; i < samples; ++i) {
+                    if (!std::isfinite(handle->scratch[static_cast<std::size_t>(i)])) handle->scratch[static_cast<std::size_t>(i)] = 0.0f;
+                }
                 handle->diagnostics.nativeStatus.store(
                     resultCode(handle->engine.lastProcessResult()),
                     std::memory_order_relaxed);

@@ -19,9 +19,8 @@ namespace frostsoulx {
 namespace {
 constexpr float kInputSanitizeLimit = 2.0f;
 constexpr float kOutputCeiling = 0.98f;
-// Keep ordinary HRTF/room peaks out of the dynamics stage. The previous 0.90 threshold
-// caused continuous gain modulation on loud passages, which was audible as low-level clipping.
-constexpr float kLimiterThreshold = 0.96f;
+// Single final protection stage for the full-BRIR path, targeting -1 dBTP.
+constexpr float kTruePeakCeiling = 0.8912509f;
 constexpr float kLimiterMinGain = 0.1f;
 constexpr float kZeroEpsilon = 1.0e-12f;
 
@@ -429,18 +428,35 @@ struct ImmersiveAudioEngine::Impl {
         if (interleavedStereo == nullptr || frames <= 0) return;
 
         float peak = 0.0f;
+        auto cubicPeak = [](float p0, float p1, float p2, float p3) noexcept {
+            float local = std::max(std::fabs(p1), std::fabs(p2));
+            for (int q = 1; q <= 3; ++q) {
+                const float t = 0.25f * static_cast<float>(q);
+                const float t2 = t * t;
+                const float t3 = t2 * t;
+                const float y = 0.5f * ((2.0f * p1) +
+                    (-p0 + p2) * t +
+                    (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+                    (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+                local = std::max(local, std::fabs(y));
+            }
+            return local;
+        };
+
         for (int i = 0; i < frames; ++i) {
-            peak = std::max(peak,
-                std::max(std::fabs(interleavedStereo[2 * i]),
-                         std::fabs(interleavedStereo[2 * i + 1])));
+            const int n1 = std::min(i + 1, frames - 1);
+            const int n2 = std::min(i + 2, frames - 1);
+            const float p0l = i > 0 ? interleavedStereo[2 * (i - 1)] : interleavedStereo[2 * i];
+            const float p0r = i > 0 ? interleavedStereo[2 * (i - 1) + 1] : interleavedStereo[2 * i + 1];
+            peak = std::max(peak, cubicPeak(p0l, interleavedStereo[2 * i],
+                interleavedStereo[2 * n1], interleavedStereo[2 * n2]));
+            peak = std::max(peak, cubicPeak(p0r, interleavedStereo[2 * i + 1],
+                interleavedStereo[2 * n1 + 1], interleavedStereo[2 * n2 + 1]));
         }
 
-        const float targetGain = (std::isfinite(peak) && peak > kLimiterThreshold)
-            ? std::max(kLimiterThreshold / peak, kLimiterMinGain)
-            : 1.0f;
+        const float targetGain = (std::isfinite(peak) && peak > kTruePeakCeiling)
+            ? std::max(kTruePeakCeiling / peak, kLimiterMinGain) : 1.0f;
 
-        // The complete BRIR block is already available, so use one gain decision
-        // instead of repeatedly modulating gain on every sample.
         if (targetGain < limiterGain) {
             limiterGain = targetGain;
         } else {
@@ -450,15 +466,12 @@ struct ImmersiveAudioEngine::Impl {
         }
 
         for (int i = 0; i < frames * 2; ++i) {
-            interleavedStereo[i] *= limiterGain;
+            const float sample = interleavedStereo[i];
+            interleavedStereo[i] = std::isfinite(sample) ? sample * limiterGain : 0.0f;
         }
 
         float postPeak = 0.0f;
-        for (int i = 0; i < frames; ++i) {
-            postPeak = std::max(postPeak,
-                std::max(std::fabs(interleavedStereo[2 * i]),
-                         std::fabs(interleavedStereo[2 * i + 1])));
-        }
+        for (int i = 0; i < frames * 2; ++i) postPeak = std::max(postPeak, std::fabs(interleavedStereo[i]));
         if (std::isfinite(postPeak) && postPeak > kOutputCeiling) {
             const float safetyGain = kOutputCeiling / postPeak;
             for (int i = 0; i < frames * 2; ++i) interleavedStereo[i] *= safetyGain;
