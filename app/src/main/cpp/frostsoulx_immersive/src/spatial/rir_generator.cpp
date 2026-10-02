@@ -332,8 +332,6 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
         brir.peak = std::max(brir.peak, std::max(std::fabs(brir.left[i]), std::fabs(brir.right[i])));
     }
     brir.rms = static_cast<float>(std::sqrt(normalizedPower / tapCount));
-    brir.directRms *= norm;
-    brir.lateRms *= norm;
 
     return brir;
 }
