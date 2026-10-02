@@ -40,10 +40,29 @@ def test_gain_formula():
     assert abs(10 ** (-6 / 20) - 0.5011872) < 1e-5
 
 
+def read_pcm16_le(pair):
+    raw = pair[0] | (pair[1] << 8)
+    signed = raw - 65536 if raw & 0x8000 else raw
+    return signed / 32768.0
+
+
+def test_pcm16_little_endian_boundaries():
+    assert read_pcm16_le((0x00, 0x80)) == -1.0
+    assert read_pcm16_le((0x00, 0x00)) == 0.0
+    assert abs(read_pcm16_le((0xFF, 0x7F)) - (32767 / 32768.0)) < 1e-9
+
+
+def test_direct_buffer_size_formula():
+    assert 384 * 2 * 2 == 1536  # stereo PCM16 bytes
+    assert 384 * 2 * 4 == 3072  # stereo PCM float bytes
+
+
 if __name__ == '__main__':
     test_ms_unity_is_identity()
     test_ms_mono_preservation()
     test_ms_widening_is_bounded_by_final_limiter()
     test_tpdf_dither_is_one_lsb_peak()
     test_gain_formula()
+    test_pcm16_little_endian_boundaries()
+    test_direct_buffer_size_formula()
     print('Phase 2 DSP vectors passed')

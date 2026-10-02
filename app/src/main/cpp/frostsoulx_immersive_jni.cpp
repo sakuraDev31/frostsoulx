@@ -279,7 +279,11 @@ void publishDiagnostics(Handle& handle, const float* input, const float* output,
     handle.diagnostics.processCallCount.fetch_add(1, std::memory_order_relaxed);
 }
 
-float readPcm16(std::int16_t sample) noexcept {
+float readPcm16LE(const std::uint8_t* bytes) noexcept {
+    const std::uint16_t bits = static_cast<std::uint16_t>(
+        static_cast<std::uint16_t>(bytes[0]) |
+        (static_cast<std::uint16_t>(bytes[1]) << 8u));
+    const auto sample = static_cast<std::int16_t>(bits);
     return static_cast<float>(sample) / 32768.0f;
 }
 
@@ -299,12 +303,18 @@ float nextTpdfDither(Handle& handle) noexcept {
     return (first - second) / 32767.0f;
 }
 
-std::int16_t writePcm16(Handle& handle, float sample) noexcept {
+std::int16_t quantizePcm16(Handle& handle, float sample) noexcept {
     // The native engine is the single nonlinear limiter. JNI only performs
     // final finite/range protection while converting back to PCM16.
     const float safe = std::isfinite(sample) ? std::clamp(sample, -0.999f, 0.999f) : 0.0f;
     const auto scaled = static_cast<int>(std::lround((safe + nextTpdfDither(handle)) * 32767.0f));
     return static_cast<std::int16_t>(std::clamp(scaled, -32768, 32767));
+}
+
+void writePcm16LE(Handle& handle, std::uint8_t* bytes, float sample) noexcept {
+    const auto quantized = static_cast<std::uint16_t>(quantizePcm16(handle, sample));
+    bytes[0] = static_cast<std::uint8_t>(quantized & 0xffu);
+    bytes[1] = static_cast<std::uint8_t>((quantized >> 8u) & 0xffu);
 }
 
 int resultCode(frostsoulx::ImmersiveProcessResult result) noexcept {
@@ -724,10 +734,20 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
     JNIEnv* env, jclass, jlong address, jobject pcmBuffer, jint frames, jint encoding) {
     auto* handle = reinterpret_cast<Handle*>(address);
-    if (handle == nullptr || pcmBuffer == nullptr || frames <= 0) return;
+    if (handle == nullptr) return;
+    if (pcmBuffer == nullptr || frames <= 0 || (encoding != 2 && encoding != 4) || encoding != handle->encoding) {
+        handle->diagnostics.nativeStatus.store(resultCode(frostsoulx::ImmersiveProcessResult::InvalidInput), std::memory_order_relaxed);
+        return;
+    }
 
     auto* bytes = static_cast<std::uint8_t*>(env->GetDirectBufferAddress(pcmBuffer));
-    if (bytes == nullptr) return;
+    const jlong capacity = env->GetDirectBufferCapacity(pcmBuffer);
+    const std::int64_t bytesPerFrame = static_cast<std::int64_t>(2) * (encoding == 2 ? 2 : 4);
+    const std::int64_t requiredBytes = static_cast<std::int64_t>(frames) * bytesPerFrame;
+    if (bytes == nullptr || capacity < 0 || requiredBytes < 0 || requiredBytes > capacity) {
+        handle->diagnostics.nativeStatus.store(resultCode(frostsoulx::ImmersiveProcessResult::InvalidInput), std::memory_order_relaxed);
+        return;
+    }
 
     const int totalFrames = frames;
     handle->lastHostCallbackFrames.store(totalFrames, std::memory_order_relaxed);
@@ -784,10 +804,10 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
         }
 
         if (encoding == 2) {
-            auto* samples16 = reinterpret_cast<std::int16_t*>(bytes) + sampleOffset;
+            auto* samples16 = bytes + static_cast<std::size_t>(sampleOffset) * sizeof(std::int16_t);
             for (int frame = 0; frame < chunkFrames; ++frame) {
-                handle->inputSnapshot[frame * 2] = readPcm16(samples16[frame * 2]);
-                handle->inputSnapshot[frame * 2 + 1] = readPcm16(samples16[frame * 2 + 1]);
+                handle->inputSnapshot[frame * 2] = readPcm16LE(samples16 + frame * 4);
+                handle->inputSnapshot[frame * 2 + 1] = readPcm16LE(samples16 + frame * 4 + 2);
             }
 
             if (!isEnabled) {
@@ -824,8 +844,8 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeProcess(
                 }
                 publishDiagnostics(*handle, handle->inputSnapshot.data(), handle->scratch.data(), chunkFrames);
                 for (int frame = 0; frame < chunkFrames; ++frame) {
-                    samples16[frame * 2] = writePcm16(*handle, handle->scratch[frame * 2]);
-                    samples16[frame * 2 + 1] = writePcm16(*handle, handle->scratch[frame * 2 + 1]);
+                    writePcm16LE(*handle, samples16 + frame * 4, handle->scratch[frame * 2]);
+                    writePcm16LE(*handle, samples16 + frame * 4 + 2, handle->scratch[frame * 2 + 1]);
                 }
             }
 
