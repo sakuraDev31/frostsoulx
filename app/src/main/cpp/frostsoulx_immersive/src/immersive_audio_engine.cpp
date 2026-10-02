@@ -570,7 +570,10 @@ struct ImmersiveAudioEngine::Impl {
         // Room processing must be transparent when disabled or when spatial intensity is
         // effectively zero. Applying softClipSample here used to distort ordinary loud
         // samples continuously, even though the room stage was visually set to Off.
-        const float effectiveRoomMix = roomMix * spatialBlend;
+        // Room simulation is an acoustic field layered around the direct
+        // programme. It must remain independent from spatialBlend so a user can
+        // reduce binaural intensity without making the room disappear.
+        const float effectiveRoomMix = roomMix;
         if (roomPreset == RoomSimulationPreset::Off || effectiveRoomMix <= kZeroEpsilon) {
             return;
         }
@@ -621,12 +624,15 @@ struct ImmersiveAudioEngine::Impl {
 
         const float lateL = (0.70f * reverbLowpassL) + (0.30f * reverbLowpassR);
         const float lateR = (0.70f * reverbLowpassR) + (0.30f * reverbLowpassL);
-        const float wetL = reflectionL + lateL;
-        const float wetR = reflectionR + lateR;
 
-        const float dryMix = 1.0f - effectiveRoomMix;
-        left = dryMix * left + effectiveRoomMix * wetL;
-        right = dryMix * right + effectiveRoomMix * wetR;
+        // Preserve the direct field. Early reflections provide localization
+        // broadening and room identity; the late field provides envelopment.
+        // Neither replaces the programme, so increasing room intensity cannot
+        // make the music collapse into a washed-out wet signal.
+        const float earlyGain = 0.62f * effectiveRoomMix * reflectionAmount;
+        const float lateGain = 0.48f * effectiveRoomMix;
+        left += earlyGain * reflectionL + lateGain * lateL;
+        right += earlyGain * reflectionR + lateGain * lateR;
 
         if (std::fabs(left) < kZeroEpsilon) left = 0.0f;
         if (std::fabs(right) < kZeroEpsilon) right = 0.0f;

@@ -278,9 +278,15 @@ void SpatialRenderer::renderBlock() noexcept {
         if (!std::isfinite(r)) r = 0.0f;
 
         const float b = b0 + step * static_cast<float>(i);
-        const float dry = 1.0f - b;
-        outFifo_[i * 2] = dry * inFifo_[i * 2] + b * l;
-        outFifo_[i * 2 + 1] = dry * inFifo_[i * 2 + 1] + b * r;
+
+        // Spatial blend is an additive spatialisation intensity, not a dry/wet
+        // replacement. Keep the original stereo programme anchored in the
+        // direct field while adding a controlled binaural field around it.
+        // This prevents the image from becoming hollow/wide as blend rises.
+        const float wetGain = 0.62f * b;
+        const float directGain = 0.96f + 0.04f * (1.0f - b);
+        outFifo_[i * 2] = directGain * inFifo_[i * 2] + wetGain * l;
+        outFifo_[i * 2 + 1] = directGain * inFifo_[i * 2 + 1] + wetGain * r;
     }
     blendCurrent_ = b1;
 
