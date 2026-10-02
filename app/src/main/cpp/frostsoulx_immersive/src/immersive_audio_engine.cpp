@@ -398,20 +398,72 @@ struct ImmersiveAudioEngine::Impl {
 
     void applyOutputLimiter(float& left, float& right) noexcept {
         const float peak = std::max(std::fabs(left), std::fabs(right));
-        const float targetGain = peak > kLimiterThreshold
+        const float targetGain = (std::isfinite(peak) && peak > kLimiterThreshold)
             ? std::max(kLimiterThreshold / peak, kLimiterMinGain)
             : 1.0f;
 
+        // Gain reduction is immediate. The previous attack ramp plus hard clamp
+        // could flatten convolution/HRTF transients before final safety.
         if (targetGain < limiterGain) {
-            limiterGain = limiterGain + (targetGain - limiterGain) * (1.0f - limiterAttackCoeff);
+            limiterGain = targetGain;
         } else {
-            limiterGain = std::min(1.0f, limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
+            limiterGain = std::min(
+                1.0f,
+                limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
         }
 
         left *= limiterGain;
         right *= limiterGain;
-        left = std::clamp(left, -kOutputCeiling, kOutputCeiling);
-        right = std::clamp(right, -kOutputCeiling, kOutputCeiling);
+
+        // Emergency numerical protection only. Scale both channels together.
+        const float postPeak = std::max(std::fabs(left), std::fabs(right));
+        if (std::isfinite(postPeak) && postPeak > kOutputCeiling) {
+            const float safetyGain = kOutputCeiling / postPeak;
+            left *= safetyGain;
+            right *= safetyGain;
+            limiterGain *= safetyGain;
+        }
+    }
+
+    void applyBlockOutputLimiter(float* interleavedStereo, int frames) noexcept {
+        if (interleavedStereo == nullptr || frames <= 0) return;
+
+        float peak = 0.0f;
+        for (int i = 0; i < frames; ++i) {
+            peak = std::max(peak,
+                std::max(std::fabs(interleavedStereo[2 * i]),
+                         std::fabs(interleavedStereo[2 * i + 1])));
+        }
+
+        const float targetGain = (std::isfinite(peak) && peak > kLimiterThreshold)
+            ? std::max(kLimiterThreshold / peak, kLimiterMinGain)
+            : 1.0f;
+
+        // The complete BRIR block is already available, so use one gain decision
+        // instead of repeatedly modulating gain on every sample.
+        if (targetGain < limiterGain) {
+            limiterGain = targetGain;
+        } else {
+            limiterGain = std::min(
+                1.0f,
+                limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCoeff));
+        }
+
+        for (int i = 0; i < frames * 2; ++i) {
+            interleavedStereo[i] *= limiterGain;
+        }
+
+        float postPeak = 0.0f;
+        for (int i = 0; i < frames; ++i) {
+            postPeak = std::max(postPeak,
+                std::max(std::fabs(interleavedStereo[2 * i]),
+                         std::fabs(interleavedStereo[2 * i + 1])));
+        }
+        if (std::isfinite(postPeak) && postPeak > kOutputCeiling) {
+            const float safetyGain = kOutputCeiling / postPeak;
+            for (int i = 0; i < frames * 2; ++i) interleavedStereo[i] *= safetyGain;
+            limiterGain *= safetyGain;
+        }
     }
 
     void applyRoomModel(float& left, float& right) noexcept {
@@ -586,10 +638,8 @@ struct ImmersiveAudioEngine::Impl {
             const float angle = blend * 1.57079632679f;
             const float dryWeight = std::cos(angle);
             const float wetWeight = std::sin(angle);
-            float outL = dryWeight * dryL + wetWeight * wetL;
-            float outR = dryWeight * dryR + wetWeight * wetR;
-
-            applyOutputLimiter(outL, outR);
+            const float outL = dryWeight * dryL + wetWeight * wetL;
+            const float outR = dryWeight * dryR + wetWeight * wetR;
 
             if (!std::isfinite(outL) || !std::isfinite(outR)) {
                 lastResult = ImmersiveProcessResult::InvalidOutput;
@@ -599,6 +649,18 @@ struct ImmersiveAudioEngine::Impl {
             interleavedStereo[2 * i] = outL;
             interleavedStereo[2 * i + 1] = outR;
         }
+
+        // The complete convolved block is available, so perform one gain decision
+        // for the block rather than modulating gain sample-by-sample.
+        applyBlockOutputLimiter(interleavedStereo, maxN);
+
+        for (int i = 0; i < maxN * 2; ++i) {
+            if (!std::isfinite(interleavedStereo[i])) {
+                lastResult = ImmersiveProcessResult::InvalidOutput;
+                return false;
+            }
+        }
+
         convolutionBlendCurrent = targetBlend;
 
         lastState = 0;

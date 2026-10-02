@@ -175,23 +175,46 @@ float truePeak(float previous, float current) noexcept {
                      std::fabs(previous * 0.25f + current * 0.75f)});
 }
 
+inline float cubicInterpolate4x(float y0, float y1, float y2, float y3, float t) noexcept {
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    return 0.5f * ((2.0f * y1) +
+        (-y0 + y2) * t +
+        (2.0f * y0 - 5.0f * y1 + 4.0f * y2 - y3) * t2 +
+        (-y0 + 3.0f * y1 - 3.0f * y2 + y3) * t3);
+}
+
 float oversampledTruePeak(const Handle& handle, const float* interleavedStereo, int frames) noexcept {
+    if (interleavedStereo == nullptr || frames <= 0) return 0.0f;
+
     float peak = 0.0f;
-    float previousL = handle.hasPreviousSample ? handle.previousOutputL : interleavedStereo[0];
-    float previousR = handle.hasPreviousSample ? handle.previousOutputR : interleavedStereo[1];
+    const float previousL = handle.hasPreviousSample ? handle.previousOutputL : interleavedStereo[0];
+    const float previousR = handle.hasPreviousSample ? handle.previousOutputR : interleavedStereo[1];
+
     for (int frame = 0; frame < frames; ++frame) {
-        const float currentL = interleavedStereo[frame * 2];
-        const float currentR = interleavedStereo[frame * 2 + 1];
-        if (std::isfinite(currentL)) {
-            peak = std::max(peak, truePeak(previousL, currentL));
-            previousL = currentL;
-        }
-        if (std::isfinite(currentR)) {
-            peak = std::max(peak, truePeak(previousR, currentR));
-            previousR = currentR;
+        const float y1L = interleavedStereo[frame * 2];
+        const float y1R = interleavedStereo[frame * 2 + 1];
+        if (!std::isfinite(y1L) || !std::isfinite(y1R)) continue;
+
+        peak = std::max(peak, std::max(std::fabs(y1L), std::fabs(y1R)));
+
+        if (frame + 1 >= frames) continue;
+        const float y2L = interleavedStereo[(frame + 1) * 2];
+        const float y2R = interleavedStereo[(frame + 1) * 2 + 1];
+        const float y0L = frame == 0 ? previousL : interleavedStereo[(frame - 1) * 2];
+        const float y0R = frame == 0 ? previousR : interleavedStereo[(frame - 1) * 2 + 1];
+        const float y3L = frame + 2 < frames ? interleavedStereo[(frame + 2) * 2] : y2L;
+        const float y3R = frame + 2 < frames ? interleavedStereo[(frame + 2) * 2 + 1] : y2R;
+        if (!std::isfinite(y0L) || !std::isfinite(y0R) ||
+            !std::isfinite(y2L) || !std::isfinite(y2R) ||
+            !std::isfinite(y3L) || !std::isfinite(y3R)) continue;
+
+        for (const float t : {0.25f, 0.5f, 0.75f}) {
+            peak = std::max(peak, std::fabs(cubicInterpolate4x(y0L,y1L,y2L,y3L,t)));
+            peak = std::max(peak, std::fabs(cubicInterpolate4x(y0R,y1R,y2R,y3R,t)));
         }
     }
-    return peak;
+    return std::isfinite(peak) ? peak : 0.0f;
 }
 
 void publishPreEngineTelemetry(Handle& handle, const float* interleavedStereo, int frames) noexcept {
@@ -285,14 +308,6 @@ float readPcm16LE(const std::uint8_t* bytes) noexcept {
         (static_cast<std::uint16_t>(bytes[1]) << 8u));
     const auto sample = static_cast<std::int16_t>(bits);
     return static_cast<float>(sample) / 32768.0f;
-}
-
-inline float softLimitSample(float s, float threshold = 0.94f, float ceiling = 0.98f) noexcept {
-    const float absS = std::fabs(s);
-    if (absS <= threshold) return s;
-    const float range = ceiling - threshold;
-    const float compressed = threshold + range * std::tanh((absS - threshold) / range);
-    return std::copysign(compressed, s);
 }
 
 float nextTpdfDither(Handle& handle) noexcept {
