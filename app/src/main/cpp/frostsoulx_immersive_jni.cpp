@@ -342,7 +342,7 @@ int resultCode(frostsoulx::ImmersiveProcessResult result) noexcept {
 void applyPhysicalPreset(Handle& handle, int preset) noexcept {
     using Preset = frostsoulx::spatial::SpaceProfile::Preset;
     handle.roomPreset.store(preset, std::memory_order_relaxed);
-    handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::Native);
+    handle.engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
     switch (preset) {
         case 1:
             handle.engine.setSpacePreset(Preset::Bathroom);
@@ -503,7 +503,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeCreate(
     auto handle = std::make_unique<Handle>();
     handle->sampleRate = sampleRate;
     handle->encoding = encoding;
-    handle->engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::Native);
+    handle->engine.setSpatialBackendPreference(frostsoulx::SpatialBackend::FullConvolution);
     if (!handle->engine.prepare(sampleRate, kMaxQuantumFrames)) return 0L;
     applyPhysicalPreset(*handle, 2);
     handle->engine.setEnabled(false);

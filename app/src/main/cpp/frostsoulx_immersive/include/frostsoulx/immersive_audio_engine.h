@@ -18,7 +18,6 @@ enum class ImmersiveProcessResult {
     SteamAudioProcessed,
     /// Processed by the built-in HOA/HRTF spatial renderer. Reported when the
     /// Steam Audio backend is not compiled in or failed to initialise.
-    NativeSpatialProcessed,
     /// Processed by the full-partitioned linear convolution acoustic space engine.
     FullConvolutionProcessed,
 };
@@ -27,7 +26,6 @@ enum class ImmersiveProcessResult {
 enum class SpatialBackend {
     None,            ///< not prepared
     SteamAudio,      ///< vendored Steam Audio binaural effect
-    Native,          ///< built-in HOA encode -> rotate -> HRTF convolution (low-device fallback)
     FullConvolution, ///< Full physical room acoustic BRIR partitioned linear convolution
 };
 
