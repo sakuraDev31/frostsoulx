@@ -99,6 +99,19 @@ public:
     void setIrLength(std::size_t taps) noexcept;
     void setReflectionDensity(float density) noexcept;
 
+    // 3D orbit mode is a spatial mode layered over the active room preset.
+    // 0° = front, +90° = left, -90° = right; elevation is vertical; radius is metres.
+    void setOrbitEnabled(bool enabled) noexcept;
+    void setOrbitAzimuth(float azimuthDeg) noexcept;
+    void setOrbitElevation(float elevationDeg) noexcept;
+    void setOrbitRadius(float radiusMetres) noexcept;
+    void setOrbitPosition(float azimuthDeg, float elevationDeg, float radiusMetres) noexcept;
+    void advanceOrbit(float deltaAzimuthDeg) noexcept;
+    bool orbitEnabled() const noexcept;
+    float orbitAzimuth() const noexcept;
+    float orbitElevation() const noexcept;
+    float orbitRadius() const noexcept;
+
     const spatial::SpaceProfile& activeSpaceProfile() const noexcept;
     const spatial::StereoBrir& activeBrir() const noexcept;
     const std::array<spatial::StereoBrir, 2>& activeTransferMatrix() const noexcept;

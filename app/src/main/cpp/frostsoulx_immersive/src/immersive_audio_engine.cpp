@@ -39,6 +39,28 @@ struct ImmersiveAudioEngine::Impl {
     float blendCurrent = 1.0f;
     float normalizationGain = 1.0f;
 
+    // Orbit is control-thread only. Geometry/FFT work never runs from process().
+    bool orbitEnabled = false;
+    float orbitAzimuthDeg = 0.0f;
+    float orbitElevationDeg = 0.0f;
+    float orbitRadiusMetres = 3.0f;
+    spatial::Vec3 preOrbitSourcePosition{0.0f, 0.0f, 0.0f};
+    bool orbitBackupValid = false;
+
+    void reloadOrbitPosition() noexcept {
+        const float az = orbitAzimuthDeg * rt::kDegToRad;
+        const float el = orbitElevationDeg * rt::kDegToRad;
+        const float ce = std::cos(el);
+        // Engine-local coordinates: +X front, +Y left, +Z up.
+        const spatial::Vec3 offset{
+            orbitRadiusMetres * ce * std::cos(az),
+            orbitRadiusMetres * ce * std::sin(az),
+            orbitRadiusMetres * std::sin(el)
+        };
+        space.setSourcePosition(space.listenerPosition() + offset);
+        reload();
+    }
+
     // Control-thread spatializer: geometry -> listener-local directions ->
     // ILD/ITD/pinna HRTF for direct + reflected arrivals. Collapse the entire
     // linear spatial model into four filters, rather than running a second
@@ -180,7 +202,8 @@ void ImmersiveAudioEngine::setRoomSimulationPreset(RoomSimulationPreset preset) 
         case RoomSimulationPreset::Cathedral: impl_->space = spatial::SpaceProfile::createLargeHall(); break;
         case RoomSimulationPreset::Subway: impl_->space = spatial::SpaceProfile::createLongSubwayTunnel(); break;
     }
-    impl_->reload();
+    if (impl_->orbitEnabled) impl_->reloadOrbitPosition();
+    else impl_->reload();
 }
 void ImmersiveAudioEngine::setRoomMix(float mix) noexcept { impl_->roomMix = unit(mix); impl_->reload(); }
 void ImmersiveAudioEngine::setReflectionAmount(float amount) noexcept { impl_->reflections = unit(amount); impl_->reload(); }
@@ -229,9 +252,14 @@ void ImmersiveAudioEngine::setSpacePreset(spatial::SpaceProfile::Preset preset) 
     impl_->space = spatial::SpaceProfile::createPreset(preset);
     impl_->room = RoomSimulationPreset::Studio;
     impl_->irLength = preset == spatial::SpaceProfile::Preset::ClosedCar ? 8192 : 32768;
-    impl_->reload();
+    if (impl_->orbitEnabled) impl_->reloadOrbitPosition();
+    else impl_->reload();
 }
-void ImmersiveAudioEngine::setSpaceProfile(const spatial::SpaceProfile& profile) noexcept { impl_->space = profile; impl_->reload(); }
+void ImmersiveAudioEngine::setSpaceProfile(const spatial::SpaceProfile& profile) noexcept {
+    impl_->space = profile;
+    if (impl_->orbitEnabled) impl_->reloadOrbitPosition();
+    else impl_->reload();
+}
 void ImmersiveAudioEngine::setRoomDimensions(float x, float y, float z) noexcept { impl_->space.setDimensions({finite(x), finite(y), finite(z)}); impl_->reload(); }
 void ImmersiveAudioEngine::setBoundaryMaterial(spatial::RoomSurface surface, const spatial::AcousticMaterial& material) noexcept {
     const int s = static_cast<int>(surface);
@@ -242,7 +270,9 @@ void ImmersiveAudioEngine::setBoundaryMaterial(spatial::RoomSurface surface, con
     impl_->space.setBoundary(surface, {surface, safe, 0.0f}); impl_->reload();
 }
 void ImmersiveAudioEngine::setSourcePosition(float x, float y, float z) noexcept {
-    impl_->space.setSourcePosition(spatial::Coord3D{finite(x), finite(y), finite(z)}.toEngineCoords()); impl_->reload();
+    const auto position = spatial::Coord3D{finite(x), finite(y), finite(z)}.toEngineCoords();
+    impl_->space.setSourcePosition(position);
+    if (!impl_->orbitEnabled) impl_->reload();
 }
 void ImmersiveAudioEngine::setListenerPosition(float x, float y, float z) noexcept {
     impl_->space.setListenerPosition(spatial::Coord3D{finite(x), finite(y), finite(z)}.toEngineCoords()); impl_->reload();
@@ -253,6 +283,63 @@ void ImmersiveAudioEngine::setTrajectoryPosition(float seconds) noexcept {
 }
 void ImmersiveAudioEngine::setIrLength(std::size_t taps) noexcept { impl_->irLength = std::clamp<std::size_t>(taps, 512, 32768); impl_->reload(); }
 void ImmersiveAudioEngine::setReflectionDensity(float density) noexcept { impl_->density = unit(density); impl_->reload(); }
+void ImmersiveAudioEngine::setOrbitEnabled(bool enabled) noexcept {
+    if (enabled == impl_->orbitEnabled) return;
+    if (enabled) {
+        const auto listener = impl_->space.listenerPosition();
+        const auto source = impl_->space.sourcePosition();
+        const auto offset = source - listener;
+        const float radius = std::max(offset.length(), 0.1f);
+        impl_->preOrbitSourcePosition = source;
+        impl_->orbitBackupValid = true;
+        impl_->orbitRadiusMetres = radius;
+        impl_->orbitAzimuthDeg = spatial::wrapAzimuth(std::atan2(offset.y, offset.x) * 57.29577951308232f);
+        impl_->orbitElevationDeg = spatial::clampElevation(std::asin(std::clamp(offset.z / radius, -1.0f, 1.0f)) * 57.29577951308232f);
+        impl_->orbitEnabled = true;
+        impl_->reloadOrbitPosition();
+    } else {
+        impl_->orbitEnabled = false;
+        if (impl_->orbitBackupValid) impl_->space.setSourcePosition(impl_->preOrbitSourcePosition);
+        impl_->reload();
+    }
+}
+void ImmersiveAudioEngine::setOrbitAzimuth(float azimuthDeg) noexcept {
+    if (!std::isfinite(azimuthDeg)) return;
+    impl_->orbitAzimuthDeg = spatial::wrapAzimuth(azimuthDeg);
+    if (impl_->orbitEnabled) impl_->reloadOrbitPosition();
+}
+void ImmersiveAudioEngine::setOrbitElevation(float elevationDeg) noexcept {
+    if (!std::isfinite(elevationDeg)) return;
+    impl_->orbitElevationDeg = spatial::clampElevation(elevationDeg);
+    if (impl_->orbitEnabled) impl_->reloadOrbitPosition();
+}
+void ImmersiveAudioEngine::setOrbitRadius(float radiusMetres) noexcept {
+    if (!std::isfinite(radiusMetres)) return;
+    impl_->orbitRadiusMetres = std::clamp(radiusMetres, 0.1f, 1000.0f);
+    if (impl_->orbitEnabled) impl_->reloadOrbitPosition();
+}
+void ImmersiveAudioEngine::setOrbitPosition(float azimuthDeg, float elevationDeg, float radiusMetres) noexcept {
+    if (!std::isfinite(azimuthDeg) || !std::isfinite(elevationDeg) || !std::isfinite(radiusMetres)) return;
+    if (!impl_->orbitEnabled) {
+        impl_->preOrbitSourcePosition = impl_->space.sourcePosition();
+        impl_->orbitBackupValid = true;
+    }
+    impl_->orbitAzimuthDeg = spatial::wrapAzimuth(azimuthDeg);
+    impl_->orbitElevationDeg = spatial::clampElevation(elevationDeg);
+    impl_->orbitRadiusMetres = std::clamp(radiusMetres, 0.1f, 1000.0f);
+    impl_->orbitEnabled = true;
+    impl_->reloadOrbitPosition();
+}
+void ImmersiveAudioEngine::advanceOrbit(float deltaAzimuthDeg) noexcept {
+    if (!impl_->orbitEnabled || !std::isfinite(deltaAzimuthDeg)) return;
+    impl_->orbitAzimuthDeg = spatial::wrapAzimuth(impl_->orbitAzimuthDeg + deltaAzimuthDeg);
+    impl_->reloadOrbitPosition();
+}
+bool ImmersiveAudioEngine::orbitEnabled() const noexcept { return impl_->orbitEnabled; }
+float ImmersiveAudioEngine::orbitAzimuth() const noexcept { return impl_->orbitAzimuthDeg; }
+float ImmersiveAudioEngine::orbitElevation() const noexcept { return impl_->orbitElevationDeg; }
+float ImmersiveAudioEngine::orbitRadius() const noexcept { return impl_->orbitRadiusMetres; }
+
 const spatial::SpaceProfile& ImmersiveAudioEngine::activeSpaceProfile() const noexcept { return impl_->space; }
 const spatial::StereoBrir& ImmersiveAudioEngine::activeBrir() const noexcept { return impl_->brir[0]; }
 const std::array<spatial::StereoBrir, 2>& ImmersiveAudioEngine::activeTransferMatrix() const noexcept { return impl_->brir; }

@@ -20,6 +20,7 @@ data class ImmersiveAudioPreset(
     val azimuth: Float = 0f,
     val elevation: Float = 0f,
     val distance: Float = 1f,
+    val orbitEnabled: Boolean = false,
     val bassWidth: Float = 1f,
     val bassGainDb: Float = 0f,
     val outputGainDb: Float = 0f,
@@ -40,6 +41,7 @@ data class ImmersiveAudioPreset(
         put("azimuth", safe.azimuth)
         put("elevation", safe.elevation)
         put("distance", safe.distance)
+        put("orbitEnabled", safe.orbitEnabled)
         put("bassWidth", safe.bassWidth)
         put("bassGainDb", safe.bassGainDb)
         put("outputGainDb", safe.outputGainDb)
@@ -49,7 +51,7 @@ data class ImmersiveAudioPreset(
     fun toControls(): ImmersiveControls = ImmersiveControls(
         enabled, intensity, roomPreset, roomMix, reflectionAmount, reverbTimeSeconds,
         roomSize, dampening, stereoWidth, bassWidth, bassGainDb, outputGainDb,
-        carFader, azimuth, elevation, distance, quantumFrames,
+        carFader, azimuth, elevation, distance, orbitEnabled, quantumFrames,
     ).sanitized()
 
     companion object {
@@ -59,7 +61,7 @@ data class ImmersiveAudioPreset(
                 name.trim().take(64), c.enabled, c.intensity, c.roomPreset, c.roomMix,
                 c.reflectionAmount, c.reverbTimeSeconds, c.roomSize, c.dampening,
                 c.stereoWidth, c.quantumFrames, c.carFader, c.azimuth, c.elevation,
-                c.distance, c.bassWidth, c.bassGainDb, c.outputGainDb,
+                c.distance, c.orbitEnabled, c.bassWidth, c.bassGainDb, c.outputGainDb,
             )
         }
         fun fromJson(value: JSONObject?): ImmersiveAudioPreset? {
@@ -80,6 +82,7 @@ data class ImmersiveAudioPreset(
                 azimuth = value.optDouble("azimuth", 0.0).toFloat(),
                 elevation = value.optDouble("elevation", 0.0).toFloat(),
                 distance = value.optDouble("distance", 1.0).toFloat(),
+                orbitEnabled = value.optBoolean("orbitEnabled", false),
                 bassWidth = value.optDouble("bassWidth", 1.0).toFloat(),
                 bassGainDb = value.optDouble("bassGainDb", 0.0).toFloat(),
                 outputGainDb = value.optDouble("outputGainDb", 0.0).toFloat(),

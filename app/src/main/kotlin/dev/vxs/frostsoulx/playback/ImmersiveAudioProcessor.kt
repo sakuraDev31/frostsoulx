@@ -388,6 +388,7 @@ data class ImmersiveControls(
     val azimuth: Float = 0f,
     val elevation: Float = 0f,
     val distance: Float = 1f,
+    val orbitEnabled: Boolean = false,
     val quantumFrames: Int = 384,
 ) {
     fun sanitized(): ImmersiveControls {
@@ -444,7 +445,8 @@ class ImmersiveAudioProcessor : AudioProcessor {
         if (roomChanged || old?.roomMix != c.roomMix) nativeSetRoomMix(h, c.roomMix)
         if (roomChanged || old?.reflectionAmount != c.reflectionAmount) nativeSetReflectionAmount(h, c.reflectionAmount)
         if (roomChanged || old?.reverbTimeSeconds != c.reverbTimeSeconds) nativeSetReverbTimeSeconds(h, c.reverbTimeSeconds)
-        if (roomChanged || old?.azimuth != c.azimuth || old?.elevation != c.elevation || old?.distance != c.distance) {
+        if (roomChanged || old?.orbitEnabled != c.orbitEnabled) nativeSetOrbitEnabled(h, c.orbitEnabled)
+        if (roomChanged || old?.azimuth != c.azimuth || old?.elevation != c.elevation || old?.distance != c.distance || old?.orbitEnabled != c.orbitEnabled) {
             nativeSetSource(h, c.azimuth, c.elevation, c.distance)
         }
         if (roomChanged || old?.carFader != c.carFader) nativeSetCarFader(h, c.carFader)
@@ -575,6 +577,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeSetStereoWidth(handle: Long, width: Float)
         @JvmStatic private external fun nativeSetBassWidth(handle: Long, width: Float)
         @JvmStatic private external fun nativeSetSource(handle: Long, azimuth: Float, elevation: Float, distance: Float)
+        @JvmStatic private external fun nativeSetOrbitEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetCarFader(handle: Long, fader: Float)
         @JvmStatic private external fun nativeSetQuantumFrames(handle: Long, quantumFrames: Int)
         @JvmStatic private external fun nativeReadDiagnostics(handle: Long): DoubleArray?
@@ -620,6 +623,7 @@ object ImmersiveAudioRuntime {
     fun setAzimuth(value: Float) = change { it.copy(azimuth = value) }
     fun setElevation(value: Float) = change { it.copy(elevation = value) }
     fun setDistance(value: Float) = change { it.copy(distance = value) }
+    fun setOrbitEnabled(value: Boolean) = change { it.copy(orbitEnabled = value) }
     fun setQuantumFrames(value: Int) = change { it.copy(quantumFrames = value) }
     fun setBassGainDb(value: Float) = change { it.copy(bassGainDb = value) }
     fun setOutputGainDb(value: Float) = change { it.copy(outputGainDb = value) }

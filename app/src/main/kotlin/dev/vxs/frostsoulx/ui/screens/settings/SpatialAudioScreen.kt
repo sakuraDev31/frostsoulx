@@ -60,6 +60,7 @@ import dev.vxs.frostsoulx.LocalPlayerAwareWindowInsets
 import dev.vxs.frostsoulx.constants.SpatialAzimuthKey
 import dev.vxs.frostsoulx.constants.SpatialBassWidthKey
 import dev.vxs.frostsoulx.constants.SpatialDistanceKey
+import dev.vxs.frostsoulx.constants.SpatialOrbitEnabledKey
 import dev.vxs.frostsoulx.constants.SpatialElevationKey
 import dev.vxs.frostsoulx.constants.StereoSurroundBassGainDbKey
 import dev.vxs.frostsoulx.constants.StereoSurroundCarFaderKey
@@ -175,6 +176,16 @@ fun SpatialAudioScreen(navController: NavController) {
                 SpatialSlider("Spatial blend", controls.intensity, 0f..1f, percent(controls.intensity), "Dry → spatial", !capturing) { update(controls.copy(intensity = it)) }
             }
             SpatialCard("01 / SOURCE", "Position & perspective") {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.weight(1f)) {
+                        Text("3D Orbit Mode", style = MaterialTheme.typography.titleMedium)
+                        Text(if (controls.orbitEnabled) "Azimuth-based source orbit · works with every room" else "Off · source position is static", color = colors.onSurfaceMuted, fontSize = 12.sp)
+                    }
+                    Switch(checked = controls.orbitEnabled, enabled = !capturing,
+                        onCheckedChange = { update(controls.copy(orbitEnabled = it)) },
+                        modifier = Modifier.semantics { contentDescription = "3D Orbit Mode" })
+                }
                 SourceOrbit(controls.azimuth, controls.elevation)
                 Text("Front = 0° • positive azimuth = left • positive elevation = up", color = colors.onSurfaceMuted, fontSize = 12.sp)
                 SpatialSlider("Azimuth", controls.azimuth, -180f..180f, "${fmt(controls.azimuth, 0)}°", "Right ← front → left", !capturing) { update(controls.copy(azimuth = it)) }
@@ -334,7 +345,8 @@ private fun readSpatialControls(p: Preferences): ImmersiveControls = ImmersiveCo
     carFader = p[StereoSurroundCarFaderKey] ?: 0f, bassGainDb = p[StereoSurroundBassGainDbKey] ?: 0f,
     outputGainDb = p[StereoSurroundOutputGainDbKey] ?: 0f, quantumFrames = p[StereoSurroundQuantumFramesKey] ?: 384,
     azimuth = p[SpatialAzimuthKey] ?: 0f, elevation = p[SpatialElevationKey] ?: 0f,
-    distance = p[SpatialDistanceKey] ?: 1f, bassWidth = p[SpatialBassWidthKey] ?: 1f,
+    distance = p[SpatialDistanceKey] ?: 1f, orbitEnabled = p[SpatialOrbitEnabledKey] ?: false,
+    bassWidth = p[SpatialBassWidthKey] ?: 1f,
 ).sanitized()
 
 private fun writeSpatialControls(p: androidx.datastore.preferences.core.MutablePreferences, c: ImmersiveControls) {
@@ -346,5 +358,6 @@ private fun writeSpatialControls(p: androidx.datastore.preferences.core.MutableP
     p[StereoSurroundBassGainDbKey] = c.bassGainDb; p[StereoSurroundOutputGainDbKey] = c.outputGainDb
     p[StereoSurroundQuantumFramesKey] = c.quantumFrames
     p[SpatialAzimuthKey] = c.azimuth; p[SpatialElevationKey] = c.elevation
-    p[SpatialDistanceKey] = c.distance; p[SpatialBassWidthKey] = c.bassWidth
+    p[SpatialDistanceKey] = c.distance; p[SpatialOrbitEnabledKey] = c.orbitEnabled
+    p[SpatialBassWidthKey] = c.bassWidth
 }

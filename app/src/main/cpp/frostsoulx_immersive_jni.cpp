@@ -118,6 +118,7 @@ struct Handle {
     float azimuth = 0.0f;
     float elevation = 0.0f;
     float distance = 1.0f;
+    bool orbitEnabled = false;
     int sampleRate = 0;
     int encoding = 0;
     std::atomic<int> lastHostCallbackFrames{0};
@@ -340,6 +341,10 @@ void applyPhysicalPreset(Handle& handle, int preset) noexcept {
 
 // Geometry controls are exclusively called by the host's one control executor.
 void applySourcePosition(Handle& handle) noexcept {
+    if (handle.orbitEnabled) {
+        handle.engine.setOrbitPosition(handle.azimuth, handle.elevation, handle.distance);
+        return;
+    }
     const auto listener = handle.engine.activeSpaceProfile().listenerPosition();
     const frostsoulx::spatial::SphericalCoord source{handle.azimuth, handle.elevation, handle.distance};
     auto position = listener + source.toCartesian();
@@ -449,7 +454,8 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomPreset(
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         const int safePreset = std::clamp(static_cast<int>(preset), 0, 12);
         applyPhysicalPreset(*handle, safePreset);
-        applySourcePosition(*handle);
+        if (handle->orbitEnabled) handle->engine.setOrbitPosition(handle->azimuth, handle->elevation, handle->distance);
+        else applySourcePosition(*handle);
     }
 }
 
@@ -513,7 +519,7 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetCarFader(
     JNIEnv*, jclass, jlong address, jfloat fader) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
         handle->carFader.store(std::isfinite(fader) ? std::clamp(fader, -1.0f, 1.0f) : 0.0f);
-        applySourcePosition(*handle);
+        if (!handle->orbitEnabled) applySourcePosition(*handle);
     }
 }
 
@@ -544,6 +550,20 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSource(
         handle->elevation = std::isfinite(elevation) ? std::clamp(elevation, -90.0f, 90.0f) : 0.0f;
         handle->distance = std::isfinite(distance) ? std::clamp(distance, 0.2f, 10.0f) : 1.0f;
         applySourcePosition(*handle);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetOrbitEnabled(
+    JNIEnv*, jclass, jlong address, jboolean enabled) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) {
+        handle->orbitEnabled = enabled == JNI_TRUE;
+        if (handle->orbitEnabled) {
+            handle->engine.setOrbitPosition(handle->azimuth, handle->elevation, handle->distance);
+        } else {
+            handle->engine.setOrbitEnabled(false);
+            applySourcePosition(*handle);
+        }
     }
 }
 
