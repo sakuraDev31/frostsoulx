@@ -85,4 +85,56 @@ class ImmersivePipelineTelemetryTest {
         assertTrue(report.contains("B6 AudioTrack enqueue"))
         assertTrue(report.contains("B7 Physical device output"))
     }
+
+    @Test
+    fun oldShortTelemetryPayloadDoesNotCrashNewFields() {
+        val values = DoubleArray(41)
+        values[38] = 384.0
+        val d = ImmersiveAudioDiagnostics.fromNative(values)
+        assertEquals(0f, d.brirRms, 0f)
+        assertEquals(0f, d.brirNormalizationGain, 0f)
+        assertEquals("Off / unavailable", d.backendLabel())
+    }
+
+    @Test
+    fun allPhysicalPresetIdsAreRetained() {
+        for (id in 0..12) assertEquals(id, ImmersiveRoomPreset.fromNative(id).nativeValue)
+    }
+
+    @Test
+    fun controlsClampInvalidTargetsToEngineRanges() {
+        val c = ImmersiveControls(azimuth = Float.NaN, elevation = 200f, distance = -3f,
+            bassGainDb = 12f, bassWidth = Float.POSITIVE_INFINITY, outputGainDb = 12f).sanitized()
+        assertEquals(0f, c.azimuth, 0f)
+        assertEquals(90f, c.elevation, 0f)
+        assertEquals(0.2f, c.distance, 0f)
+        assertEquals(6f, c.bassGainDb, 0f)
+        assertEquals(1f, c.bassWidth, 0f)
+        assertEquals(0f, c.outputGainDb, 0f)
+    }
+
+    @Test
+    fun legacyPresetMigrationAndFullControlRoundTrip() {
+        val legacy = ImmersiveAudioPreset.fromJson(org.json.JSONObject("""{"name":"Old studio","roomPreset":2}"""))!!
+        assertEquals(1f, legacy.toControls().distance, 0f)
+        assertEquals(0f, legacy.toControls().azimuth, 0f)
+        val controls = ImmersiveControls(enabled = true, azimuth = 65f, elevation = -25f,
+            distance = 2.4f, bassWidth = 0.7f, bassGainDb = 3f, outputGainDb = -4f,
+            roomPreset = ImmersiveRoomPreset.CAVE, carFader = -0.4f)
+        val decoded = ImmersiveAudioPreset.fromJson(ImmersiveAudioPreset.fromControls("Cave", controls).toJson())!!
+        assertEquals(controls, decoded.toControls())
+    }
+
+    @Test
+    fun unifiedEngineReportRetainsSafetyAndMatrixMetrics() {
+        val report = ImmersiveDiagnosticCapture(processorOn = true, durationSeconds = 1,
+            startedAtMillis = 0, samples = emptyList(), finalDiagnostics = ImmersiveAudioDiagnostics(
+                processorEnabled = true, activeBackend = 3, algorithmicLatencySamples = 210,
+                brirReady = true, brirRms = 0.1f,
+            )).toText("test", "test", "test", 384)
+        assertTrue(report.contains("FrostSoulX unified convolution"))
+        assertTrue(report.contains("Latency: 210 samples"))
+        assertTrue(report.contains("Transfer matrix RMS="))
+        assertTrue(report.contains("Safety detector peak="))
+    }
 }

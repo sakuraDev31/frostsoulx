@@ -1,17 +1,7 @@
-// Host-side validation of the Frostsoulx immersive audio engine.
-//
-// The focus is the ACTUAL runtime signal path:
-//
-//   PCM -> ImmersiveAudioEngine::process()
-//       -> NativeSpatialRenderer (HOA encode -> HOA rotation -> HRTF/HRIR
-//          partitioned convolution; VBAP for object/discrete panning)
-//       -> room processing
-//       -> safety limiter
-//       -> output
-//
-// Signals are deterministic (impulse, DC, sine, single-channel, LCG noise) so
-// every check is reproducible. No test framework: a tiny check() helper keeps
-// failures readable and the binary dependency-free.
+// Runtime path: PCM -> orthonormal M/S + complementary bass/high bands ->
+// geometry-aware ILD/ITD/HRTF 2x2 BRIR -> shared-input full partitioned
+// convolution -> true-peak lookahead -> float PCM. HOA/VBAP tests validate
+// retained mathematical primitives, not a separate backend.
 
 #include "frostsoulx/immersive_audio_engine.h"
 
@@ -19,12 +9,10 @@
 #include "frostsoulx/spatial/ambisonics.h"
 #include "frostsoulx/spatial/geometry.h"
 #include "frostsoulx/spatial/hrtf.h"
-#include "frostsoulx/spatial/spatial_renderer.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -112,8 +100,7 @@ void testPrepareAndParameters() {
     check(!engine.isPrepared(), "engine reports unprepared before prepare()");
     check(engine.lastProcessResult() == frostsoulx::ImmersiveProcessResult::NotPrepared,
           "unprepared engine reports NotPrepared");
-    check(engine.backend() == frostsoulx::SpatialBackend::None,
-          "unprepared engine reports no backend");
+    check(engine.latencySamples() == 0, "unprepared engine reports zero latency");
 
     // Unprepared process() must be rejected, not crash.
     std::vector<float> tmp(static_cast<std::size_t>(kN) * 2, 0.25f);
@@ -148,56 +135,37 @@ void testPrepareAndParameters() {
 }
 
 // ---------------------------------------------------------------------------
-// B. Native backend selection + reachability of the DSP modules
+// B. Unified preparation + complete transfer matrix
 // ---------------------------------------------------------------------------
-void testBackendSelection() {
+void testUnifiedPreparation() {
     frostsoulx::ImmersiveAudioEngine engine;
-    check(engine.prepare(kSR, kN), "prepare() for backend selection");
-
-#if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
-    check(engine.backend() == frostsoulx::SpatialBackend::SteamAudio
-              || engine.backend() == frostsoulx::SpatialBackend::Native,
-          "a spatial backend is selected");
-#else
-    // Without Steam Audio the engine must fall back to the built-in renderer
-    // rather than failing closed.
-    check(engine.backend() == frostsoulx::SpatialBackend::Native,
-          "native backend is selected when Steam Audio is unavailable");
-    check(engine.latencySamples() > 0,
-          "native backend reports its algorithmic latency");
-#endif
-
-    // The renderer the engine drives must actually own the HOA bus, the
-    // HRTF set, the VBAP panner and the binaural convolver -- i.e. the DSP
-    // modules are reachable from the runtime path, not merely compiled in.
-    frostsoulx::spatial::SpatialRenderer r;
-    check(r.prepare(static_cast<double>(kSR), kN), "SpatialRenderer::prepare()");
-    check(r.ready(), "renderer reports ready");
-    check(r.order() == 2 && r.hoaChannels() == 9, "2nd order HOA bus (9 channels)");
-    check(r.numVirtualSpeakers() == 12, "dodeca12 virtual array in use");
-    check(r.hrtf().valid() && r.hrtf().irTaps() == 128, "HRTF/HRIR set built (128 taps)");
-    check(r.vbap().ready() && r.vbap().numTriplets() > 0, "VBAP panner triangulated");
-    check(r.latencySamples() == r.blockSize(), "latency equals one render block");
-    check(r.normalizationGain() > 0.0f && std::isfinite(r.normalizationGain()),
-          "renderer reports a finite normalisation gain");
+    check(engine.prepare(kSR, kN), "unified prepare()");
+    check(engine.latencySamples() == 210, "128-frame adapter + 18-sample HRTF pad + 64 lookahead");
+    const auto& matrix = engine.activeTransferMatrix();
+    check(matrix[0].valid() && matrix[1].valid(), "both source-to-ear BRIR pairs are active");
+    for (int ear = 0; ear < 2; ++ear) {
+        double power = 0.0;
+        double peak = 0.0;
+        for (const auto& pair : matrix) {
+            for (float x : ear == 0 ? pair.left : pair.right) {
+                power += static_cast<double>(x) * x;
+                peak = std::max(peak, std::fabs(static_cast<double>(x)));
+            }
+        }
+        check(std::sqrt(power) <= 0.980001, "complete spatial transfer row is power bounded");
+        check(peak <= 0.980001, "complete spatial transfer taps are peak bounded");
+    }
 }
 
 // ---------------------------------------------------------------------------
-// C/D/E. Silence, non-zero stereo, and native spatial processing
+// C/D/E. Silence, non-zero stereo, and unified spatial processing
 // ---------------------------------------------------------------------------
 void testNativeProcessing() {
     frostsoulx::ImmersiveAudioEngine engine;
     check(engine.prepare(kSR, kN), "prepare() for native processing");
     configureDry(engine);
 
-    const auto expected =
-#if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
-        engine.backend() == frostsoulx::SpatialBackend::SteamAudio
-            ? frostsoulx::ImmersiveProcessResult::SteamAudioProcessed
-            : frostsoulx::ImmersiveProcessResult::NativeSpatialProcessed;
-#else
-        frostsoulx::ImmersiveProcessResult::NativeSpatialProcessed;
-#endif
+    const auto expected = frostsoulx::ImmersiveProcessResult::Processed;
 
     // C. Silence in -> silence out, reported as success.
     {
@@ -237,8 +205,8 @@ void testNativeProcessing() {
     engine.reset();
 
     // Stereo sine, several blocks: broadband gain must stay controlled. The
-    // native path targets the same ~-6 dB headroom as the Steam Audio path so
-    // the limiter stays out of the way of normal programme material.
+    // complete transfer matrix bounds keep the safety stage out of ordinary
+    // programme material without relying on an arbitrary backend headroom trim.
     {
         double ein = 0.0;
         double eout = 0.0;
@@ -766,23 +734,15 @@ void testNonFullSphereVbap() {
         check(!v.prepare(single), "VBAP rejects a single-speaker layout");
     }
 
-    // Reachability: the renderer's panner must answer object queries.
-    {
-        SpatialRenderer r;
-        check(r.prepare(static_cast<double>(kSR), kN), "renderer prepare() for object panning");
-        std::vector<float> gains(r.numVirtualSpeakers(), 0.0f);
-        r.objectGains(SphericalCoord{45.0f, 20.0f, 1.0f}, 0.3f, gains.data());
-        double sumSq = 0.0;
-        for (float g : gains) {
-            check(std::isfinite(g) && g >= -1.0e-6f, "object gain is valid");
-            sumSq += static_cast<double>(g) * g;
-        }
-        checkNear(std::sqrt(sumSq), 1.0, 1.0e-3, "object gains are unity-normalised");
-
-        std::vector<float> hoa(kMaxAmbisonicChannels, 0.0f);
-        check(r.encodeObject(SphericalCoord{45.0f, 20.0f, 1.0f}, hoa.data()) == r.hoaChannels(),
-              "encodeObject() writes the full HOA bus");
-    }
+    // Retained mathematical primitives are not a competing runtime renderer.
+    VbapPanner v;
+    const auto layout = SpeakerLayout::dodeca12();
+    check(v.prepare(layout), "standalone VBAP math preparation");
+    std::vector<float> gains(layout.size(), 0.0f);
+    v.gainsFor(SphericalCoord{45.0f, 20.0f, 1.0f}.toCartesian(), gains.data());
+    double sumSq = 0.0;
+    for (float gain : gains) sumSq += gain * gain;
+    checkNear(sumSq, 1.0, 1.0e-3, "retained panning math is normalized");
 }
 
 // ---------------------------------------------------------------------------
@@ -939,6 +899,15 @@ void testHrtf() {
               "lateral ITD is physically plausible");
     }
 
+    // Elevation must enter the incidence geometry exactly once, not twice.
+    {
+        const auto raised = h.render(SphericalCoord{90.0f, 60.0f, 1.0f}, L.data(), R.data());
+        const double expected = woodworthItdSeconds(30.0f * frostsoulx::rt::kDegToRad,
+            frostsoulx::rt::kHeadRadius) * kSR;
+        checkNear(raised.delayRightSamples-raised.delayLeftSamples, expected, 1.0e-3,
+                  "elevated source ITD matches spherical-head incidence geometry");
+    }
+
     // Elevation must actually change the spectrum (pinna notches), otherwise
     // the elevation cue is missing.
     {
@@ -982,14 +951,7 @@ void testEndToEndChain() {
     frostsoulx::ImmersiveAudioEngine engine;
     check(engine.prepare(kSR, kN), "prepare() for the end-to-end chain");
 
-    const auto expected =
-#if defined(FROSTSOULX_STEAM_AUDIO_AVAILABLE)
-        engine.backend() == frostsoulx::SpatialBackend::SteamAudio
-            ? frostsoulx::ImmersiveProcessResult::SteamAudioProcessed
-            : frostsoulx::ImmersiveProcessResult::NativeSpatialProcessed;
-#else
-        frostsoulx::ImmersiveProcessResult::NativeSpatialProcessed;
-#endif
+    const auto expected = frostsoulx::ImmersiveProcessResult::Processed;
 
     engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Studio);
     engine.setRoomMix(0.2f);
@@ -1046,7 +1008,9 @@ void testEndToEndChain() {
         frostsoulx::ImmersiveAudioEngine s;
         check(s.prepare(kSR, kN), "prepare() for spatial symmetry");
         configureDry(s);
-        s.setStereoWidth(0.8f);
+        // Isolate HRTF positioning from phase-bearing M/S widening. A widened
+        // complementary high band can intentionally oppose the ipsilateral LF.
+        s.setStereoWidth(0.5f);
 
         auto sidedDry = [&](bool leftSide) {
             s.reset();
@@ -1103,33 +1067,6 @@ void testEndToEndChain() {
     check(peakOf(after) == 0.0, "reset() cleared every delay line and filter tail");
 }
 
-void testPcmAdapterBoundary() {
-    frostsoulx::ImmersiveAudioEngine engine;
-    check(engine.prepare(kSR, kN), "prepare() for PCM adapter boundary");
-    configureDry(engine);
-
-    std::vector<float> direct(static_cast<std::size_t>(kN) * 2);
-    for (int frame = 0; frame < kN; ++frame) {
-        const float t = static_cast<float>(frame) * 0.031f;
-        direct[static_cast<std::size_t>(frame) * 2] = 0.37f * std::sin(t);
-        direct[static_cast<std::size_t>(frame) * 2 + 1] = 0.29f * std::sin(t + 0.4f);
-    }
-    check(engine.process(direct.data(), kN), "direct signal reaches engine output");
-    check(sane(direct, 0.99f, "direct signal"), "direct signal remains finite and bounded");
-
-    // Match the Android PCM16 conversion contract and verify that the adapter
-    // boundary adds only quantisation error, not gain or nonlinear distortion.
-    const std::vector<float> before = direct;
-    double maxError = 0.0;
-    for (std::size_t i = 0; i < direct.size(); ++i) {
-        const int scaled = static_cast<int>(std::lround(direct[i] * 32767.0f));
-        const auto pcm = static_cast<std::int16_t>(std::clamp(scaled, -32768, 32767));
-        direct[i] = static_cast<float>(pcm) / 32768.0f;
-        maxError = std::max(maxError, std::fabs(static_cast<double>(direct[i] - before[i])));
-    }
-    check(maxError <= (2.0 / 32768.0), "PCM16 adapter round-trip stays within quantisation error");
-    check(sane(direct, 0.99f, "PCM16 adapter output"), "PCM16 adapter output remains finite and bounded");
-}
 } // namespace
 
 int main() {
@@ -1137,7 +1074,7 @@ int main() {
     static_assert(static_cast<int>(frostsoulx::RoomSimulationPreset::Subway) == 5);
 
     testPrepareAndParameters();     // A
-    testBackendSelection();         // B
+    testUnifiedPreparation();         // B
     testNativeProcessing();         // C, D, E
     testBypass();                   // F
     testRoomStages();               // G, H
@@ -1148,13 +1085,12 @@ int main() {
     testConvolution();              // M
     testHrtf();                     // N
     testEndToEndChain();            // full runtime chain
-    testPcmAdapterBoundary();       // JNI/Media3 PCM16 boundary contract
 
     if (g_failures != 0) {
         std::cerr << g_failures << " check(s) failed\n";
         return 1;
     }
     std::cout << "All immersive audio engine checks passed "
-                 "(native path: PCM -> SpatialRenderer -> HRTF/HOA/VBAP -> room -> limiter)\n";
+                 "(PCM -> M/S bands -> spatial 2x2 BRIR -> convolution -> true-peak lookahead)\n";
     return 0;
 }

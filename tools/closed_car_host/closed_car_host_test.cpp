@@ -1,4 +1,4 @@
-#include "frostsoulx/ImmersiveAudioEngine.h"
+#include "frostsoulx/immersive_audio_engine.h"
 
 #include <cmath>
 #include <cstdio>
@@ -8,7 +8,7 @@
 
 using frostsoulx::ImmersiveAudioEngine;
 using frostsoulx::ImmersiveProcessResult;
-using frostsoulx::RoomSimulationPreset;
+using Preset = frostsoulx::spatial::SpaceProfile::Preset;
 
 struct Metrics {
     double energy = 0.0;
@@ -36,7 +36,7 @@ static float rightInput(int sample, int sampleRate) {
     return 0.11f * std::sin(2.0f * 3.14159265f * 880.0f * time + 0.7f);
 }
 
-static Metrics render(const Controls& controls, RoomSimulationPreset preset = RoomSimulationPreset::ClosedCar) {
+static Metrics render(const Controls& controls, Preset preset = Preset::ClosedCar) {
     constexpr int sampleRate = 48000;
     constexpr int blockFrames = 384;
     constexpr int blockCount = 260;
@@ -46,7 +46,7 @@ static Metrics render(const Controls& controls, RoomSimulationPreset preset = Ro
         std::fprintf(stderr, "FAIL: engine.prepare\n");
         std::exit(2);
     }
-    engine.setRoomSimulationPreset(preset);
+    engine.setSpacePreset(preset);
     engine.setEnabled(true);
     engine.setSpatialBlend(1.0f);
     engine.setRoomMix(1.0f);
@@ -55,7 +55,8 @@ static Metrics render(const Controls& controls, RoomSimulationPreset preset = Ro
     engine.setDampening(controls.dampening);
     engine.setRoomSize(0.5f);
     engine.setStereoWidth(0.5f);
-    engine.setCarFader(controls.fader);
+    const auto listener = engine.activeSpaceProfile().listenerPosition();
+    engine.setSourcePosition(-listener.y, listener.z, listener.x + 0.8f + controls.fader * 0.5f);
 
     Metrics metrics;
     std::vector<float> buffer(static_cast<std::size_t>(blockFrames) * 2U);
@@ -117,13 +118,13 @@ static void testBypass() {
 }
 
 static void testAllPresets() {
-    const RoomSimulationPreset presets[] = {
-        RoomSimulationPreset::Off, RoomSimulationPreset::SmallRoom,
-        RoomSimulationPreset::Studio, RoomSimulationPreset::ConcertHall,
-        RoomSimulationPreset::Cathedral, RoomSimulationPreset::Subway,
-        RoomSimulationPreset::ClosedCar,
+    const Preset presets[] = {
+        Preset::Anechoic, Preset::Bathroom, Preset::LivingRoom, Preset::MediumHall,
+        Preset::LargeHall, Preset::ConcertHall, Preset::SubwayPlatform,
+        Preset::LongSubwayTunnel, Preset::LongTunnel, Preset::ClosedCar,
+        Preset::OpenRoad, Preset::Cave, Preset::Stadium,
     };
-    for (const RoomSimulationPreset preset : presets) {
+    for (const Preset preset : presets) {
         const Metrics metrics = render(Controls{0.0f, 1.2f, 1.0f, 0.5f}, preset);
         require(metrics.nonFinite == 0, "preset produced NaN/Inf");
         require(metrics.peak <= 1.00001f, "preset exceeded clipping-safe peak");

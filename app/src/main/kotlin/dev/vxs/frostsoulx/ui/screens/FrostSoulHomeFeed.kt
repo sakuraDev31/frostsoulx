@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -41,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -90,7 +94,6 @@ import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
 import dev.vxs.frostsoulx.ui.frostsoul.FSSectionHeader
 import dev.vxs.frostsoulx.ui.frostsoul.FSText
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
-import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
 import kotlinx.coroutines.CoroutineScope
 import java.util.Calendar
 
@@ -295,18 +298,6 @@ internal fun FrostSoulHomeFeed(
                     actionLabel = stringResource(R.string.retry),
                     onAction = { onAction(HomeAction.Refresh) },
                     modifier = Modifier.height(280.dp),
-                )
-            }
-        }
-
-        if (!uiState.isChipLoading && !uiState.chipLoadFailed) {
-            // 1. TOP HEADER / GREETING
-            item(key = "frostsoul_greeting") {
-                FrostSoulGreetingHeader(
-                    accountName = uiState.accountName,
-                    selectedChip = uiState.selectedChip,
-                    mediaMetadata = mediaMetadata,
-                    isPlaying = isPlaying,
                 )
             }
         }
@@ -569,175 +560,7 @@ internal fun FrostSoulHomeFeed(
 }
 
 // =======================================================================
-// 1. TOP HEADER / GREETING
-// =======================================================================
-
-@Composable
-private fun FrostSoulGreetingHeader(
-    accountName: String,
-    selectedChip: HomePage.Chip?,
-    mediaMetadata: MediaMetadata?,
-    isPlaying: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-    val (greetingTitle, symbol, defaultOverline) = remember(currentHour) {
-        when (currentHour) {
-            in 0..4 -> Triple("Good Night", "🌙", "LATE NIGHT")
-            in 5..11 -> Triple("Good Morning", "☀️", "MORNING FLOW")
-            in 12..16 -> Triple("Good Afternoon", "⛅", "AFTERNOON FLOW")
-            in 17..20 -> Triple("Good Evening", "🌅", "EVENING UNWIND")
-            else -> Triple("Good Night", "🌙", "NIGHT VIBES")
-        }
-    }
-
-    val resolvedName = remember(accountName) {
-        val raw = accountName.trim()
-        if (raw.isNotBlank() && !raw.equals("Shivam", ignoreCase = true)) {
-            raw.split("\\s+".toRegex()).firstOrNull()?.replaceFirstChar {
-                if (it.isLowerCase()) it.titlecase() else it.toString()
-            }.orEmpty()
-        } else {
-            ""
-        }
-    }
-
-    val displayTitle = remember(greetingTitle, resolvedName) {
-        if (resolvedName.isNotBlank()) {
-            "$greetingTitle, $resolvedName"
-        } else {
-            greetingTitle
-        }
-    }
-
-    val overline = remember(selectedChip, isPlaying, defaultOverline) {
-        when {
-            selectedChip != null -> "${selectedChip.title.uppercase()} SESSION"
-            isPlaying -> "NOW LISTENING"
-            else -> defaultOverline
-        }
-    }
-
-    val subtitle = remember(currentHour, selectedChip, isPlaying, mediaMetadata) {
-        if (selectedChip != null) {
-            val chipName = selectedChip.title
-            when {
-                chipName.contains("relax", ignoreCase = true) ->
-                    if (currentHour in 21..23 || currentHour in 0..4) {
-                        "Relaxation session • Calming ambient tones for winding down"
-                    } else {
-                        "Relaxation session • Peaceful melodies to clear your mind"
-                    }
-                chipName.contains("workout", ignoreCase = true) ->
-                    if (currentHour in 5..11) {
-                        "Morning workout • High-energy beats to power your day"
-                    } else {
-                        "Workout session • Heavy bass & high-tempo momentum"
-                    }
-                chipName.contains("focus", ignoreCase = true) ->
-                    if (currentHour in 0..4) {
-                        "Midnight focus • Deep instrumental concentration"
-                    } else {
-                        "Focus session • Ambient flow & distraction-free listening"
-                    }
-                chipName.contains("energ", ignoreCase = true) ->
-                    "Energy session • Uplifting tracks & fast-paced rhythms"
-                chipName.contains("commute", ignoreCase = true) ->
-                    if (currentHour in 5..11) {
-                        "Morning commute • Fresh soundtracks for your journey"
-                    } else if (currentHour in 17..21) {
-                        "Evening commute • Unwind on your way home"
-                    } else {
-                        "On the move • Handpicked tracks for the road"
-                    }
-                chipName.contains("party", ignoreCase = true) ->
-                    "Party session • Crowd favorites & high-voltage jams"
-                chipName.contains("sleep", ignoreCase = true) ->
-                    "Sleep session • Soothing soundscapes for deep rest"
-                chipName.contains("romance", ignoreCase = true) ->
-                    "Romance session • Intimate acoustics & soulful ballads"
-                chipName.contains("feel good", ignoreCase = true) ->
-                    "Feel good session • Bright melodies & mood-lifting vibes"
-                else ->
-                    "$chipName session • Curated music for your current flow"
-            }
-        } else if (isPlaying && mediaMetadata != null) {
-            val trackTitle = mediaMetadata.title.take(30)
-            val artist = mediaMetadata.artists.joinToString(", ") { it.name }.takeIf { it.isNotBlank() }
-            val trackInfo = if (!artist.isNullOrBlank()) "$trackTitle • $artist" else trackTitle
-            when (currentHour) {
-                in 0..4 -> "Late night session • Listening to $trackInfo"
-                in 5..11 -> "Morning session • Listening to $trackInfo"
-                in 12..16 -> "Afternoon flow • Listening to $trackInfo"
-                in 17..20 -> "Evening session • Listening to $trackInfo"
-                else -> "Night session • Listening to $trackInfo"
-            }
-        } else {
-            when (currentHour) {
-                in 0..4 -> "Late night vibes • Ambient tones & deep listening"
-                in 5..8 -> "Early morning vibes • Gentle acoustics & sunrise melodies"
-                in 9..11 -> "Morning vibes • Uplifting rhythms tuned for your day"
-                in 12..16 -> "Afternoon flow • Soundtracks for focus & daytime momentum"
-                in 17..20 -> "Evening vibes • Wind down with smooth melodies & favorites"
-                else -> "Night vibes • Chill beats, mellow acoustic & calm listening"
-            }
-        }
-    }
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = FrostSoulTheme.spacing.page)
-            .padding(top = 2.dp, bottom = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        FSText(
-            text = overline,
-            color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.85f),
-            style = FrostSoulTheme.typography.overline.copy(
-                fontSize = 11.5.sp,
-                letterSpacing = 1.4.sp,
-                fontWeight = FontWeight.SemiBold,
-            ),
-        )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            FSText(
-                text = displayTitle,
-                color = FrostSoulTheme.colors.onSurface,
-                style = FrostSoulTheme.typography.title.copy(
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.5).sp,
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            FSText(
-                text = symbol,
-                style = FrostSoulTheme.typography.title.copy(
-                    fontSize = 24.sp,
-                ),
-            )
-        }
-        FSText(
-            text = subtitle,
-            color = FrostSoulTheme.colors.onSurfaceMuted,
-            style = FrostSoulTheme.typography.bodyMuted.copy(
-                fontSize = 13.5.sp,
-                lineHeight = 18.sp,
-            ),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-// =======================================================================
-// 2. HERO CAROUSEL
+// 1. HERO CAROUSEL
 // =======================================================================
 
 @Composable
@@ -1900,16 +1723,61 @@ private fun FrostSoulHomeTabs(
 ) {
     if (chips.isEmpty()) return
 
-    val selectedEndpoint = selectedChip?.endpoint
-    val selectedIndex = if (selectedEndpoint == null) 0
-    else chips.indexOfFirst { it.endpoint == selectedEndpoint } + 1
+    val labels = listOf(stringResource(R.string.home_for_you)) + chips.map { it.title }
+    val selectedIndex = selectedChip?.endpoint?.let { endpoint ->
+        chips.indexOfFirst { it.endpoint == endpoint } + 1
+    } ?: 0
+    val labelWidths = remember { mutableStateMapOf<Int, Int>() }
+    val density = LocalDensity.current
 
-    PremiumSegmentedTabs(
-        labels = listOf(stringResource(R.string.home_for_you)) + chips.map { it.title },
-        selectedIndex = selectedIndex,
-        onSelected = { index -> onChipSelected(chips.getOrNull(index - 1)) },
-        modifier = Modifier.heightIn(min = 56.dp),
-    )
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        verticalAlignment = Alignment.Bottom,
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = FrostSoulTheme.spacing.page)
+            .heightIn(min = 52.dp),
+    ) {
+        labels.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
+            val underlineWidth = labelWidths[index]?.let { with(density) { it.toDp() } } ?: 0.dp
+            val animatedUnderlineWidth by animateDpAsState(
+                targetValue = if (selected) underlineWidth else 0.dp,
+                animationSpec = spring(
+                    dampingRatio = 0.72f,
+                    stiffness = Spring.StiffnessMedium,
+                ),
+                label = "home_mood_underline",
+            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clickable { onChipSelected(chips.getOrNull(index - 1)) }
+                    .padding(top = 8.dp),
+            ) {
+                Text(
+                    text = label,
+                    color = if (selected) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
+                    style = FrostSoulTheme.typography.body.copy(
+                        fontSize = 16.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    onTextLayout = { result -> labelWidths[index] = result.size.width },
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .width(animatedUnderlineWidth)
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(FrostSoulTheme.colors.onSurface),
+                )
+            }
+        }
+    }
 }
 
 // =======================================================================
