@@ -528,17 +528,6 @@ class ImmersiveAudioProcessor : AudioProcessor {
 
 
 
-    fun setSourcePosition(azimuthDeg: Float, elevationDeg: Float) {
-        sourceAzimuth = azimuthDeg.takeIf(Float::isFinite)?.coerceIn(-180f, 180f) ?: 0f
-        sourceElevation = elevationDeg.takeIf(Float::isFinite)?.coerceIn(-45f, 90f) ?: 0f
-        processor?.setSourcePosition(sourceAzimuth, sourceElevation)
-    }
-
-    fun setSourceDistance(distanceMetres: Float) {
-        sourceDistance = distanceMetres.takeIf(Float::isFinite)?.coerceIn(1f, 10f) ?: 1f
-        processor?.setSourceDistance(sourceDistance)
-    }
-
     fun setCarFader(value: Float) {
         carFader = value.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
         if (nativeHandle != 0L) nativeSetCarFader(nativeHandle, carFader)
@@ -741,6 +730,17 @@ object ImmersiveAudioRuntime {
     fun setStereoWidth(value: Float) {
         stereoWidth = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
         processor?.setStereoWidth(stereoWidth)
+    }
+
+    fun setSourcePosition(azimuthDeg: Float, elevationDeg: Float) {
+        sourceAzimuth = azimuthDeg.takeIf(Float::isFinite)?.coerceIn(-180f, 180f) ?: 0f
+        sourceElevation = elevationDeg.takeIf(Float::isFinite)?.coerceIn(-45f, 90f) ?: 0f
+        processor?.setSourcePosition(sourceAzimuth, sourceElevation)
+    }
+
+    fun setSourceDistance(distanceMetres: Float) {
+        sourceDistance = distanceMetres.takeIf(Float::isFinite)?.coerceIn(1f, 10f) ?: 1f
+        processor?.setSourceDistance(sourceDistance)
     }
 
     fun setCarFader(value: Float) {
