@@ -74,6 +74,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1468,6 +1469,7 @@ class MainActivity : ComponentActivity() {
                                                 else -> topAppBarScrollBehavior
                                             }
                                         val isLibraryRoute = navBackStackEntry?.destination?.route == Screens.Library.route
+                                        val isTopBarScrolled = currentScrollBehavior.state.heightOffset < -1f
 
                                         // Rigid slide (Step 3): the header translates as a block via
                                         // Modifier.offset while the M3 TopAppBar itself gets
@@ -1558,6 +1560,14 @@ class MainActivity : ComponentActivity() {
                                             }
 
                                             TopAppBar(
+                                                modifier =
+                                                    Modifier.shadow(
+                                                        elevation = if (isTopBarScrolled) 7.dp else 0.dp,
+                                                        shape = RoundedCornerShape(0.dp),
+                                                        clip = false,
+                                                        spotColor = Color.Black.copy(alpha = 0.28f),
+                                                        ambientColor = Color.Black.copy(alpha = 0.12f),
+                                                    ),
                                                 windowInsets =
                                                     WindowInsets.safeDrawing.only(
                                                         (
