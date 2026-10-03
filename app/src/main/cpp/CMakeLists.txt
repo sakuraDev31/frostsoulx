@@ -1,9 +1,14 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(frostsoulx_audio_dormant LANGUAGES CXX)
-
-# FrostSoulX immersive audio engine is intentionally dormant.
-# The native engine sources remain in the repository for future standalone
-# development, but no immersive audio target is part of the Android app build.
-#
-# Re-enable the native targets only after the standalone engine is independently
-# rebuilt, tested, benchmarked, and ready for integration.
+project(frostsoulx_audio LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(FROSTSOULX_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(FROSTSOULX_BUILD_PLUGIN OFF CACHE BOOL "" FORCE)
+add_subdirectory(frostsoulx_immersive)
+add_library(frostsoulx_immersive_jni SHARED frostsoulx_immersive_jni.cpp)
+target_include_directories(frostsoulx_immersive_jni PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/frostsoulx_immersive/include)
+target_link_libraries(frostsoulx_immersive_jni PRIVATE frostsoulx_immersive_audio log android)
+target_compile_options(frostsoulx_immersive_audio PRIVATE -fexceptions)
+target_compile_features(frostsoulx_immersive_jni PRIVATE cxx_std_17)
+target_compile_options(frostsoulx_immersive_jni PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
