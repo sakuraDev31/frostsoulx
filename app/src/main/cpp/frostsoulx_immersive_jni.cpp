@@ -6,7 +6,7 @@
 #include <memory>
 #include <atomic>
 #include "frostsoulx/immersive_audio_engine.h"
-struct Handle{frostsoulx::ImmersiveAudioEngine engine;int encoding=0,sampleRate=0,quantum=384;bool enabled=false;float trebleDb=0,outputDb=0,lowL=0,lowR=0;float sourceAzimuth=0,sourceElevation=0,sourceDistance=1,carFader=0;int roomPreset=2;std::array<float,4096> scratch{};};
+struct Handle{frostsoulx::ImmersiveAudioEngine engine;int encoding=0,sampleRate=0,quantum=384;bool enabled=false;float trebleDb=0,outputDb=0,lowL=0,lowR=0;float sourceAzimuth=0,sourceElevation=0,sourceDistance=1,carFader=0;bool orbitEnabled=false;int roomPreset=2;std::array<float,4096> scratch{};};
 static float g(float d)noexcept{return std::pow(10.0f,std::clamp(std::isfinite(d)?d:0.0f,-24.0f,12.0f)/20.0f);}
 static int16_t r16(const uint8_t*p)noexcept{return(int16_t)((uint16_t)p[0]|((uint16_t)p[1]<<8));}
 static void w16(uint8_t*p,float x)noexcept{int q=(int)std::lround(std::clamp(std::isfinite(x)?x:0.0f,-0.98f,0.98f)*32767.0f);uint16_t u=(uint16_t)std::clamp(q,-32768,32767);p[0]=(uint8_t)u;p[1]=(uint8_t)(u>>8);}
@@ -33,7 +33,7 @@ const float ce=std::cos(el);
 const float x=h.sourceDistance*std::sin(az)*ce;
 const float y=h.sourceDistance*std::sin(el);
 const float z=h.sourceDistance*std::cos(az)*ce;
-h.engine.setSourcePosition(x,y,z);
+h.orbitEnabled ? h.engine.setOrbitPosition(h.sourceAzimuth,h.sourceElevation,h.sourceDistance) : h.engine.setSourcePosition(x,y,z);
 }
 
 extern "C" JNIEXPORT jlong JNICALL Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeCreate(JNIEnv*,jclass,jint sr,jint enc){if(sr<8000||sr>384000||(enc!=2&&enc!=4))return 0;auto h=std::make_unique<Handle>();h->sampleRate=sr;h->encoding=enc;if(!h->engine.prepare(sr,2048))return 0;h->engine.setSpatialBlend(1);h->engine.setEnabled(false);return(jlong)h.release();}
@@ -53,6 +53,7 @@ extern "C" JNIEXPORT void JNICALL Java_dev_vxs_frostsoulx_playback_ImmersiveAudi
 extern "C" JNIEXPORT void JNICALL Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomSize(JNIEnv*,jclass,jlong a,jfloat v){if(auto*h=(Handle*)a)h->engine.setRoomSize(std::clamp(v,0.0f,1.0f));}
 extern "C" JNIEXPORT void JNICALL Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetDampening(JNIEnv*,jclass,jlong a,jfloat v){if(auto*h=(Handle*)a)h->engine.setDampening(std::clamp(v,0.0f,1.0f));}
 extern "C" JNIEXPORT void JNICALL Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSourcePosition(JNIEnv*,jclass,jlong a,jfloat az,jfloat el){if(auto*h=(Handle*)a){h->sourceAzimuth=std::clamp(std::isfinite(az)?az:0.0f,-180.0f,180.0f);h->sourceElevation=std::clamp(std::isfinite(el)?el:0.0f,-45.0f,90.0f);applySourcePosition(*h);}}
+extern "C" JNIEXPORT void JNICALL Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetOrbitEnabled(JNIEnv*,jclass,jlong a,jboolean v){if(auto*h=(Handle*)a){h->orbitEnabled=v==JNI_TRUE;h->engine.setOrbitEnabled(h->orbitEnabled);if(h->orbitEnabled)h->engine.setOrbitPosition(h->sourceAzimuth,h->sourceElevation,h->sourceDistance);}}
 extern "C" JNIEXPORT void JNICALL Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSourceDistance(JNIEnv*,jclass,jlong a,jfloat d){if(auto*h=(Handle*)a){h->sourceDistance=std::clamp(std::isfinite(d)?d:1.0f,1.0f,10.0f);applySourcePosition(*h);}}
 extern "C" JNIEXPORT void JNICALL Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetStereoWidth(JNIEnv*,jclass,jlong a,jfloat v){if(auto*h=(Handle*)a)h->engine.setStereoWidth(std::clamp(v,0.0f,1.0f));}
 extern "C" JNIEXPORT void JNICALL Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetCarFader(JNIEnv*,jclass,jlong a,jfloat v){if(auto*h=(Handle*)a){h->carFader=std::clamp(std::isfinite(v)?v:0.0f,-1.0f,1.0f);if(h->roomPreset==6){h->sourceAzimuth=h->carFader*180.0f;h->sourceElevation=-3.0f;applySourcePosition(*h);}}}

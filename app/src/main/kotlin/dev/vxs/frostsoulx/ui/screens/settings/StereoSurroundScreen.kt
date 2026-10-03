@@ -105,6 +105,7 @@ import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
 import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundOutputGainDbKey
+import dev.vxs.frostsoulx.constants.StereoSurroundOrbitEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
 import dev.vxs.frostsoulx.constants.StereoSurroundReflectionAmountKey
 import dev.vxs.frostsoulx.constants.StereoSurroundReverbTimeKey
@@ -158,6 +159,7 @@ fun StereoSurroundScreen(navController: NavController) {
     val bassGainDbPreference = rememberPreference(StereoSurroundBassGainDbKey, defaultValue = 0f)
     val trebleGainDbPreference = rememberPreference(StereoSurroundTrebleGainDbKey, defaultValue = 0f)
     val outputGainDbPreference = rememberPreference(StereoSurroundOutputGainDbKey, defaultValue = 0f)
+    val orbitEnabledPreference = rememberPreference(StereoSurroundOrbitEnabledKey, defaultValue = false)
     val savedPresetsPreference = rememberPreference(StereoSurroundSavedPresetsKey, defaultValue = "")
 
     val enabled by enabledPreference
@@ -175,6 +177,7 @@ fun StereoSurroundScreen(navController: NavController) {
     val persistedBassGainDb by bassGainDbPreference
     val persistedTrebleGainDb by trebleGainDbPreference
     val persistedOutputGainDb by outputGainDbPreference
+    val orbitEnabled by orbitEnabledPreference
     val savedPresetsRaw by savedPresetsPreference
 
     var selectedCategory by remember { mutableStateOf(ImmersiveCategory.Acoustics) }
@@ -312,6 +315,10 @@ fun StereoSurroundScreen(navController: NavController) {
         ImmersiveAudioRuntime.setEnabled(enabled)
     }
 
+    LaunchedEffect(orbitEnabled) {
+        ImmersiveAudioRuntime.setOrbitEnabled(orbitEnabled)
+    }
+
     LaunchedEffect(limiterEnabled) {
         ImmersiveAudioRuntime.setLimiterEnabled(limiterEnabled)
     }
@@ -421,13 +428,19 @@ fun StereoSurroundScreen(navController: NavController) {
                 },
             )
 
-            // 3. Category Selector Navigation Tabs
+            // 3. Azimuth-based 3D Orbit Mode. This is a spatial mode, not a room preset.
+            ThreeDOrbitModeCard(
+                enabled = orbitEnabled,
+                onEnabledChange = { orbitEnabledPreference.value = it },
+            )
+
+            // 4. Category Selector Navigation Tabs
             ImmersiveCategorySelector(
                 selected = selectedCategory,
                 onSelected = { selectedCategory = it },
             )
 
-            // 4. Tab Content
+            // 5. Tab Content
             when (selectedCategory) {
                 ImmersiveCategory.Acoustics -> {
                     AcousticsTabContent(
@@ -744,6 +757,56 @@ fun StereoSurroundScreen(navController: NavController) {
             },
             containerColor = FrostSoulTheme.colors.surfaceRaised,
         )
+    }
+}
+
+
+@Composable
+private fun ThreeDOrbitModeCard(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                if (enabled) FrostSoulTheme.colors.accent.copy(alpha = 0.45f)
+                else FrostSoulTheme.colors.outline.copy(alpha = 0.4f),
+                RoundedCornerShape(18.dp),
+            ),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "3D Orbit Mode",
+                    color = FrostSoulTheme.colors.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                )
+                Text(
+                    text = if (enabled)
+                        "Azimuth-based source orbit · works with every room"
+                    else
+                        "Use azimuth/elevation/distance as a 3D orbit around the listener",
+                    color = FrostSoulTheme.colors.onSurfaceMuted,
+                    fontSize = 11.sp,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = FrostSoulTheme.colors.background,
+                    checkedTrackColor = FrostSoulTheme.colors.accent,
+                ),
+            )
+        }
     }
 }
 

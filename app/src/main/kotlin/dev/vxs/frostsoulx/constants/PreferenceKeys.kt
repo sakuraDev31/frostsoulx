@@ -946,4 +946,5 @@ val StereoSurroundLimiterEnabledKey = booleanPreferencesKey("stereoSurroundLimit
 val StereoSurroundBassGainDbKey = floatPreferencesKey("stereoSurroundBassGainDb")
 val StereoSurroundTrebleGainDbKey = floatPreferencesKey("stereoSurroundTrebleGainDb")
 val StereoSurroundOutputGainDbKey = floatPreferencesKey("stereoSurroundOutputGainDb")
+val StereoSurroundOrbitEnabledKey = booleanPreferencesKey("stereoSurroundOrbitEnabled")
 val StereoSurroundSavedPresetsKey = stringPreferencesKey("stereoSurroundSavedPresets")
