@@ -621,17 +621,14 @@ fun FSNavigationBar(
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
     val isLight = !pureBlack && colors.background.luminance() > 0.5f
     val navSurface = if (pureBlack) Color.Black else if (isLight) Color(0xFFF2F4F7) else Color.White
-    val shadowModifier = if (isLight) {
+    val shadowModifier =
         Modifier.shadow(
-            elevation = 8.dp,
+            elevation = if (isLight) 8.dp else 10.dp,
             shape = shape,
             clip = false,
-            spotColor = Color(0x1C000000),
-            ambientColor = Color(0x0E000000),
+            spotColor = Color.Black.copy(alpha = if (isLight) 0.11f else 0.32f),
+            ambientColor = Color.Black.copy(alpha = if (isLight) 0.06f else 0.16f),
         )
-    } else {
-        Modifier
-    }
     val displayItems =
         if (onMoreClick != null) {
             items + FSNavigationItem(

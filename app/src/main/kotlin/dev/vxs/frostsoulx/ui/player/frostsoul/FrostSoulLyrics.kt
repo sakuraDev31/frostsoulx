@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -401,6 +402,13 @@ private fun BoxScope.FrostSoulLyricsBottomControls(
             Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 22.dp)
+                .shadow(
+                    elevation = 8.dp,
+                    shape = RoundedCornerShape(30.dp),
+                    clip = false,
+                    spotColor = Color.Black.copy(alpha = 0.34f),
+                    ambientColor = Color.Black.copy(alpha = 0.16f),
+                )
                 .background(Color.Black.copy(alpha = 0.82f), RoundedCornerShape(30.dp))
                 .padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
     ) {
