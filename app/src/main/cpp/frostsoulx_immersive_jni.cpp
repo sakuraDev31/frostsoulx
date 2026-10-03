@@ -30,9 +30,10 @@ static void applySourcePosition(Handle&h)noexcept{
 const float az=h.sourceAzimuth*0.0174532925199433f;
 const float el=h.sourceElevation*0.0174532925199433f;
 const float ce=std::cos(el);
-const float x=h.sourceDistance*std::sin(az)*ce;
-const float y=h.sourceDistance*std::sin(el);
-const float z=h.sourceDistance*std::cos(az)*ce;
+// Engine coordinates: +X front, +Y left, +Z up.
+const float x=h.sourceDistance*std::cos(az)*ce;
+const float y=h.sourceDistance*std::sin(az)*ce;
+const float z=h.sourceDistance*std::sin(el);
 h.orbitEnabled ? h.engine.setOrbitPosition(h.sourceAzimuth,h.sourceElevation,h.sourceDistance) : h.engine.setSourcePosition(x,y,z);
 }
 
