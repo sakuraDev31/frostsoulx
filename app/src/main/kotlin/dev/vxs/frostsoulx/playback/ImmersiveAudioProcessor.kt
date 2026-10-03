@@ -385,6 +385,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
     @Volatile private var outputGainDb = 0f
 
     override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        if (!nativeAvailable) { this.inputAudioFormat = inputAudioFormat; outputAudioFormat = AudioProcessor.AudioFormat.NOT_SET; return AudioProcessor.AudioFormat.NOT_SET }
         val supportedEncoding =
             inputAudioFormat.encoding == C.ENCODING_PCM_16BIT ||
                 inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
@@ -417,7 +418,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         return outputAudioFormat
     }
 
-    override fun isActive(): Boolean = nativeHandle != 0L
+    override fun isActive(): Boolean = nativeAvailable && nativeHandle != 0L
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
@@ -561,9 +562,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         const val MAX_QUANTUM_FRAMES = 2048
         private val EMPTY_BUFFER = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
 
-        init {
-            System.loadLibrary("frostsoulx_immersive_jni")
-        }
+        private val nativeAvailable: Boolean = runCatching { System.loadLibrary("frostsoulx_immersive_jni") }.isSuccess
 
         @JvmStatic private external fun nativeCreate(sampleRate: Int, encoding: Int): Long
         @JvmStatic private external fun nativeRelease(handle: Long)
