@@ -144,9 +144,16 @@ void testUnifiedPreparation() {
     const auto& matrix = engine.activeTransferMatrix();
     check(matrix[0].valid() && matrix[1].valid(), "both source-to-ear BRIR pairs are active");
     for (int ear = 0; ear < 2; ++ear) {
-        double sum = 0.0;
-        for (const auto& pair : matrix) for (float x : ear == 0 ? pair.left : pair.right) sum += std::fabs(x);
-        check(sum <= 0.980001, "complete spatial transfer row is peak bounded");
+        double power = 0.0;
+        double peak = 0.0;
+        for (const auto& pair : matrix) {
+            for (float x : ear == 0 ? pair.left : pair.right) {
+                power += static_cast<double>(x) * x;
+                peak = std::max(peak, std::fabs(static_cast<double>(x)));
+            }
+        }
+        check(std::sqrt(power) <= 0.980001, "complete spatial transfer row is power bounded");
+        check(peak <= 0.980001, "complete spatial transfer taps are peak bounded");
     }
 }
 

@@ -228,7 +228,7 @@ void testSpatialTransitionsAndBounds() {
         e.setHeadOrientation(static_cast<float>((iteration%9)-4)*10,5,-2);
         e.setBassGain(iteration%2?1.8f:.8f);e.setBassWidth(iteration%2?.2f:1.8f);
         e.setHighBandWidth(iteration%2?1.7f:.7f);
-        for(int ear=0;ear<2;++ear){double bound=0;for(const auto& pair:e.activeTransferMatrix())for(float v:ear==0?pair.left:pair.right)bound+=std::fabs(v);check(bound<=.980001,"moving source/listener matrix gain bound");}
+        for(int ear=0;ear<2;++ear){double power=0,peak=0;for(const auto& pair:e.activeTransferMatrix())for(float v:ear==0?pair.left:pair.right){power+=static_cast<double>(v)*v;peak=std::max(peak,std::fabs(static_cast<double>(v)));}check(std::sqrt(power)<=.980001,"moving source/listener matrix power bound");check(peak<=.980001,"moving source/listener matrix peak bound");}
         block.fill(.9f);check(process(e,block.data(),384),"transition callback");
         for(int n=0;n<384;++n){float value=block[2*n];if(iteration>5)maxDelta=std::max(maxDelta,static_cast<double>(std::fabs(value-previous)));previous=value;check(std::isfinite(value)&&std::fabs(value)<.981,"all parameter transitions finite and peak-safe");}
         check(e.safetyGain()==1,"spatial gain fix keeps safety inactive on correlated loud DC");

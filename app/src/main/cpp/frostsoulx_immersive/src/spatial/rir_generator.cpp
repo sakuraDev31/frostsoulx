@@ -252,6 +252,7 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
     // -------------------------------------------------------------------------
     // 2. Physically Modeled Statistical Diffuse Tail
     // -------------------------------------------------------------------------
+    std::size_t diffuseStartSample = cfg_.maxTaps;
     if (cfg_.enableDiffuseTail && space.openness() < 0.95f) {
         const float V = space.volume();
         // Transition time from specular to diffuse field relative to direct arrival
@@ -259,6 +260,7 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
         const float rawTmix = std::clamp(std::sqrt(V) / c, 0.010f, 0.080f);
         const float tMix = cfg_.alignDirectArrival ? rawTmix : std::max(rawTmix, directDelay + 0.005f);
         const std::size_t startSample = static_cast<std::size_t>(tMix * fs);
+        diffuseStartSample = std::min(startSample, cfg_.maxTaps);
 
         // Sabine/Eyring T60 per band (Low: 125-250Hz, Mid: 500-1000Hz, High: 2000-4000Hz)
         auto t60Bands = space.reverberationTimeT60();
@@ -322,6 +324,29 @@ StereoBrir RirGenerator::generateBrir(const SpaceProfile& space, const HrtfDatab
 
             brir.left[n] += lpL;
             brir.right[n] += lpR;
+        }
+
+        // Calibrate the stochastic tail by power, not peak. The raw diffuse
+        // density falls below audibility in large rooms and narrow waveguides;
+        // this keeps the configured room energy perceptually effective without
+        // changing the decay envelope or frequency-dependent damping.
+        double earlyPower = 0.0;
+        double tailPower = 0.0;
+        for (std::size_t n = 0; n < diffuseStartSample; ++n) {
+            earlyPower += 0.5 * (static_cast<double>(brir.left[n]) * brir.left[n] +
+                                static_cast<double>(brir.right[n]) * brir.right[n]);
+        }
+        for (std::size_t n = diffuseStartSample; n < cfg_.maxTaps; ++n) {
+            tailPower += 0.5 * (static_cast<double>(brir.left[n]) * brir.left[n] +
+                                static_cast<double>(brir.right[n]) * brir.right[n]);
+        }
+        const double desiredRatio = std::clamp(static_cast<double>(cfg_.diffuseEnergyRatio) * 0.06, 0.0, 0.06);
+        if (earlyPower > 1.0e-12 && tailPower > 1.0e-18 && desiredRatio > 0.0) {
+            const float tailGain = static_cast<float>(std::sqrt((earlyPower * desiredRatio) / tailPower));
+            for (std::size_t n = diffuseStartSample; n < cfg_.maxTaps; ++n) {
+                brir.left[n] *= tailGain;
+                brir.right[n] *= tailGain;
+            }
         }
     }
 

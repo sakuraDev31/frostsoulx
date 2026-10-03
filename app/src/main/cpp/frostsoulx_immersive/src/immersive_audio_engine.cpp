@@ -68,20 +68,24 @@ struct ImmersiveAudioEngine::Impl {
                 source.setSourcePosition(space.listenerPosition() + ray);
                 next[i] = generator.generateBrir(source, hrtf);
             }
-            // Induced infinity norm: max_ear sum_source sum_tap |h|. This
-            // bounds arbitrary correlated stereo, transients and all frequencies,
-            // not just the largest IR sample or a sparse frequency grid. A common
-            // attenuation preserves ILD, ear timing and channel relationships.
-            double bound = 0.0;
+            // Use a power/RMS bound for the transfer matrix. An L1 tap-sum bound
+            // is safe but catastrophically conservative for long, sparse BRIRs:
+            // it attenuates a car/tunnel response by tens of dB and removes the
+            // audible reflections. The final true-peak limiter still protects
+            // arbitrary programme transients after convolution.
+            double rmsBound = 0.0;
             for (int ear = 0; ear < 2; ++ear) {
-                double row = 0.0;
+                double power = 0.0;
                 for (const auto& source : next) {
                     const auto& taps = ear == 0 ? source.left : source.right;
-                    for (float x : taps) { if (!std::isfinite(x)) return false; row += std::fabs(x); }
+                    for (float x : taps) {
+                        if (!std::isfinite(x)) return false;
+                        power += static_cast<double>(x) * static_cast<double>(x);
+                    }
                 }
-                bound = std::max(bound, row);
+                rmsBound = std::max(rmsBound, std::sqrt(power));
             }
-            const float gain = static_cast<float>(std::min(1.0, 0.98 / std::max(bound, 1.0e-12)));
+            const float gain = static_cast<float>(std::min(1.0, 0.95 / std::max(rmsBound, 0.95)));
             for (auto& source : next) {
                 for (float& x : source.left) x *= gain;
                 for (float& x : source.right) x *= gain;

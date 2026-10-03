@@ -325,6 +325,44 @@ void testFullBrirConvolution() {
     }
 }
 
+void testPhysicalTailEnergy() {
+    using namespace frostsoulx::spatial;
+
+    RirGeneratorConfig cfg;
+    cfg.sampleRate = 48000.0;
+    cfg.maxTaps = 16384;
+    cfg.maxIsmOrder = 2;
+    cfg.enableDiffuseTail = true;
+    cfg.diffuseEnergyRatio = 1.0f;
+    cfg.reverbTimeScale = 2.0f;
+    cfg.alignDirectArrival = true;
+
+    RirGenerator generator(cfg);
+    HrtfDatabase hrtf;
+    check(hrtf.buildParametric(48000.0, 128, 10.0f, 15.0f), "Parametric HRTF is available for tail-energy regression");
+
+    for (const auto preset : {SpaceProfile::Preset::ConcertHall,
+                              SpaceProfile::Preset::LongSubwayTunnel,
+                              SpaceProfile::Preset::ClosedCar}) {
+        const auto room = SpaceProfile::createPreset(preset);
+        const auto brir = generator.generateBrir(room, hrtf);
+        const auto mixSeconds = std::clamp(std::sqrt(room.volume()) / 343.0f, 0.010f, 0.080f);
+        const auto mixSample = std::min(brir.taps, static_cast<std::size_t>(mixSeconds * cfg.sampleRate));
+        double earlyPower = 0.0;
+        double tailPower = 0.0;
+        for (std::size_t n = 0; n < mixSample; ++n) {
+            earlyPower += 0.5 * (static_cast<double>(brir.left[n]) * brir.left[n] +
+                                static_cast<double>(brir.right[n]) * brir.right[n]);
+        }
+        for (std::size_t n = mixSample; n < brir.taps; ++n) {
+            tailPower += 0.5 * (static_cast<double>(brir.left[n]) * brir.left[n] +
+                                static_cast<double>(brir.right[n]) * brir.right[n]);
+        }
+        check(earlyPower > 1.0e-12 && tailPower / earlyPower > 0.04,
+              "Physical preset retains audible late-field power");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -333,6 +371,7 @@ int main() {
     testSpatialSourceModel();
     testTrajectorySystem();
     testGeometricReflectionModel();
+    testPhysicalTailEnergy();
     testFullBrirConvolution();
 
     if (g_failures != 0) {
