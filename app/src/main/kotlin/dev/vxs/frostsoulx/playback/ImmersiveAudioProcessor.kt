@@ -535,11 +535,6 @@ class ImmersiveAudioProcessor : AudioProcessor {
 
 
 
-    fun setOrbitEnabled(value: Boolean) {
-        orbitEnabled = value
-        processor?.setOrbitEnabled(value)
-    }
-
     fun setCarFader(value: Float) {
         carFader = value.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
         if (nativeHandle != 0L) nativeSetCarFader(nativeHandle, carFader)
@@ -756,6 +751,11 @@ object ImmersiveAudioRuntime {
     fun setSourceDistance(distanceMetres: Float) {
         sourceDistance = distanceMetres.takeIf(Float::isFinite)?.coerceIn(1f, 10f) ?: 1f
         processor?.setSourceDistance(sourceDistance)
+    }
+
+    fun setOrbitEnabled(value: Boolean) {
+        orbitEnabled = value
+        processor?.setOrbitEnabled(value)
     }
 
     fun setCarFader(value: Float) {
