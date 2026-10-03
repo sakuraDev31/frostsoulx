@@ -7,10 +7,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -44,6 +49,7 @@ fun StereoSurroundScreen(navController: NavController) {
         },
         containerColor = colors.background,
     ) { padding ->
+        var enabled by remember { mutableStateOf(false) }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -53,24 +59,29 @@ fun StereoSurroundScreen(navController: NavController) {
             verticalArrangement = Arrangement.Center,
         ) {
             Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = colors.surface,
-                ),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
             ) {
                 Column(
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        text = "Stereo Surround is temporarily disabled",
+                        text = "Stereo Surround",
                         color = colors.onSurface,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                     )
                     Text(
-                        text = "The audio engine is dormant while the standalone DSP engine is being rebuilt and tested independently.",
+                        text = if (enabled) "Unified audio engine active" else "Unified audio engine ready",
                         color = colors.onSurfaceMuted,
                         fontSize = 13.sp,
+                    )
+                    Switch(
+                        checked = enabled,
+                        onCheckedChange = { value ->
+                            enabled = value
+                            dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime.setEnabled(value)
+                        },
                     )
                 }
             }
