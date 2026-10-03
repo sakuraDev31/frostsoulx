@@ -50,6 +50,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.MediaItem
 import androidx.media3.common.ParserException
 import androidx.media3.common.PlaybackException
@@ -177,6 +178,10 @@ import dev.vxs.frostsoulx.constants.PauseListenHistoryKey
 import dev.vxs.frostsoulx.constants.PauseOnDeviceMuteKey
 import dev.vxs.frostsoulx.constants.PermanentShuffleKey
 import dev.vxs.frostsoulx.constants.PersistentQueueKey
+import dev.vxs.frostsoulx.constants.SpatialAzimuthKey
+import dev.vxs.frostsoulx.constants.SpatialElevationKey
+import dev.vxs.frostsoulx.constants.SpatialDistanceKey
+import dev.vxs.frostsoulx.constants.SpatialBassWidthKey
 import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
 import dev.vxs.frostsoulx.constants.StereoSurroundRoomPresetKey
@@ -188,9 +193,7 @@ import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
 import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
 import dev.vxs.frostsoulx.constants.StereoSurroundCarFaderKey
 import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
-import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundBassGainDbKey
-import dev.vxs.frostsoulx.constants.StereoSurroundTrebleGainDbKey
 import dev.vxs.frostsoulx.constants.StereoSurroundOutputGainDbKey
 import dev.vxs.frostsoulx.constants.PlayerStreamClient
 import dev.vxs.frostsoulx.constants.PlayerStreamClientKey
@@ -1108,15 +1111,15 @@ class MusicService :
         ImmersiveAudioRuntime.setDampening(dataStore.get(StereoSurroundDampeningKey, 0.5f))
         ImmersiveAudioRuntime.setStereoWidth(dataStore.get(StereoSurroundStereoWidthKey, 0.5f))
         ImmersiveAudioRuntime.setCarFader(dataStore.get(StereoSurroundCarFaderKey, 0f))
+        ImmersiveAudioRuntime.setAzimuth(dataStore.get(SpatialAzimuthKey, 0f))
+        ImmersiveAudioRuntime.setElevation(dataStore.get(SpatialElevationKey, 0f))
+        ImmersiveAudioRuntime.setDistance(dataStore.get(SpatialDistanceKey, 1f))
+        ImmersiveAudioRuntime.setBassWidth(dataStore.get(SpatialBassWidthKey, 1f))
         ImmersiveAudioRuntime.setQuantumFrames(
             dataStore.get(StereoSurroundQuantumFramesKey, 384), // Keep the persisted quantum default without initializing the disabled JNI processor.
         )
-        ImmersiveAudioRuntime.setLimiterEnabled(dataStore.get(StereoSurroundLimiterEnabledKey, true))
         ImmersiveAudioRuntime.setBassGainDb(
             dataStore.get(StereoSurroundBassGainDbKey, 0f),
-        )
-        ImmersiveAudioRuntime.setTrebleGainDb(
-            dataStore.get(StereoSurroundTrebleGainDbKey, 0f),
         )
         ImmersiveAudioRuntime.setOutputGainDb(
             dataStore.get(StereoSurroundOutputGainDbKey, 0f),
@@ -8234,16 +8237,22 @@ class MusicService :
                 val afterSilence = ImmersiveStageMeterAudioProcessor(b1Meter)
                 val afterSonic = ImmersiveStageMeterAudioProcessor(b2Meter)
                 val beforeNativeDsp = ImmersiveStageMeterAudioProcessor(b3Meter)
-                // The immersive processor is intentionally absent while the engine is disabled.
-                // This keeps the JNI library completely out of normal playback startup.
-                val chain = DefaultAudioSink.DefaultAudioProcessorChain(
-                    silenceSkipping,
-                    afterSilence,
-                    sonic,
-                    afterSonic,
-                    beforeNativeDsp,
-                    ImmersiveStageMeterAudioProcessor(b5Meter),
+                // Strict OFF bypass: no native processor, conversion or native library startup.
+                val processors = mutableListOf<AudioProcessor>(
+                    silenceSkipping, afterSilence, sonic, afterSonic, beforeNativeDsp,
                 )
+                if (ImmersiveAudioRuntime.isEnabled()) {
+                    processors += ImmersiveAudioProcessor().also(ImmersiveAudioRuntime::attach)
+                }
+                processors += ImmersiveStageMeterAudioProcessor(b5Meter)
+                // Give Media3 the SAME silence/Sonic instances observed by B1/B2.
+                // The vararg default constructor would append a second, unmetered pair.
+                val orderedProcessors = processors.toTypedArray()
+                val chain = object : DefaultAudioSink.DefaultAudioProcessorChain(
+                    emptyArray<AudioProcessor>(), silenceSkipping, sonic,
+                ) {
+                    override fun getAudioProcessors(): Array<AudioProcessor> = orderedProcessors
+                }
                 return DefaultAudioSink
                     .Builder(context)
                     .setEnableFloatOutput(false)

@@ -947,3 +947,9 @@ val StereoSurroundBassGainDbKey = floatPreferencesKey("stereoSurroundBassGainDb"
 val StereoSurroundTrebleGainDbKey = floatPreferencesKey("stereoSurroundTrebleGainDb")
 val StereoSurroundOutputGainDbKey = floatPreferencesKey("stereoSurroundOutputGainDb")
 val StereoSurroundSavedPresetsKey = stringPreferencesKey("stereoSurroundSavedPresets")
+
+// New spatial controls. Existing stereoSurround keys deliberately preserve saved settings.
+val SpatialAzimuthKey = floatPreferencesKey("spatialAzimuth")
+val SpatialElevationKey = floatPreferencesKey("spatialElevation")
+val SpatialDistanceKey = floatPreferencesKey("spatialDistance")
+val SpatialBassWidthKey = floatPreferencesKey("spatialBassWidth")

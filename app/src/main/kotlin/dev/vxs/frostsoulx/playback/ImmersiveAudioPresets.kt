@@ -17,6 +17,12 @@ data class ImmersiveAudioPreset(
     val stereoWidth: Float,
     val quantumFrames: Int,
     val carFader: Float = 0f,
+    val azimuth: Float = 0f,
+    val elevation: Float = 0f,
+    val distance: Float = 1f,
+    val bassWidth: Float = 1f,
+    val bassGainDb: Float = 0f,
+    val outputGainDb: Float = 0f,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("name", name.take(64))
@@ -30,10 +36,32 @@ data class ImmersiveAudioPreset(
         put("dampening", dampening.safeUnit())
         put("stereoWidth", stereoWidth.safeUnit())
         put("carFader", carFader.safeFader())
+        val safe = toControls()
+        put("azimuth", safe.azimuth)
+        put("elevation", safe.elevation)
+        put("distance", safe.distance)
+        put("bassWidth", safe.bassWidth)
+        put("bassGainDb", safe.bassGainDb)
+        put("outputGainDb", safe.outputGainDb)
         put("quantumFrames", quantumFrames.coerceIn(96, 2048))
     }
 
+    fun toControls(): ImmersiveControls = ImmersiveControls(
+        enabled, intensity, roomPreset, roomMix, reflectionAmount, reverbTimeSeconds,
+        roomSize, dampening, stereoWidth, bassWidth, bassGainDb, outputGainDb,
+        carFader, azimuth, elevation, distance, quantumFrames,
+    ).sanitized()
+
     companion object {
+        fun fromControls(name: String, controls: ImmersiveControls): ImmersiveAudioPreset {
+            val c = controls.sanitized()
+            return ImmersiveAudioPreset(
+                name.trim().take(64), c.enabled, c.intensity, c.roomPreset, c.roomMix,
+                c.reflectionAmount, c.reverbTimeSeconds, c.roomSize, c.dampening,
+                c.stereoWidth, c.quantumFrames, c.carFader, c.azimuth, c.elevation,
+                c.distance, c.bassWidth, c.bassGainDb, c.outputGainDb,
+            )
+        }
         fun fromJson(value: JSONObject?): ImmersiveAudioPreset? {
             if (value == null) return null
             val name = value.optString("name").trim().takeIf { it.isNotEmpty() } ?: return null
@@ -49,6 +77,12 @@ data class ImmersiveAudioPreset(
                 dampening = value.optDouble("dampening", 0.5).toFloat().safeUnit(),
                 stereoWidth = value.optDouble("stereoWidth", 0.5).toFloat().safeUnit(),
                 carFader = value.optDouble("carFader", 0.0).toFloat().safeFader(),
+                azimuth = value.optDouble("azimuth", 0.0).toFloat(),
+                elevation = value.optDouble("elevation", 0.0).toFloat(),
+                distance = value.optDouble("distance", 1.0).toFloat(),
+                bassWidth = value.optDouble("bassWidth", 1.0).toFloat(),
+                bassGainDb = value.optDouble("bassGainDb", 0.0).toFloat(),
+                outputGainDb = value.optDouble("outputGainDb", 0.0).toFloat(),
                 quantumFrames = value.optInt("quantumFrames", 384).coerceIn(96, 2048),
             )
         }

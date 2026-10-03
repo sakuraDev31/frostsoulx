@@ -470,7 +470,7 @@ fun PlayerMenu(
                                             tint = if (surroundEnabled) MaterialTheme.colorScheme.primary else menuAccent,
                                         )
                                     },
-                                    text = "Surround ${if (surroundEnabled) "On" else "Off"}",
+                                    text = "Spatial ${if (surroundEnabled) "On" else "Off"}",
                                     onClick = {
                                         playerBottomSheetState.collapseSoft()
                                         onDismiss()

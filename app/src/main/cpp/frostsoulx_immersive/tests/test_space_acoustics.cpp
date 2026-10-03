@@ -239,7 +239,10 @@ void testGeometricReflectionModel() {
         StereoBrir brir = rirGen.generateBrir(room, hrtf);
         check(brir.valid(), "Living room BRIR is valid");
         check(brir.taps == cfg.maxTaps, "BRIR tap length matches maxTaps");
-        check(peak(brir.left) > 0.5 && peak(brir.left) <= 1.01, "Peak direct sound normalized to 1.0");
+        double l1 = 0.0;
+        for (float tap : brir.left) l1 += std::fabs(tap);
+        check(peak(brir.left) > 1.0e-5 && l1 <= 1.000001,
+              "Physical BRIR is non-silent and has an induced peak bound; no forced boost");
 
         const double rmsL = rms(brir.left);
         const double rmsR = rms(brir.right);

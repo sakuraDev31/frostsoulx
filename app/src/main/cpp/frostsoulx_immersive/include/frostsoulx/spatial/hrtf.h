@@ -20,15 +20,11 @@
 // ILD above it, spectral elevation notches, and near-field ILD boost -- at a
 // tiny fraction of the memory a measured database needs.
 //
-// The synthesised set is stored as a spherical grid of HRIRs. At render time
-// `HrtfDatabase::render()` performs barycentric-style bilinear interpolation
-// between the four surrounding grid points in the MINIMUM-PHASE + PURE-DELAY
-// domain: magnitudes are interpolated on the four neighbours' HRIRs while the
-// broadband ITD is interpolated separately and reapplied via a fractional
-// delay. Interpolating the raw HRIRs directly would comb-filter because the
-// neighbours' impulses are misaligned in time; separating delay from spectrum
-// is what makes dynamic (head-tracked / moving-source) interpolation
-// artefact-free.
+// The synthesised set is stored as a spherical grid. render() bilinearly
+// interpolates the raw, delay-bearing HRIR taps. Broadband ITD is separately
+// reported for diagnostics, but is ALREADY embedded in those taps and must
+// not be reapplied. Whole-filter crossfades in the unified engine smooth
+// geometric updates. This is not minimum-phase/delay-separated interpolation.
 //
 // If a measured HRIR set is available the same container accepts it through
 // `loadMeasuredSet()`, so the interpolation machinery is shared.
@@ -80,8 +76,8 @@ public:
 
     /// Interpolate the HRIR for an arbitrary direction/range into `outLeft` /
     /// `outRight` (each `irTaps()` samples). Real-time safe: no allocation.
-    /// Returns the broadband ITD split across the two ears, which the caller
-    /// applies with a fractional delay line.
+    /// Returns diagnostic broadband ITD split across the ears. Delays are
+    /// already in the HRIR; applying them again would double-count ITD.
     HrirPair render(const SphericalCoord& dir,
                     float* FSX_RESTRICT outLeft,
                     float* FSX_RESTRICT outRight) const noexcept;
