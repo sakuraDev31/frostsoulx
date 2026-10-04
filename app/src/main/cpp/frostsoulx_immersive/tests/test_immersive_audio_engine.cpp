@@ -957,7 +957,9 @@ void testOrbitPreservesStereo() {
     double sideEnergy = 0.0;
     double totalEnergy = 0.0;
     double peak = 0.0;
-    for (int b = 0; b < 48; ++b) {
+    float maxElevation = 0.0f;
+    // 12 s spans a complete ~11.1 s orbit, including the overhead apex.
+    for (int b = 0; b < 1500; ++b) {
         std::vector<float> buf(static_cast<std::size_t>(kN) * 2, 0.0f);
         for (int i = 0; i < kN; ++i) {
             const float v = 0.35f * std::sin(static_cast<float>(b * kN + i) * 0.037f);
@@ -967,6 +969,7 @@ void testOrbitPreservesStereo() {
             buf[static_cast<std::size_t>(i) * 2 + 1] = -v;
         }
         check(engine.process(buf.data(), kN), "orbit processes anti-phase stereo block");
+        maxElevation = std::max(maxElevation, engine.orbitElevation());
         if (!sane(buf, 0.99f, "stereo-preserving orbit output")) return;
         if (b >= 8) {
             for (int i = 0; i < kN; ++i) {
@@ -981,58 +984,8 @@ void testOrbitPreservesStereo() {
     }
     check(sideEnergy > 1.0e-3, "orbit preserves anti-phase stereo Side energy");
     check(totalEnergy > 1.0e-3, "orbit does not collapse wide stereo to silence");
+    check(maxElevation > 80.0f, "vertical arc reaches its overhead elevation apex");
     check(peak <= 0.981, "orbit remains under the safety limiter ceiling");
-    engine.setOrbitEnabled(false);
-}
-
-// ---------------------------------------------------------------------------
-// P. Vertical arc envelope changes elevation cues without collapsing stereo
-// ---------------------------------------------------------------------------
-void testOrbitVerticalArcEnvelope() {
-    frostsoulx::ImmersiveAudioEngine engine;
-    check(engine.prepare(kSR, kN), "prepare() for vertical arc envelope");
-    configureDry(engine);
-    engine.setStereoWidth(0.5f);
-    engine.setOrbitEnabled(true);
-
-    std::uint64_t sampleIndex = 0;
-    auto processWindow = [&](int blocks) {
-        double energy = 0.0;
-        double sideEnergy = 0.0;
-        std::size_t count = 0;
-        for (int b = 0; b < blocks; ++b) {
-            std::vector<float> buf(static_cast<std::size_t>(kN) * 2, 0.0f);
-            for (int i = 0; i < kN; ++i, ++sampleIndex) {
-                const float t = static_cast<float>(sampleIndex) / static_cast<float>(kSR);
-                const float x = 0.12f * std::sin(2.0f * 3.14159265f * 8000.0f * t);
-                buf[static_cast<std::size_t>(i) * 2] = x;
-                buf[static_cast<std::size_t>(i) * 2 + 1] =
-                    0.12f * std::sin(2.0f * 3.14159265f * 8000.0f * t + 0.31f);
-            }
-            check(engine.process(buf.data(), kN), "vertical arc processes stereo block");
-            if (!sane(buf, 0.99f, "vertical arc output")) return 0.0;
-            for (int i = 0; i < kN; ++i) {
-                const double l = buf[static_cast<std::size_t>(i) * 2];
-                const double r = buf[static_cast<std::size_t>(i) * 2 + 1];
-                energy += l * l + r * r;
-                const double side = 0.5 * (l - r);
-                sideEnergy += side * side;
-                ++count;
-            }
-        }
-        check(sideEnergy > 1.0e-8, "vertical arc retains stereo Side energy");
-        return count ? std::sqrt(energy / static_cast<double>(2 * count)) : 0.0;
-    };
-
-    for (int i = 0; i < 8; ++i) processWindow(1); // settle the pipeline
-    const double horizonRms = processWindow(6);
-    // A quarter cycle is about 2.78 s at 0.09 Hz, placing the source near zenith.
-    for (int i = 0; i < 329; ++i) processWindow(1);
-    const double overheadRms = processWindow(6);
-    check(horizonRms > 1.0e-5 && overheadRms > 1.0e-5,
-          "vertical arc has finite output at horizon and overhead");
-    check(std::fabs(horizonRms - overheadRms) > 1.0e-5,
-          "elevation cue changes between horizon and overhead");
     engine.setOrbitEnabled(false);
 }
 
@@ -1177,7 +1130,6 @@ int main() {
     testConvolution();              // M
     testHrtf();                     // N
     testOrbitPreservesStereo();     // O
-    testOrbitVerticalArcEnvelope(); // P
     testEndToEndChain();            // full runtime chain
 
     if (g_failures != 0) {

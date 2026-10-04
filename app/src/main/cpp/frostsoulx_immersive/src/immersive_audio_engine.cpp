@@ -164,45 +164,45 @@ struct ImmersiveAudioEngine::Impl {
 
         if (orbitEnabled) {
             constexpr float kTwoPi = 6.2831853071795864769f;
-            constexpr float kPi = 3.14159265358979323846f;
             const float phaseStep = kTwoPi * kClassic8dRateHz / static_cast<float>(rate);
             float phase = orbitPhaseRad;
+            // Motion is only 0.09 Hz, so update the notch coefficients once per
+            // 128-frame block instead of paying for trigonometry per sample.
+            const float coefficientElevation = 0.5f * (1.0f - std::cos(phase));
+            const float notchHz = 6200.0f + 2600.0f * coefficientElevation;
+            const float omega = kTwoPi * std::min(notchHz, 0.45f * static_cast<float>(rate)) /
+                                static_cast<float>(rate);
+            const float cosine = std::cos(omega);
+            const float alpha = std::sin(omega) / 2.4f; // Q = 2.4
+            const float invA0 = 1.0f / (1.0f + alpha);
+            const float b0 = invA0;
+            const float b1 = -2.0f * cosine * invA0;
+            const float b2 = invA0;
+            const float a1 = b1;
+            const float a2 = (1.0f - alpha) * invA0;
             for (std::size_t n = 0; n < kBlock; ++n) {
-                // Smooth raised arc: front -> overhead -> rear -> overhead -> front.
-                // sin² avoids a cusp at the horizon and at the overhead apex.
-                const float s = std::sin(phase);
-                const float elevation = s * s;
-                const float frontBack = std::cos(phase);
-
-                // Preserve stereo with reversible M/S processing. Bass stays
-                // anchored; only high-band Side is gently narrowed near zenith.
+                // Preserve the complete stereo image via reversible M/S. The
+                // overhead envelope gently narrows only high-band Side energy.
                 const float mid = 0.5f * (output[0][n] + output[1][n]);
                 const float side = 0.5f * (output[0][n] - output[1][n]);
                 orbitLow += orbitSplit * (mid - orbitLow);
                 orbitSideLow += orbitSplit * (side - orbitSideLow);
                 const float midHigh = mid - orbitLow;
                 const float sideHigh = side - orbitSideLow;
+
+                // Smooth ear-level -> overhead -> ear-level envelope with one
+                // overhead apex per cycle and no discontinuity at phase wrap.
+                const float elevation = 0.5f * (1.0f - std::cos(phase));
                 const float outMid = orbitLow + midHigh * (1.0f - 0.025f * elevation);
                 const float outSide = orbitSideLow + sideHigh * (1.0f - 0.12f * elevation);
                 const float left = outMid + outSide;
                 const float right = outMid - outSide;
 
-                // Elevation-dependent pinna spectral cue. Research places important
-                // elevation structure in the upper-mid/high band; move a restrained
-                // notch from ~6.2 kHz toward ~8.8 kHz as the source rises. This is
-                // an envelope layered over the existing BRIR, not a substitute for
-                // individualized, continuously interpolated HRTFs.
-                const float notchHz = 6200.0f + 2600.0f * elevation;
-                const float omega = kTwoPi * std::min(notchHz, 0.45f * static_cast<float>(rate)) /
-                                    static_cast<float>(rate);
-                const float cosine = std::cos(omega);
-                const float alpha = std::sin(omega) / 2.4f; // notch Q = 2.4
-                const float invA0 = 1.0f / (1.0f + alpha);
-                const float b0 = invA0;
-                const float b1 = -2.0f * cosine * invA0;
-                const float b2 = invA0;
-                const float a1 = b1;
-                const float a2 = (1.0f - alpha) * invA0;
+                // Generic pinna-cue approximation: elevation-dependent spectral
+                // notches are a principal vertical-localization cue. Sweep a
+                // restrained notch through the 6-9 kHz region and blend it in
+                // only as the source rises. This is an envelope, not a personal
+                // HRTF; the existing BRIR remains the room/spatial renderer.
                 const float notchMix = 0.38f * elevation;
                 const float notchL = orbitNotch[0].process(left, b0, b1, b2, a1, a2);
                 const float notchR = orbitNotch[1].process(right, b0, b1, b2, a1, a2);
@@ -213,8 +213,7 @@ struct ImmersiveAudioEngine::Impl {
                 if (phase >= kTwoPi) phase -= kTwoPi;
             }
             orbitPhaseRad = phase;
-            orbitElevationDeg = 85.0f * std::sin(phase) * std::sin(phase);
-            orbitAzimuthDeg = phase < kPi ? 0.0f : 180.0f;
+            orbitElevationDeg = 85.0f * 0.5f * (1.0f - std::cos(phase));
         }
     }
 };
@@ -378,6 +377,7 @@ void ImmersiveAudioEngine::setOrbitEnabled(bool enabled) noexcept {
         impl_->orbitAzimuthDeg = spatial::wrapAzimuth(std::atan2(offset.y, offset.x) * 57.29577951308232f);
         impl_->orbitElevationDeg = spatial::clampElevation(std::asin(std::clamp(offset.z / radius, -1.0f, 1.0f)) * 57.29577951308232f);
         impl_->orbitPhaseRad = 0.0f;
+        impl_->orbitElevationDeg = 0.0f;
         impl_->orbitLow = impl_->orbitSideLow = 0.0f;
         for (auto& state : impl_->orbitNotch) state.reset();
         impl_->orbitEnabled = true;
