@@ -260,6 +260,76 @@ void testConcurrentPublication() {
     producer.join();audio.join();
     check(bad.load()==0,"concurrent IR/control publication is finite, bounded and allocation-free");
 }
+void testBassBypassAndCustomMatrix() {
+    ImmersiveAudioEngine e; dry(e, 1);
+    check(e.prepare(48000,384), "bass bypass engine prepares");
+    const float identity[1] = {1.0f};
+    check(e.setCustomImpulseResponse(identity,identity,1), "identity custom IR loads");
+    std::array<float,768> block{};
+    for(int k=0;k<16;++k) process(e,block.data(),384); // settle IR publication
+    e.reset();
+    constexpr int frames=6144;
+    Noise rng; std::vector<float> original(2*frames), rendered;
+    for(float& value:original) value=.12f*rng.next();
+    rendered=original;
+    for(int n=0;n<frames;n+=384)process(e,rendered.data()+2*n,384);
+    double error=0;
+    const int latency=e.latencySamples();
+    for(int n=latency;n<frames;++n)for(int c=0;c<2;++c)
+        error=std::max(error,static_cast<double>(std::fabs(rendered[2*n+c]-original[2*(n-latency)+c])));
+    check(error<2e-6,"identity custom IR reconstructs with exactly delay-aligned stereo bass");
+
+    // Cross transfer: only L-high -> R, while L-bass remains in L.
+    const float* cross[4] = {nullptr,identity,nullptr,nullptr};
+    check(e.setCustomTransferMatrix(cross,1),"four-path custom IR accepts cross transfers");
+    block.fill(0);for(int k=0;k<16;++k)process(e,block.data(),384);e.reset();
+    std::vector<float> actual(2*frames,0),expected(2*frames,0);
+    actual[0]=.2f;
+    StereoFrontend reference; reference.prepare(48000);
+    for(int n=0;n<frames-latency;++n){
+        const auto bands=reference.split(n==0?.2f:0,0,1,1,1);
+        expected[2*(n+latency)]=bands.lowL;
+        expected[2*(n+latency)+1]=bands.highL;
+    }
+    for(int n=0;n<frames;n+=384)process(e,actual.data()+2*n,384);
+    error=0;for(std::size_t n=0;n<actual.size();++n)error=std::max(error,static_cast<double>(std::fabs(actual[n]-expected[n])));
+    check(error<2e-6,"cross-path IR routes upper band only; independent stereo bass bypasses matrix");
+
+    const float* mute[4] = {nullptr,nullptr,nullptr,nullptr};
+    check(e.setCustomTransferMatrix(mute,1),"silent custom matrix loads");
+    e.setOrbitEnabled(true); // motion must not touch bypass bass
+    e.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::ConcertHall);
+    e.setRoomMix(1); // custom IR remains active despite room edits
+    for(int k=0;k<100;++k){for(int n=0;n<384;++n){block[2*n]=.13f;block[2*n+1]=-.07f;}process(e,block.data(),384);}
+    check(std::fabs(block[766]-.13f)<2e-6f&&std::fabs(block[767]+.07f)<2e-6f,
+          "stereo bass survives silent IR, room changes and orbit without mono collapse");
+    e.setOrbitEnabled(false);
+    const float invalid[1]={std::numeric_limits<float>::quiet_NaN()};
+    const float* bad[4]={invalid,identity,identity,identity};
+    check(!e.setCustomTransferMatrix(bad,1),"invalid custom matrix rejected atomically");
+}
+
+void testIndependentOrbitMotion() {
+    ImmersiveAudioEngine e; dry(e,0); // No room or spatial blend required.
+    check(e.prepare(48000,384),"independent orbit prepares");
+    e.setOrbitEnabled(true);
+    std::array<float,768> block{};
+    double leftSideL=0,leftSideR=0,rightSideL=0,rightSideR=0;
+    for(int b=0;b<1450;++b){
+        for(int n=0;n<384;++n){const float tone=.1f*std::sin(static_cast<float>(b*384+n)*.13f);block[2*n]=tone;block[2*n+1]=tone;}
+        process(e,block.data(),384);
+        for(int n=0;n<384;++n){
+            if(b>=330&&b<365){leftSideL+=block[2*n]*block[2*n];leftSideR+=block[2*n+1]*block[2*n+1];}
+            if(b>=1020&&b<1055){rightSideL+=block[2*n]*block[2*n];rightSideR+=block[2*n+1]*block[2*n+1];}
+        }
+    }
+    check(leftSideL>leftSideR*4&&rightSideR>rightSideL*4,"orbit completes an audible left/right circle with room and effect mix off");
+    e.setOrbitEnabled(false);
+    for(int b=0;b<150;++b){for(int n=0;n<384;++n){const float tone=.1f*std::sin(static_cast<float>(b*384+n)*.13f);block[2*n]=tone;block[2*n+1]=tone;}process(e,block.data(),384);}
+    double difference=0;for(int n=0;n<384;++n)difference=std::max(difference,static_cast<double>(std::fabs(block[2*n]-block[2*n+1])));
+    check(difference<1e-6,"orbit off restores fixed stereo without changing the room");
+}
+
 void benchmark() {
     ImmersiveAudioEngine e;e.prepare(48000,384);e.setSpacePreset(frostsoulx::spatial::SpaceProfile::Preset::ConcertHall);e.setRoomMix(.35f);e.setEnabled(true);
     std::array<float,768> data{};Noise rng;
@@ -279,7 +349,8 @@ void benchmark() {
 int main(){
     static_assert(std::atomic<int>::is_always_lock_free&&std::atomic<float>::is_always_lock_free,"ARM64 RT requires lock-free scalar publication");
     testFrontend();testStreamContinuity();testMatrixConvolution();testSafety();
-    testSpatialTransitionsAndBounds();testRateAndShortIr();testConcurrentPublication();benchmark();
+    testSpatialTransitionsAndBounds();testRateAndShortIr();testConcurrentPublication();
+    testBassBypassAndCustomMatrix();testIndependentOrbitMotion();benchmark();
     check(allocations==0&&deallocations==0,"zero malloc/calloc/realloc/new/free/delete in callback including IR fades");
     std::cout<<"Realtime heap operations: "<<allocations<<" allocations, "<<deallocations<<" deallocations\n";
     std::cout<<"Unified DSP focused tests: "<<failures<<" failures\n";

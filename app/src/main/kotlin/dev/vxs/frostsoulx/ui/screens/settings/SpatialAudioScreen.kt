@@ -126,6 +126,7 @@ fun SpatialAudioScreen(navController: NavController) {
     var pendingIr by remember { mutableStateOf<WavImpulseResponse?>(null) }
     var pendingIrBytes by remember { mutableStateOf<ByteArray?>(null) }
     var irError by remember { mutableStateOf<String?>(null) }
+    var irExpanded by remember { mutableStateOf(false) }
     var renameIrId by remember { mutableStateOf<String?>(null) }
     var renameIrName by remember { mutableStateOf("") }
     val irPresets = remember(preferences) {
@@ -140,7 +141,17 @@ fun SpatialAudioScreen(navController: NavController) {
     val activeIrId=preferences?.get(ConvolverActiveIrPresetKey).orEmpty()
     val irPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri:Uri? ->
         if(uri!=null) scope.launch { runCatching {
-            val bytes=withContext(Dispatchers.IO){context.contentResolver.openInputStream(uri)?.use{it.readBytes()} ?: error("Could not read selected file")}
+            val bytes=withContext(Dispatchers.IO){context.contentResolver.openInputStream(uri)?.use { stream ->
+                val output = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = stream.read(buffer)
+                    if (count < 0) break
+                    require(output.size() + count <= 32 * 1024 * 1024) { "IR WAV must be 32 MB or smaller" }
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            } ?: error("Could not read selected file")}
             val decoded=withContext(Dispatchers.Default){WavImpulseResponse.decode(bytes)}
             pendingIrBytes=bytes;pendingIr=decoded
             irName=runCatching{context.contentResolver.query(uri,arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),null,null,null)?.use{if(it.moveToFirst())it.getString(0)?.substringBeforeLast('.') else null}}.getOrNull().orEmpty().ifBlank{"Custom IR"}.take(64)
@@ -149,11 +160,11 @@ fun SpatialAudioScreen(navController: NavController) {
     }
     LaunchedEffect(activeIrId,irPresets){
         val selected=irPresets.firstOrNull{it.first==activeIrId}
-        if(selected==null){if(activeIrId.isBlank())ImmersiveAudioRuntime.setCustomIr(null)}
+        if(selected==null){ImmersiveAudioRuntime.setCustomIr(null)}
         else runCatching{
             val bytes=withContext(Dispatchers.IO){File(File(context.filesDir,"convolver-ir"),selected.third).readBytes()}
             ImmersiveAudioRuntime.setCustomIr(withContext(Dispatchers.Default){WavImpulseResponse.decode(bytes)})
-        }.onFailure{irError=it.message ?: "Could not load saved IR"}
+        }.onFailure{ImmersiveAudioRuntime.setCustomIr(null);irError=it.message ?: "Could not load saved IR"}
     }
     var showDetails by remember { mutableStateOf(false) }
     var capturing by remember { mutableStateOf(false) }
@@ -205,16 +216,15 @@ fun SpatialAudioScreen(navController: NavController) {
     var positionExpanded by remember { mutableStateOf(true) }
     var roomExpanded by remember { mutableStateOf(false) }
     var soundExpanded by remember { mutableStateOf(true) }
-    var engineExpanded by remember { mutableStateOf(true) }
+    var engineExpanded by remember { mutableStateOf(false) }
     var helpText by remember { mutableStateOf<String?>(null) }
     fun updateAdvanced(value: ImmersiveControls) { customAdvanced = true; update(value) }
     val healthy = diagnostics.deadlineMisses == 0L && diagnostics.nativeProcessFailures == 0L
-    val mutedAlpha = if (controls.enabled) 1f else 0.48f
 
     Scaffold(
         containerColor = colors.background,
         topBar = { TopAppBar(
-            title = { Text(when (screenMode) { "advanced" -> "Advanced"; "diagnostics" -> "Diagnostics"; else -> "Spatial audio" }, color = colors.onSurface) },
+            title = { Text(when (screenMode) { "advanced" -> "Fine tuning"; "diagnostics" -> "Diagnostics"; else -> "Spatial audio" }, color = colors.onSurface) },
             navigationIcon = { IconButton(onClick = {
                 when (screenMode) { "advanced" -> screenMode = "simple"; "diagnostics" -> screenMode = diagnosticsReturnMode; else -> navController.navigateUp() }
             }, modifier = Modifier.semantics { contentDescription = "Back" }) { Text("‹", fontSize = 30.sp) } }
@@ -226,100 +236,117 @@ fun SpatialAudioScreen(navController: NavController) {
             verticalArrangement = Arrangement.spacedBy(20.dp)) {
             when (screenMode) {
                 "simple" -> {
-                    Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("Spatial audio", style = MaterialTheme.typography.titleLarge)
-                            Text(if (controls.enabled) "On" else "Off", color = colors.onSurfaceMuted, fontSize = 13.sp)
-                        }
-                        Switch(checked = controls.enabled, enabled = preferences != null && !capturing,
-                            onCheckedChange = { update(controls.copy(enabled = it)) },
-                            modifier = Modifier.semantics { contentDescription = "Enable spatial audio" })
-                    }
-                    androidx.compose.material3.HorizontalDivider(color = colors.outline.copy(alpha = 0.35f))
-                    Card(colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.72f))) {
-                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Convolver IR", style = MaterialTheme.typography.titleMedium)
-                            Text(irPresets.firstOrNull { it.first == activeIrId }?.second ?: "Generated room response", color = colors.onSurfaceMuted)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { irError=null; irPicker.launch(arrayOf("audio/wav","audio/x-wav","audio/*")) }, enabled = !capturing) { Text("Import WAV") }
-                                OutlinedButton(onClick = { ImmersiveAudioRuntime.setCustomIr(null); scope.launch { context.dataStore.edit { it.remove(ConvolverActiveIrPresetKey) } } }, enabled = !capturing && activeIrId.isNotBlank()) { Text("Use room IR") }
+                    SpatialCard("Your listening space", "Headphones recommended for binaural sound") {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(if (controls.enabled) "Spatial audio is on" else "Original stereo", style = MaterialTheme.typography.titleMedium)
+                                Text(if (controls.enabled) "Stereo bass stays outside the room" else "Turn on to use rooms and 3D motion", color = colors.onSurfaceMuted, fontSize = 12.sp)
                             }
-                            irPresets.forEach { preset -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = { scope.launch { context.dataStore.edit { it[ConvolverActiveIrPresetKey]=preset.first } } }, modifier = Modifier.weight(1f)) { Text((if(preset.first==activeIrId)"✓ " else "")+preset.second,maxLines=1) }
-                                TextButton(onClick = { renameIrId=preset.first;renameIrName=preset.second }) { Text("Rename") }
-                            } }
-                            irError?.let { Text(it,color=MaterialTheme.colorScheme.error,fontSize=12.sp) }
-                            Text("Mono/stereo WAV · PCM 16/24/32-bit or float32 · max 32,768 taps",color=colors.onSurfaceMuted,fontSize=11.sp)
+                            Switch(checked = controls.enabled, enabled = preferences != null && !capturing,
+                                onCheckedChange = { update(controls.copy(enabled = it)) },
+                                modifier = Modifier.semantics { contentDescription = "Enable spatial audio" })
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { presetMenu = true }, enabled = preferences != null && !capturing, modifier = Modifier.weight(1f)) { Text("My presets (${savedPresets.size})") }
+                            Button(onClick = { showSave = true }, enabled = preferences != null && !capturing && savedPresets.size < 32, modifier = Modifier.weight(1f)) { Text("Save setup") }
                         }
                     }
-                    Column(Modifier.alpha(mutedAlpha), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text("Sound space", color = colors.onSurfaceMuted, style = MaterialTheme.typography.titleSmall)
-                        val chipLabels = listOf("Off", "Tunnel", "Studio", "Hall")
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (customAdvanced) PresetChip("Custom", true, true) { }
-                            chipLabels.take(3).forEach { label ->
-                                val selected = if (label == "Off") controls.roomPreset == ImmersiveRoomPreset.entries.firstOrNull() else controls.roomPreset.label.equals(label, true)
-                                PresetChip(label, selected && !customAdvanced, !capturing && controls.enabled) {
-                                    val preset = if (label == "Off") ImmersiveRoomPreset.entries.firstOrNull() else ImmersiveRoomPreset.entries.firstOrNull { it.label.equals(label, true) }
-                                    if (preset != null) { customAdvanced = false; update(controls.copy(roomPreset = preset, roomMix = if (label == "Off") 0f else controls.roomMix)) }
+                    SpatialCard("3D orbit · 8D motion", "A slow circle around your head, with height cues") {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (controls.orbitEnabled) "Orbit on · 11 s per circle" else "Orbit off · fixed position", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Switch(checked = controls.orbitEnabled, enabled = preferences != null && !capturing,
+                                onCheckedChange = { update(controls.copy(orbitEnabled = it)) },
+                                modifier = Modifier.semantics { contentDescription = "3D orbit, independent of room selection" })
+                        }
+                        Text("Works with no room, any room, or a custom response. Bass does not orbit. The spatial audio switch is the master bypass.", color = colors.onSurfaceMuted, fontSize = 12.sp)
+                    }
+                    SpatialCard("Room ambience", "Choose the space, then adjust how much you hear") {
+                        var roomMenu by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(onClick = { roomMenu = true }, enabled = preferences != null && !capturing, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (activeIrId.isNotBlank()) "Custom: ${irPresets.firstOrNull { it.first == activeIrId }?.second ?: "response"}" else controls.roomPreset.label)
+                            }
+                            DropdownMenu(expanded = roomMenu, onDismissRequest = { roomMenu = false }) {
+                                ImmersiveRoomPreset.entries.forEach { room ->
+                                    DropdownMenuItem(text = { Text(room.label) }, onClick = {
+                                        roomMenu = false; customAdvanced = false
+                                        scope.launch { context.dataStore.edit { it.remove(ConvolverActiveIrPresetKey) } }
+                                        ImmersiveAudioRuntime.setCustomIr(null)
+                                        update(controls.copy(roomPreset = room))
+                                    })
                                 }
                             }
                         }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            val label = "Hall"
-                            PresetChip(label, controls.roomPreset.label.equals(label, true) && !customAdvanced, !capturing && controls.enabled) {
-                                ImmersiveRoomPreset.entries.firstOrNull { it.label.equals(label, true) }?.let { customAdvanced = false; update(controls.copy(roomPreset = it)) }
+                        val roomActive = activeIrId.isNotBlank() || controls.roomPreset != ImmersiveRoomPreset.OFF
+                        SimpleSlider("Spatial effect mix", controls.intensity, percent(controls.intensity), !capturing && controls.enabled) { update(controls.copy(intensity = it)) }
+                        Text("Original stereo ← → room / headphone effect. Orbit has its own switch.", color = colors.onSurfaceMuted, fontSize = 12.sp)
+                        SimpleSlider("Room echo level", controls.roomMix, percent(controls.roomMix), !capturing && controls.enabled && roomActive && activeIrId.isBlank()) { update(controls.copy(roomMix = it)) }
+                        Text(if (activeIrId.isNotBlank()) "Custom responses include their own echoes. Use Spatial effect mix to blend them." else "No room removes echoes, not orbit or stereo bass.", color = colors.onSurfaceMuted, fontSize = 12.sp)
+                        SectionHeader("Custom room responses (WAV)", irExpanded) { irExpanded = !irExpanded }
+                        if (irExpanded) {
+                            Text("Import an impulse response (IR) to replace the generated room.", color = colors.onSurfaceMuted, fontSize = 12.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { irError = null; irPicker.launch(arrayOf("audio/*", "application/octet-stream")) }, enabled = !capturing && irPresets.size < 32) { Text("Import WAV") }
+                                OutlinedButton(onClick = { ImmersiveAudioRuntime.setCustomIr(null); scope.launch { context.dataStore.edit { it.remove(ConvolverActiveIrPresetKey) } } }, enabled = !capturing && activeIrId.isNotBlank()) { Text("Built-in room") }
                             }
-                            PresetChip("+", false, !capturing && controls.enabled) { showSave = true }
+                            irPresets.forEach { preset ->
+                                Column(Modifier.fillMaxWidth()) {
+                                    TextButton(onClick = { scope.launch { context.dataStore.edit { it[ConvolverActiveIrPresetKey] = preset.first } } }, enabled = !capturing) { Text((if (preset.first == activeIrId) "Active · " else "") + preset.second) }
+                                    Row {
+                                        TextButton(onClick = { renameIrId = preset.first; renameIrName = preset.second }, enabled = !capturing) { Text("Rename") }
+                                        TextButton(onClick = { scope.launch {
+                                            context.dataStore.edit { p ->
+                                                p[ConvolverIrPresetsKey] = JSONArray().apply { irPresets.filterNot { it.first == preset.first }.forEach { (id, name, file) -> put(JSONObject().put("id", id).put("name", name).put("file", file)) } }.toString()
+                                                if (activeIrId == preset.first) p.remove(ConvolverActiveIrPresetKey)
+                                            }
+                                            withContext(Dispatchers.IO) { File(File(context.filesDir, "convolver-ir"), preset.third).delete() }
+                                        } }, enabled = !capturing) { Text("Delete") }
+                                    }
+                                }
+                            }
+                            Text("Mono / stereo / 4-path WAV · PCM 16/24/32-bit or float32 · up to 32,768 taps per path", color = colors.onSurfaceMuted, fontSize = 11.sp)
+                            Text("4-path order: L→L, L→R, R→L, R→R. Not four-speaker playback. Responses longer than 32,768 taps must be shortened first.", color = colors.onSurfaceMuted, fontSize = 11.sp)
                         }
-                        SimpleSlider("Intensity", controls.intensity, percent(controls.intensity), !capturing && controls.enabled) { update(controls.copy(intensity = it)) }
-                        SimpleSlider("Room feel", controls.roomMix, percent(controls.roomMix), !capturing && controls.enabled) { update(controls.copy(roomMix = it)) }
-                        SimpleSlider("Bass", ((controls.bassGainDb + 12f) / 18f).coerceIn(0f, 1f), percent(((controls.bassGainDb + 12f) / 18f).coerceIn(0f, 1f)), !capturing && controls.enabled) {
-                            update(controls.copy(bassGainDb = -12f + 18f * it))
-                        }
+                        irError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                     }
-                    androidx.compose.material3.HorizontalDivider(color = colors.outline.copy(alpha = 0.35f))
-                    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable { screenMode = "advanced" }.padding(vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Advanced", style = MaterialTheme.typography.titleMedium)
-                        Text("›", fontSize = 28.sp, color = colors.onSurfaceMuted)
+                    SpatialCard("Stereo bass & balance", "Bass is split at 180 Hz and kept out of all room responses") {
+                        AdvancedSlider("Bass level", controls.bassGainDb, -12f..6f, "${fmt(controls.bassGainDb, 1)} dB", "0 dB = unchanged", !capturing && controls.enabled, { helpText = "Adjusts only the stereo low band. Bass bypasses room echoes, custom IRs and orbit; safety limiting still protects the final output." }) { update(controls.copy(bassGainDb = it)) }
+                        AdvancedSlider("Stereo width", controls.stereoWidth, 0f..1f, "${fmt(controls.stereoWidth * 2)}×", "1× = original width above the bass band", !capturing && controls.enabled, { helpText = "Narrows or widens the upper stereo band. Bass width is separate in fine tuning." }) { update(controls.copy(stereoWidth = it)) }
                     }
-                    androidx.compose.material3.HorizontalDivider(color = colors.outline.copy(alpha = 0.35f))
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { diagnosticsReturnMode = "simple"; screenMode = "diagnostics" },
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Canvas(Modifier.size(9.dp)) { drawCircle(if (healthy) androidx.compose.ui.graphics.Color(0xFF20C45A) else androidx.compose.ui.graphics.Color(0xFFFFB020)) }
-                        Text(if (healthy) "Engine running smoothly" else "Engine deadline misses detected", color = colors.onSurfaceMuted, modifier = Modifier.weight(1f))
-                        Text("Diagnostics ›", color = colors.accent)
+                    OutlinedButton(onClick = { screenMode = "advanced" }, modifier = Modifier.fillMaxWidth()) { Text("Fine tuning · position, room & output") }
+                    TextButton(onClick = { diagnosticsReturnMode = "simple"; screenMode = "diagnostics" }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (!controls.enabled) "Diagnostics · spatial audio off" else if (diagnostics.processedFrames == 0L) "Diagnostics · waiting for playback" else if (healthy) "Diagnostics · engine healthy" else "Diagnostics · check engine")
                     }
                 }
                 "advanced" -> {
+                    val tuningEnabled = controls.enabled && preferences != null && !capturing
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Advanced controls", style = MaterialTheme.typography.titleLarge)
+                        Text("Fine tuning", style = MaterialTheme.typography.titleLarge)
                         Text(if (customAdvanced) "Custom" else "Preset", color = colors.accent, style = MaterialTheme.typography.labelLarge)
                     }
                     SectionHeader("Position", positionExpanded) { positionExpanded = !positionExpanded }
                     if (positionExpanded) Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        AdvancedSlider("Azimuth", controls.azimuth, -180f..180f, "${fmt(controls.azimuth, 0)}°", "Front = 0°; positive azimuth = left", !capturing, { helpText = "Azimuth sets the source direction around the listener. Front is 0°." }) { updateAdvanced(controls.copy(azimuth = it)) }
-                        AdvancedSlider("Elevation", controls.elevation, -90f..90f, "${fmt(controls.elevation, 0)}°", "Below −90° to above +90°", !capturing, { helpText = "Elevation controls the source angle above or below the listener." }) { updateAdvanced(controls.copy(elevation = it)) }
-                        AdvancedSlider("Distance", controls.distance, 0.2f..10f, "${fmt(controls.distance)} m", "Source distance", !capturing, { helpText = "Distance is expressed in metres." }) { updateAdvanced(controls.copy(distance = it)) }
-                        AdvancedSlider("Front / rear", controls.carFader, -1f..1f, fmt(controls.carFader), "Rear ← centre → front", !capturing, { helpText = "Moves the source balance between rear and front." }) { updateAdvanced(controls.copy(carFader = it)) }
+                        if (controls.orbitEnabled) Text("Turn off 3D orbit on the main page to adjust a fixed position.", color = colors.onSurfaceMuted)
+                        AdvancedSlider("Direction around you", controls.azimuth, -180f..180f, "${fmt(controls.azimuth, 0)}°", "Front = 0°; left = +90°; right = −90°", tuningEnabled && !controls.orbitEnabled, { helpText = "Azimuth sets the source direction around the listener. Front is 0°." }) { updateAdvanced(controls.copy(azimuth = it)) }
+                        AdvancedSlider("Height angle", controls.elevation, -90f..90f, "${fmt(controls.elevation, 0)}°", "Below −90° to above +90°", tuningEnabled && !controls.orbitEnabled, { helpText = "Elevation controls the source angle above or below the listener." }) { updateAdvanced(controls.copy(elevation = it)) }
+                        AdvancedSlider("Distance from you", controls.distance, 0.2f..10f, "${fmt(controls.distance)} m", "Source distance", tuningEnabled && !controls.orbitEnabled, { helpText = "Distance is expressed in metres." }) { updateAdvanced(controls.copy(distance = it)) }
+                        AdvancedSlider("Front / rear", controls.carFader, -1f..1f, fmt(controls.carFader), "Rear ← centre → front", tuningEnabled && !controls.orbitEnabled, { helpText = "Moves the source balance between rear and front." }) { updateAdvanced(controls.copy(carFader = it)) }
                     }
                     androidx.compose.material3.HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
                     SectionHeader("Room", roomExpanded) { roomExpanded = !roomExpanded }
                     if (roomExpanded) Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        AdvancedSlider("Reflections", controls.reflectionAmount, 0f..1f, percent(controls.reflectionAmount), "Early reflection strength", !capturing, { helpText = "Controls the level of early room reflections." }) { updateAdvanced(controls.copy(reflectionAmount = it)) }
-                        AdvancedSlider("Reverb decay", controls.reverbTimeSeconds, 0.2f..8f, "${fmt(controls.reverbTimeSeconds)} s", "Decay target", !capturing, { helpText = "Approximate room decay target in seconds." }) { updateAdvanced(controls.copy(reverbTimeSeconds = it)) }
-                        AdvancedSlider("Room size", controls.roomSize, 0f..1f, percent(controls.roomSize), "Room scale", !capturing, { helpText = "Controls the room-size parameter." }) { updateAdvanced(controls.copy(roomSize = it)) }
-                        AdvancedSlider("Dampening", controls.dampening, 0f..1f, percent(controls.dampening), "Reflective → absorbent", !capturing, { helpText = "Higher dampening means more absorption." }) { updateAdvanced(controls.copy(dampening = it)) }
+                        AdvancedSlider("Reflections", controls.reflectionAmount, 0f..1f, percent(controls.reflectionAmount), "Early reflection strength", tuningEnabled, { helpText = "Controls the level of early room reflections." }) { updateAdvanced(controls.copy(reflectionAmount = it)) }
+                        AdvancedSlider("Reverb decay", controls.reverbTimeSeconds, 0.2f..8f, "${fmt(controls.reverbTimeSeconds)} s", "Decay target", tuningEnabled, { helpText = "Approximate room decay target in seconds." }) { updateAdvanced(controls.copy(reverbTimeSeconds = it)) }
+                        AdvancedSlider("Room size", controls.roomSize, 0f..1f, percent(controls.roomSize), "Room scale", tuningEnabled, { helpText = "Controls the room-size parameter." }) { updateAdvanced(controls.copy(roomSize = it)) }
+                        AdvancedSlider("Echo softness", controls.dampening, 0f..1f, percent(controls.dampening), "Reflective → absorbent", tuningEnabled, { helpText = "Higher dampening means more absorption." }) { updateAdvanced(controls.copy(dampening = it)) }
                     }
                     androidx.compose.material3.HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
                     SectionHeader("Sound", soundExpanded) { soundExpanded = !soundExpanded }
                     if (soundExpanded) Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        AdvancedSlider("High-band width", controls.stereoWidth, 0f..1f, "${fmt(controls.stereoWidth * 2)}×", "Stereo width", !capturing, { helpText = "Mid/side width for the upper band; 1× is unity." }) { updateAdvanced(controls.copy(stereoWidth = it)) }
-                        AdvancedSlider("Bass width", controls.bassWidth, 0f..2f, "${fmt(controls.bassWidth)}×", "Low-band stereo width", !capturing, { helpText = "Low-band width; 1× is unity." }) { updateAdvanced(controls.copy(bassWidth = it)) }
-                        AdvancedSlider("Bass gain", controls.bassGainDb, -12f..6f, "${fmt(controls.bassGainDb)} dB", "Bass gain", !capturing, { helpText = "Gain applied by the existing bass processing." }) { updateAdvanced(controls.copy(bassGainDb = it)) }
-                        AdvancedSlider("Output trim", controls.outputGainDb, -24f..0f, "${fmt(controls.outputGainDb)} dB", "Output attenuation", !capturing, { helpText = "Pre-engine output trim in dB." }) { updateAdvanced(controls.copy(outputGainDb = it)) }
+                        AdvancedSlider("Stereo width (above bass)", controls.stereoWidth, 0f..1f, "${fmt(controls.stereoWidth * 2)}×", "Stereo width", tuningEnabled, { helpText = "Mid/side width for the upper band; 1× is unity." }) { updateAdvanced(controls.copy(stereoWidth = it)) }
+                        AdvancedSlider("Stereo bass width", controls.bassWidth, 0f..2f, "${fmt(controls.bassWidth)}×", "Low-band stereo width", tuningEnabled, { helpText = "Low-band width; 1× is unity." }) { updateAdvanced(controls.copy(bassWidth = it)) }
+                        AdvancedSlider("Bass gain", controls.bassGainDb, -12f..6f, "${fmt(controls.bassGainDb)} dB", "Bass gain", tuningEnabled, { helpText = "Adjusts the stereo bass band before its delay-matched bypass. It never enters room responses or orbit." }) { updateAdvanced(controls.copy(bassGainDb = it)) }
+                        AdvancedSlider("Output headroom", controls.outputGainDb, -24f..0f, "${fmt(controls.outputGainDb)} dB", "Output attenuation", tuningEnabled, { helpText = "Reduces the final playback level to leave headroom for loud material." }) { updateAdvanced(controls.copy(outputGainDb = it)) }
                     }
                     androidx.compose.material3.HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
                     SectionHeader("Engine", engineExpanded) { engineExpanded = !engineExpanded }
@@ -372,6 +399,34 @@ fun SpatialAudioScreen(navController: NavController) {
             }
         }
     }
+    if (presetMenu) AlertDialog(
+        onDismissRequest = { presetMenu = false }, title = { Text("My listening presets") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (savedPresets.isEmpty()) Text("No saved setups yet. Adjust your sound, then tap Save setup.")
+                savedPresets.forEachIndexed { index, preset ->
+                    Column {
+                        Text(preset.name, style = MaterialTheme.typography.titleMedium)
+                        Text("${preset.roomPreset.label} · orbit ${if (preset.orbitEnabled) "on" else "off"}", style = MaterialTheme.typography.bodySmall)
+                        Row {
+                            TextButton(onClick = {
+                                customAdvanced = true
+                                update(preset.toControls())
+                                val irId = preset.customIrPresetId.takeIf { id -> irPresets.any { it.first == id } }.orEmpty()
+                                if (preset.customIrPresetId.isNotBlank() && irId.isBlank()) irError = "This preset's custom response was deleted; using its built-in room."
+                                scope.launch { context.dataStore.edit { p ->
+                                    if (irId.isBlank()) p.remove(ConvolverActiveIrPresetKey) else p[ConvolverActiveIrPresetKey] = irId
+                                } }
+                                presetMenu = false
+                            }, enabled = !capturing) { Text("Load") }
+                            TextButton(onClick = { scope.launch { context.dataStore.edit { it[StereoSurroundSavedPresetsKey] = ImmersiveAudioPreset.encodeAll(savedPresets.filterIndexed { i, _ -> i != index }) } } }, enabled = !capturing) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { presetMenu = false }) { Text("Done") } },
+    )
     if (helpText != null) AlertDialog(onDismissRequest = { helpText = null }, title = { Text("Control help") }, text = { Text(helpText.orEmpty()) }, confirmButton = { TextButton(onClick = { helpText = null }) { Text("Got it") } })
     if(showIrSave) AlertDialog(
         onDismissRequest={showIrSave=false;pendingIr=null;pendingIrBytes=null},title={Text("Save impulse response")},
@@ -404,11 +459,22 @@ fun SpatialAudioScreen(navController: NavController) {
     )
     if (showSave) AlertDialog(onDismissRequest = { showSave = false }, title = { Text("Save listening space") },
         text = { OutlinedTextField(value = presetName, onValueChange = { presetName = it.take(64) }, label = { Text("Preset name") }, singleLine = true) },
-        confirmButton = { TextButton(enabled = presetName.isNotBlank(), onClick = {
-            val preset = ImmersiveAudioPreset.fromControls(presetName, controls)
+        confirmButton = { TextButton(enabled = presetName.isNotBlank() && savedPresets.size < 32, onClick = {
+            val preset = ImmersiveAudioPreset.fromControls(presetName, controls, activeIrId)
             scope.launch { context.dataStore.edit { it[StereoSurroundSavedPresetsKey] = ImmersiveAudioPreset.encodeAll(savedPresets + preset) } }
             presetName = ""; showSave = false
         }) { Text("Save") } }, dismissButton = { TextButton(onClick = { showSave = false }) { Text("Cancel") } })
+}
+
+@Composable
+private fun SpatialCard(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface.copy(alpha = 0.72f))) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FrostSoulTheme.colors.onSurfaceMuted)
+            content()
+        }
+    }
 }
 
 @Composable
@@ -439,11 +505,12 @@ private fun AdvancedSlider(label: String, value: Float, range: ClosedFloatingPoi
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(label, style = MaterialTheme.typography.titleSmall)
                 Box(Modifier.size(48.dp).clickable(onClick = onHelp), contentAlignment = Alignment.Center) {
-                    Text("ⓘ", color = FrostSoulTheme.colors.onSurfaceMuted)
+                    Text("?", color = FrostSoulTheme.colors.onSurfaceMuted)
                 }
             }
             Text(display, style = MaterialTheme.typography.titleSmall)
         }
+        Text(help, style = MaterialTheme.typography.bodySmall, color = FrostSoulTheme.colors.onSurfaceMuted)
         Slider(value = draft, onValueChange = { draft = it }, valueRange = range, enabled = enabled,
             onValueChangeFinished = { onCommit(draft) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "$label. $help" })
     }

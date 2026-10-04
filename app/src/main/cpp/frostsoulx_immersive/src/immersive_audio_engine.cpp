@@ -27,7 +27,7 @@ struct ImmersiveAudioEngine::Impl {
     float roomMix = 0.18f, reflections = 0.28f, reverbTime = 1.35f, density = 0.5f;
     std::size_t irLength = 16384;
     bool customIrActive = false;
-    std::vector<float> customIrLeft, customIrRight, customIrZero;
+    std::array<std::vector<float>, 4> customIr;
     spatial::SpaceProfile space = spatial::SpaceProfile::createLivingRoom();
     spatial::HrtfDatabase hrtf;
     spatial::RirGenerator generator;
@@ -35,21 +35,24 @@ struct ImmersiveAudioEngine::Impl {
     dsp::MimoConvolver convolution;
     dsp::StereoFrontend frontend;
     dsp::TruePeakSafety safety;
-    std::array<std::array<float, kBlock>, 2> input{}, wet{}, output{};
-    std::vector<float> dryRing;
+    std::array<std::array<float, kBlock>, 2> input{}, wet{}, output{}, bassInput{}, bassOutput{};
+    std::vector<float> dryRing, bassRing;
     std::size_t dryWrite = 0, fill = 0;
     float blendCurrent = 1.0f;
     float normalizationGain = 1.0f;
 
     // Orbit geometry/BRIR preparation stays on the control thread. The
-    // automatic 8D layer itself is allocation-free and stereo-preserving.
-    // It traces a vertical-arc envelope; it must not collapse L/R to mono or
-    // apply a left/right pan sweep after the HRTF stage.
+    // automatic 8D layer is allocation-free: independent per-ear level/delay
+    // motion plus vertical pinna cues, never a mono fold-down. Stereo bass
+    // bypasses both this renderer and the four-path room matrix.
     static constexpr float kClassic8dRateHz = 0.09f; // ~11.1 s per cycle
     static constexpr float kClassic8dLowCutHz = 170.0f;
-    bool orbitEnabled = false;
+    std::atomic<bool> orbitEnabled{false};
+    float orbitMix = 0.0f;
+    std::array<std::array<float, 256>, 2> orbitDelay{};
+    std::size_t orbitWrite = 0;
     float orbitAzimuthDeg = 0.0f;
-    float orbitPhaseRad = 0.0f;
+    std::atomic<float> orbitPhaseRad{0.0f};
     float orbitLow = 0.0f;
     float orbitSideLow = 0.0f;
     float orbitSplit = 0.0f;
@@ -82,12 +85,13 @@ struct ImmersiveAudioEngine::Impl {
     // ILD/ITD/pinna HRTF for direct + reflected arrivals. Collapse the entire
     // linear spatial model into four filters, rather than running a second
     // competing HOA renderer or doing HRTF convolution twice on the audio thread.
-    bool reload() noexcept {
+    bool reload(bool forceCustom = false) noexcept {
         if (!prepared) return true;
         try {
-            if (customIrActive && !customIrLeft.empty() && customIrLeft.size() == customIrRight.size()) {
-                const float* matrix[4] = {customIrLeft.data(), customIrZero.data(), customIrZero.data(), customIrRight.data()};
-                return convolution.loadMatrix(matrix, customIrLeft.size());
+            if (customIrActive && !customIr[0].empty()) {
+                if (!forceCustom) return true; // Room knobs do not rebuild an unchanged custom response.
+                const float* matrix[4] = {customIr[0].data(), customIr[1].data(), customIr[2].data(), customIr[3].data()};
+                return convolution.loadMatrix(matrix, customIr[0].size());
             }
             spatial::RirGeneratorConfig cfg;
             cfg.sampleRate = rate;
@@ -156,6 +160,8 @@ struct ImmersiveAudioEngine::Impl {
                 const std::size_t pos = 2 * dryWrite + c;
                 const float dry = dryRing[pos];
                 dryRing[pos] = input[c][n];
+                bassOutput[c][n] = bassRing[pos];
+                bassRing[pos] = bassInput[c][n];
                 // Convex, delay-matched blend. Equal power is WRONG for
                 // correlated dry/wet and gave a +3 dB boost at half intensity.
                 output[c][n] = dry + b * (wet[c][n] - dry);
@@ -164,10 +170,12 @@ struct ImmersiveAudioEngine::Impl {
         }
         blendCurrent = target;
 
-        if (orbitEnabled) {
+        const bool orbitOn = orbitEnabled.load(std::memory_order_relaxed);
+        if (orbitOn || orbitMix > 0.00001f) {
             constexpr float kTwoPi = 6.2831853071795864769f;
             const float phaseStep = kTwoPi * kClassic8dRateHz / static_cast<float>(rate);
-            float phase = orbitPhaseRad;
+            float phase = orbitPhaseRad.load(std::memory_order_relaxed);
+            const float motionSmoothing = 1.0f - std::exp(-1.0f / (0.025f * static_cast<float>(rate)));
 
             // Elevation is carried by pinna-like spectral contrast, not by a
             // left/right pan. Research places important elevation-dependent
@@ -236,14 +244,33 @@ struct ImmersiveAudioEngine::Impl {
                     orbitNotchX1[c] = x;
                     orbitNotchY2[c] = orbitNotchY1[c];
                     orbitNotchY1[c] = rt::flushDenormal(y);
-                    output[c][n] = x + orbitNotchDepth * (y - x);
+                    const float shaped = x + orbitNotchDepth * (y - x);
+                    // Independent fractional per-ear delay and level cues trace
+                    // a complete horizontal circle without summing stereo to mono.
+                    orbitDelay[c][orbitWrite] = shaped;
+                    const float lateral = std::sin(phase) * (c == 0 ? -1.0f : 1.0f);
+                    const float delay = 0.000325f * static_cast<float>(rate) * (1.0f + lateral);
+                    const auto whole = static_cast<std::size_t>(delay);
+                    const float fraction = delay - static_cast<float>(whole);
+                    const auto a = (orbitWrite + 256 - whole) % 256;
+                    const auto b = (a + 255) % 256;
+                    const float delayed = orbitDelay[c][a] + fraction * (orbitDelay[c][b] - orbitDelay[c][a]);
+                    const float level = std::sqrt(0.5f * (1.0f - 0.85f * lateral));
+                    output[c][n] += orbitMix * (delayed * level - output[c][n]);
                 }
 
+                orbitWrite = (orbitWrite + 1) % 256;
+                orbitMix += motionSmoothing *
+                            ((orbitOn ? 1.0f : 0.0f) - orbitMix);
                 phase += phaseStep;
                 if (phase >= kTwoPi) phase -= kTwoPi;
             }
             orbitPhaseRad = phase;
         }
+        // Bass never enters the room/custom-IR matrix or the orbit renderer.
+        // Match its delay to the dry high band before the shared safety limiter.
+        for (std::size_t c = 0; c < 2; ++c)
+            for (std::size_t n = 0; n < kBlock; ++n) output[c][n] += bassOutput[c][n];
     }
 };
 
@@ -261,15 +288,17 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
         std::size_t hrirTaps = 128;
         while (hrirTaps < static_cast<std::size_t>(sampleRate / 500)) hrirTaps *= 2;
         if (!impl_->hrtf.buildParametric(sampleRate, hrirTaps)) return false;
+        impl_->dryDelay = static_cast<int>(std::ceil(rt::kHeadRadius / rt::kSpeedOfSound * static_cast<float>(sampleRate))) + 5;
         dsp::NonUniformConvolver::Config cfg;
-        cfg.headBlock = Impl::kBlock; cfg.maxTaps = 32768;
+        cfg.headBlock = Impl::kBlock; cfg.maxTaps = 32768 + static_cast<std::size_t>(impl_->dryDelay);
         cfg.maxTiers = 4; cfg.growth = 4; cfg.crossfadeBlocks = 8;
         if (!impl_->convolution.prepare(2, 2, cfg)) return false;
         impl_->dryDelay = static_cast<int>(std::ceil(rt::kHeadRadius / rt::kSpeedOfSound * static_cast<float>(sampleRate))) + 5;
         impl_->dryRing.assign(static_cast<std::size_t>(2 * impl_->dryDelay), 0.0f);
+        impl_->bassRing.assign(impl_->dryRing.size(), 0.0f);
         impl_->frontend.prepare(sampleRate); impl_->safety.prepare(sampleRate);
         impl_->prepared = true;
-        if (!impl_->reload()) { impl_->prepared = false; return false; }
+        if (!impl_->reload(true)) { impl_->prepared = false; return false; }
         reset();
         return true;
     } catch (...) { impl_->prepared = false; return false; }
@@ -278,7 +307,10 @@ void ImmersiveAudioEngine::reset() noexcept {
     if (impl_->prepared) {
         impl_->convolution.reset(); impl_->frontend.reset(); impl_->safety.reset();
         impl_->input = {}; impl_->wet = {}; impl_->output = {};
+        impl_->bassInput = {}; impl_->bassOutput = {}; impl_->orbitDelay = {};
+        impl_->orbitWrite = 0; impl_->orbitMix = 0.0f; impl_->orbitPhaseRad = 0.0f;
         std::fill(impl_->dryRing.begin(), impl_->dryRing.end(), 0.0f);
+        std::fill(impl_->bassRing.begin(), impl_->bassRing.end(), 0.0f);
         impl_->dryWrite = impl_->fill = 0;
         impl_->blendCurrent = impl_->blend.load();
         impl_->orbitLow = impl_->orbitSideLow = 0.0f;
@@ -291,28 +323,41 @@ void ImmersiveAudioEngine::reset() noexcept {
 void ImmersiveAudioEngine::setEnabled(bool enabled) noexcept { impl_->enabled.store(enabled); }
 void ImmersiveAudioEngine::setSpatialBlend(float blend) noexcept { impl_->blend.store(unit(blend)); }
 bool ImmersiveAudioEngine::setCustomImpulseResponse(const float* left, const float* right, std::size_t taps) noexcept {
-    if (!impl_->prepared || !left || !right || taps == 0 || taps > 32768) return false;
+    const float* matrix[4] = {left, nullptr, nullptr, right};
+    return left && right && setCustomTransferMatrix(matrix, taps);
+}
+bool ImmersiveAudioEngine::setCustomTransferMatrix(const float* const paths[4], std::size_t taps) noexcept {
+    if (!impl_->prepared || !paths || taps == 0 || taps > 32768) return false;
     try {
-        std::vector<float> nextLeft(taps), nextRight(taps), zero(taps, 0.0f);
-        float peak = 0.0f;
-        for (std::size_t i = 0; i < taps; ++i) {
-            if (!std::isfinite(left[i]) || !std::isfinite(right[i])) return false;
-            nextLeft[i] = left[i]; nextRight[i] = right[i];
-            peak = std::max(peak, std::max(std::fabs(left[i]), std::fabs(right[i])));
+        std::array<std::vector<float>, 4> next;
+        double bound = 0.0;
+        for (std::size_t p = 0; p < 4; ++p) {
+            next[p].assign(taps + static_cast<std::size_t>(impl_->dryDelay), 0.0f);
+            for (std::size_t i = 0; i < taps; ++i) {
+                const float value = paths[p] ? paths[p][i] : 0.0f;
+                if (!std::isfinite(value)) return false;
+                next[p][i + static_cast<std::size_t>(impl_->dryDelay)] = value;
+            }
         }
-        const float gain = peak > 1.0f ? 1.0f / peak : 1.0f;
-        for (float& value : nextLeft) value *= gain;
-        for (float& value : nextRight) value *= gain;
-        const float* matrix[4] = {nextLeft.data(), zero.data(), zero.data(), nextRight.data()};
-        if (!impl_->convolution.loadMatrix(matrix, taps)) return false;
-        impl_->customIrLeft = std::move(nextLeft); impl_->customIrRight = std::move(nextRight);
-        impl_->customIrZero = std::move(zero); impl_->customIrActive = true;
+        // Bound the complete per-ear matrix, not each filter independently.
+        for (std::size_t ear = 0; ear < 2; ++ear) {
+            double power = 0.0;
+            for (std::size_t source = 0; source < 2; ++source)
+                for (float value : next[source * 2 + ear]) power += static_cast<double>(value) * value;
+            bound = std::max(bound, std::sqrt(power));
+        }
+        const float gain = static_cast<float>(1.0 / std::max(1.0, bound));
+        for (auto& path : next) for (float& value : path) value *= gain;
+        const float* matrix[4] = {next[0].data(), next[1].data(), next[2].data(), next[3].data()};
+        if (!impl_->convolution.loadMatrix(matrix, next[0].size())) return false;
+        impl_->customIr = std::move(next); impl_->customIrActive = true;
+        impl_->normalizationGain = gain;
         return true;
     } catch (...) { return false; }
 }
 void ImmersiveAudioEngine::clearCustomImpulseResponse() noexcept {
     impl_->customIrActive = false;
-    impl_->customIrLeft.clear(); impl_->customIrRight.clear(); impl_->customIrZero.clear();
+    for (auto& path : impl_->customIr) path.clear();
     impl_->reload();
 }
 void ImmersiveAudioEngine::setBassGain(float gain) noexcept { impl_->bassGain.store(std::clamp(finite(gain), 0.0f, 2.0f)); }
@@ -373,9 +418,10 @@ bool ImmersiveAudioEngine::process(float* pcm, int frames) noexcept {
     const float high = impl_->highWidth.load(std::memory_order_relaxed);
     for (int n = 0; n < frames; ++n) {
         float l = sample(pcm[2 * n]), r = sample(pcm[2 * n + 1]);
-        impl_->frontend.process(l, r, bass, width, high);
+        const auto bands = impl_->frontend.split(l, r, bass, width, high);
         const std::size_t pos = impl_->fill;
-        impl_->input[0][pos] = l; impl_->input[1][pos] = r;
+        impl_->input[0][pos] = bands.highL; impl_->input[1][pos] = bands.highR;
+        impl_->bassInput[0][pos] = bands.lowL; impl_->bassInput[1][pos] = bands.lowR;
         l = impl_->output[0][pos]; r = impl_->output[1][pos];
         impl_->safety.process(l, r);
         pcm[2 * n] = l; pcm[2 * n + 1] = r;
@@ -432,11 +478,7 @@ void ImmersiveAudioEngine::setOrbitEnabled(bool enabled) noexcept {
         impl_->orbitRadiusMetres = radius;
         impl_->orbitAzimuthDeg = spatial::wrapAzimuth(std::atan2(offset.y, offset.x) * 57.29577951308232f);
         impl_->orbitElevationDeg = spatial::clampElevation(std::asin(std::clamp(offset.z / radius, -1.0f, 1.0f)) * 57.29577951308232f);
-        impl_->orbitPhaseRad = 0.0f;
-        impl_->orbitLow = impl_->orbitSideLow = 0.0f;
-        impl_->orbitNotchX1 = {}; impl_->orbitNotchX2 = {};
-        impl_->orbitNotchY1 = {}; impl_->orbitNotchY2 = {};
-        impl_->orbitNotchHz = 5800.0f; impl_->orbitNotchDepth = 0.10f;
+        // Audio-thread motion/filter histories are never mutated here.
         impl_->orbitEnabled = true;
         impl_->reloadOrbitPosition();
     } else {
@@ -478,7 +520,10 @@ void ImmersiveAudioEngine::advanceOrbit(float deltaAzimuthDeg) noexcept {
     impl_->reloadOrbitPosition();
 }
 bool ImmersiveAudioEngine::orbitEnabled() const noexcept { return impl_->orbitEnabled; }
-float ImmersiveAudioEngine::orbitAzimuth() const noexcept { return impl_->orbitAzimuthDeg; }
+float ImmersiveAudioEngine::orbitAzimuth() const noexcept {
+    return spatial::wrapAzimuth(impl_->orbitAzimuthDeg + (impl_->orbitEnabled.load() ?
+        impl_->orbitPhaseRad.load(std::memory_order_relaxed) / rt::kDegToRad : 0.0f));
+}
 float ImmersiveAudioEngine::orbitElevation() const noexcept { return impl_->orbitElevationDeg; }
 float ImmersiveAudioEngine::orbitRadius() const noexcept { return impl_->orbitRadiusMetres; }
 

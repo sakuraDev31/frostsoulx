@@ -1115,6 +1115,7 @@ class MusicService :
         ImmersiveAudioRuntime.setElevation(dataStore.get(SpatialElevationKey, 0f))
         ImmersiveAudioRuntime.setDistance(dataStore.get(SpatialDistanceKey, 1f))
         ImmersiveAudioRuntime.setBassWidth(dataStore.get(SpatialBassWidthKey, 1f))
+        ImmersiveAudioRuntime.setOrbitEnabled(dataStore.get(dev.vxs.frostsoulx.constants.SpatialOrbitEnabledKey, false))
         ImmersiveAudioRuntime.setQuantumFrames(
             dataStore.get(StereoSurroundQuantumFramesKey, 384), // Keep the persisted quantum default without initializing the disabled JNI processor.
         )
@@ -1476,6 +1477,29 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { enabled ->
                 ImmersiveAudioRuntime.setEnabled(enabled)
+            }
+
+        // Restore custom responses even when the spatial settings page is closed.
+        dataStore.data
+            .map { prefs ->
+                (prefs[dev.vxs.frostsoulx.constants.ConvolverActiveIrPresetKey] ?: "") to
+                    (prefs[dev.vxs.frostsoulx.constants.ConvolverIrPresetsKey] ?: "[]")
+            }
+            .distinctUntilChanged()
+            .collectLatest(ioScope) { (activeId, raw) ->
+                val response = runCatching {
+                    if (activeId.isBlank()) return@runCatching null
+                    val presets = org.json.JSONArray(raw)
+                    val selected = (0 until presets.length()).asSequence()
+                        .mapNotNull { presets.optJSONObject(it) }
+                        .firstOrNull { it.optString("id") == activeId } ?: return@runCatching null
+                    val filename = selected.optString("file")
+                    require(filename.isNotBlank() && java.io.File(filename).name == filename)
+                    val file = java.io.File(java.io.File(filesDir, "convolver-ir"), filename)
+                    require(file.length() in 44..(32L * 1024 * 1024)) { "Invalid saved IR size" }
+                    WavImpulseResponse.decode(file.readBytes())
+                }.onFailure { android.util.Log.w("ImmersiveAudio", "Could not restore custom room response", it) }.getOrNull()
+                ImmersiveAudioRuntime.setCustomIr(response)
             }
 
         combine(

@@ -13,7 +13,8 @@ public:
         reset();
     }
     void reset() noexcept { lowM_ = lowS_ = 0.0f; bass_ = width_ = high_ = 1.0f; }
-    void process(float& l, float& r, float bassGain, float bassWidth, float highWidth) noexcept {
+    struct Bands { float lowL, lowR, highL, highR; };
+    Bands split(float l, float r, float bassGain, float bassWidth, float highWidth) noexcept {
         constexpr float invSqrt2 = 0.7071067811865475f;
         bass_ += smooth_ * (bassGain - bass_);
         width_ += smooth_ * (bassWidth - width_);
@@ -33,10 +34,15 @@ public:
         const float d = 0.5f * (1.0f - high_);
         const float bound = std::fabs(c) + std::fabs(d) + std::fabs(a-c) + std::fabs(b-d);
         const float gain = 1.0f / std::max(1.0f, bound);
-        const float outM = m + (bass_ - 1.0f) * lowM_;
-        const float outS = high_ * s + (lowSide - high_) * lowS_;
-        l = (outM + outS) * invSqrt2 * gain;
-        r = (outM - outS) * invSqrt2 * gain;
+        const float lowM = bass_ * lowM_, lowS = lowSide * lowS_;
+        const float highM = m - lowM_, highS = high_ * (s - lowS_);
+        return {(lowM + lowS) * invSqrt2 * gain, (lowM - lowS) * invSqrt2 * gain,
+                (highM + highS) * invSqrt2 * gain, (highM - highS) * invSqrt2 * gain};
+    }
+    void process(float& l, float& r, float bassGain, float bassWidth, float highWidth) noexcept {
+        const auto bands = split(l, r, bassGain, bassWidth, highWidth);
+        l = bands.lowL + bands.highL;
+        r = bands.lowR + bands.highR;
     }
 private:
     float split_ = 0.0f, smooth_ = 0.0f;

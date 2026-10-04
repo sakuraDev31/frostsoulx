@@ -438,15 +438,24 @@ class ImmersiveAudioProcessor : AudioProcessor {
 
     fun updateCustomIr(value: WavImpulseResponse?) {
         desiredCustomIr = value
-        CONTROL_EXECUTOR.execute { synchronized(controlLock) { if (nativeHandle != 0L) { if (value == null) nativeClearCustomIr(nativeHandle) else applyCustomIrLocked() } } }
+        CONTROL_EXECUTOR.execute {
+            synchronized(controlLock) {
+                if (nativeHandle != 0L) {
+                    if (desiredCustomIr == null) nativeClearCustomIr(nativeHandle) else applyCustomIrLocked()
+                }
+            }
+        }
     }
     private fun applyCustomIrLocked(targetRate: Int = format.sampleRate) {
         val h = nativeHandle
         if (h == 0L) return
         val source = desiredCustomIr
         if (source == null) return
-        val (left, right) = source.resampled(targetRate.takeIf { it > 0 } ?: source.sampleRate, 32768)
-        nativeSetCustomIr(h, left, right)
+        val matrix = source.resampledMatrix(targetRate.takeIf { it > 0 } ?: source.sampleRate, 32768)
+        if (!nativeSetCustomIr(h, matrix[0], matrix[1], matrix[2], matrix[3])) {
+            nativeClearCustomIr(h)
+            android.util.Log.w("ImmersiveAudio", "Native engine rejected the custom IR; using built-in response")
+        }
     }
     private fun applyControls(c: ImmersiveControls) {
         val h = nativeHandle
@@ -470,7 +479,6 @@ class ImmersiveAudioProcessor : AudioProcessor {
         if (old?.outputGainDb != c.outputGainDb) nativeSetOutputGainDb(h, c.outputGainDb)
         if (old?.quantumFrames != c.quantumFrames) nativeSetQuantumFrames(h, c.quantumFrames)
         if (old?.enabled != c.enabled) nativeSetEnabled(h, c.enabled)
-        if (desiredCustomIr != null) applyCustomIrLocked()
         applied = c
     }
 
@@ -582,7 +590,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeSetEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetBassGainDb(handle: Long, gainDb: Float)
         @JvmStatic private external fun nativeSetOutputGainDb(handle: Long, gainDb: Float)
-        @JvmStatic private external fun nativeSetCustomIr(handle: Long, left: FloatArray, right: FloatArray): Boolean
+        @JvmStatic private external fun nativeSetCustomIr(handle: Long, ll: FloatArray, lr: FloatArray, rl: FloatArray, rr: FloatArray): Boolean
         @JvmStatic private external fun nativeClearCustomIr(handle: Long)
         @JvmStatic private external fun nativeSetSpatialBlend(handle: Long, blend: Float)
         @JvmStatic private external fun nativeSetRoomPreset(handle: Long, preset: Int)

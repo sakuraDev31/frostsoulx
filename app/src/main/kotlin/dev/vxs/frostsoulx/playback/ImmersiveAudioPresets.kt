@@ -24,6 +24,7 @@ data class ImmersiveAudioPreset(
     val bassWidth: Float = 1f,
     val bassGainDb: Float = 0f,
     val outputGainDb: Float = 0f,
+    val customIrPresetId: String = "",
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("name", name.take(64))
@@ -46,6 +47,7 @@ data class ImmersiveAudioPreset(
         put("bassGainDb", safe.bassGainDb)
         put("outputGainDb", safe.outputGainDb)
         put("quantumFrames", quantumFrames.coerceIn(96, 2048))
+        put("customIrPresetId", customIrPresetId.take(64))
     }
 
     fun toControls(): ImmersiveControls = ImmersiveControls(
@@ -55,13 +57,13 @@ data class ImmersiveAudioPreset(
     ).sanitized()
 
     companion object {
-        fun fromControls(name: String, controls: ImmersiveControls): ImmersiveAudioPreset {
+        fun fromControls(name: String, controls: ImmersiveControls, customIrPresetId: String = ""): ImmersiveAudioPreset {
             val c = controls.sanitized()
             return ImmersiveAudioPreset(
                 name.trim().take(64), c.enabled, c.intensity, c.roomPreset, c.roomMix,
                 c.reflectionAmount, c.reverbTimeSeconds, c.roomSize, c.dampening,
                 c.stereoWidth, c.quantumFrames, c.carFader, c.azimuth, c.elevation,
-                c.distance, c.orbitEnabled, c.bassWidth, c.bassGainDb, c.outputGainDb,
+                c.distance, c.orbitEnabled, c.bassWidth, c.bassGainDb, c.outputGainDb, customIrPresetId.take(64),
             )
         }
         fun fromJson(value: JSONObject?): ImmersiveAudioPreset? {
@@ -87,6 +89,7 @@ data class ImmersiveAudioPreset(
                 bassGainDb = value.optDouble("bassGainDb", 0.0).toFloat(),
                 outputGainDb = value.optDouble("outputGainDb", 0.0).toFloat(),
                 quantumFrames = value.optInt("quantumFrames", 384).coerceIn(96, 2048),
+                customIrPresetId = value.optString("customIrPresetId").take(64),
             )
         }
 

@@ -441,18 +441,29 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetEnabled(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetCustomIr(JNIEnv* env, jclass, jlong address, jfloatArray leftArray, jfloatArray rightArray) {
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetCustomIr(
+    JNIEnv* env, jclass, jlong address, jfloatArray ll, jfloatArray lr, jfloatArray rl, jfloatArray rr) {
     auto* handle = reinterpret_cast<Handle*>(address);
-    if (!handle || !leftArray || !rightArray) return JNI_FALSE;
-    const jsize leftSize = env->GetArrayLength(leftArray), rightSize = env->GetArrayLength(rightArray);
-    if (leftSize <= 0 || leftSize != rightSize || leftSize > 32768) return JNI_FALSE;
-    jfloat* left = env->GetFloatArrayElements(leftArray, nullptr);
-    if (!left) return JNI_FALSE;
-    jfloat* right = env->GetFloatArrayElements(rightArray, nullptr);
-    if (!right) { env->ReleaseFloatArrayElements(leftArray, left, JNI_ABORT); return JNI_FALSE; }
-    const bool loaded = handle->engine.setCustomImpulseResponse(left, right, static_cast<std::size_t>(leftSize));
-    env->ReleaseFloatArrayElements(leftArray, left, JNI_ABORT);
-    env->ReleaseFloatArrayElements(rightArray, right, JNI_ABORT);
+    if (!handle || !ll || !lr || !rl || !rr) return JNI_FALSE;
+    const jsize taps = env->GetArrayLength(ll);
+    if (taps <= 0 || taps > 32768) return JNI_FALSE;
+    const jfloatArray arrays[4] = {ll, lr, rl, rr};
+    for (auto array : arrays) if (env->GetArrayLength(array) != taps) return JNI_FALSE;
+    jfloat* elements[4] = {};
+    const float* matrix[4] = {};
+    for (std::size_t p = 0; p < 4; ++p) {
+        elements[p] = env->GetFloatArrayElements(arrays[p], nullptr);
+        if (!elements[p]) {
+            for (std::size_t previous = 0; previous < p; ++previous)
+                env->ReleaseFloatArrayElements(arrays[previous], elements[previous], JNI_ABORT);
+            return JNI_FALSE;
+        }
+        matrix[p] = elements[p];
+    }
+    // JNI target intentionally builds with -fno-exceptions; the engine owns
+    // exception-safe copying/publication and all borrowed arrays are released.
+    const bool loaded = handle->engine.setCustomTransferMatrix(matrix, static_cast<std::size_t>(taps));
+    for (std::size_t p = 0; p < 4; ++p) env->ReleaseFloatArrayElements(arrays[p], elements[p], JNI_ABORT);
     return loaded ? JNI_TRUE : JNI_FALSE;
 }
 extern "C" JNIEXPORT void JNICALL
