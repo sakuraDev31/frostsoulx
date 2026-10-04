@@ -986,6 +986,48 @@ void testOrbitPreservesStereo() {
 }
 
 // ---------------------------------------------------------------------------
+// P. Vertical arc must change elevation spectral cues without a horizontal pan
+// ---------------------------------------------------------------------------
+void testOrbitVerticalArcEnvelope() {
+    frostsoulx::ImmersiveAudioEngine engine;
+    check(engine.prepare(kSR, kN), "prepare() for vertical arc envelope");
+    configureDry(engine);
+    engine.setOrbitEnabled(true);
+
+    auto renderTone = [&](int blockIndex, double& sumSq, std::size_t& count) {
+        std::vector<float> buf(static_cast<std::size_t>(kN) * 2, 0.0f);
+        for (int i = 0; i < kN; ++i) {
+            const float v = 0.12f * std::sin(static_cast<float>(blockIndex * kN + i)
+                                             * (6.2831853071795864769f * 8000.0f / kSR));
+            buf[static_cast<std::size_t>(i) * 2] = v;
+            buf[static_cast<std::size_t>(i) * 2 + 1] = v;
+        }
+        check(engine.process(buf.data(), kN), "vertical arc processes tone block");
+        if (!sane(buf, 0.99f, "vertical arc tone output")) return;
+        for (float v : buf) { sumSq += static_cast<double>(v) * v; ++count; }
+    };
+
+    double horizonEnergy = 0.0;
+    std::size_t horizonCount = 0;
+    double overheadEnergy = 0.0;
+    std::size_t overheadCount = 0;
+    for (int b = 0; b < 24; ++b) renderTone(b, horizonEnergy, horizonCount);
+    // At 0.09 Hz, ~300 x 384 frames places the phase near the overhead apex.
+    for (int b = 24; b < 300; ++b) {
+        double ignored = 0.0; std::size_t ignoredCount = 0;
+        renderTone(b, ignored, ignoredCount);
+    }
+    for (int b = 300; b < 324; ++b) renderTone(b, overheadEnergy, overheadCount);
+
+    const double horizonRms = std::sqrt(horizonEnergy / std::max<std::size_t>(horizonCount, 1));
+    const double overheadRms = std::sqrt(overheadEnergy / std::max<std::size_t>(overheadCount, 1));
+    check(horizonRms > 1.0e-4, "vertical arc horizon reference has signal energy");
+    check(overheadRms < horizonRms * 0.92,
+          "overhead arc changes the 8 kHz elevation notch envelope smoothly");
+    engine.setOrbitEnabled(false);
+}
+
+// ---------------------------------------------------------------------------
 // End-to-end: the chain must be a real runtime path, not just linked classes
 // ---------------------------------------------------------------------------
 void testEndToEndChain() {
@@ -1126,6 +1168,7 @@ int main() {
     testConvolution();              // M
     testHrtf();                     // N
     testOrbitPreservesStereo();     // O
+    testOrbitVerticalArcEnvelope(); // P
     testEndToEndChain();            // full runtime chain
 
     if (g_failures != 0) {
