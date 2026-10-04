@@ -162,7 +162,7 @@ fun SpatialAudioScreen(navController: NavController) {
     var engineExpanded by remember { mutableStateOf(true) }
     var helpText by remember { mutableStateOf<String?>(null) }
     fun updateAdvanced(value: ImmersiveControls) { customAdvanced = true; update(value) }
-    val healthy = diagnostics.deadlineMisses == 0 && diagnostics.nativeProcessFailures == 0
+    val healthy = diagnostics.deadlineMisses == 0L && diagnostics.nativeProcessFailures == 0L
     val mutedAlpha = if (controls.enabled) 1f else 0.48f
 
     Scaffold(
