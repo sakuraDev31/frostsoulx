@@ -40,8 +40,14 @@ struct ImmersiveAudioEngine::Impl {
     float normalizationGain = 1.0f;
 
     // Orbit is control-thread only. Geometry/FFT work never runs from process().
+    // Classic 8D motion is an automatic azimuth sweep layered after the
+    // active room/HRTF stage. It is deliberately independent of room selection.
+    static constexpr float kClassic8dRateHz = 0.09f;       // ~11.1 s/revolution
+    static constexpr float kClassic8dLowCutHz = 170.0f;    // keep bass centred
     bool orbitEnabled = false;
     float orbitAzimuthDeg = 0.0f;
+    float orbitLow = 0.0f;
+    float orbitSplit = 0.0f;
     float orbitElevationDeg = 0.0f;
     float orbitRadiusMetres = 3.0f;
     spatial::Vec3 preOrbitSourcePosition{0.0f, 0.0f, 0.0f};
@@ -121,6 +127,9 @@ struct ImmersiveAudioEngine::Impl {
     }
 
     void render() noexcept {
+        // Room/HRTF convolution remains the spatial/acoustic layer.
+        // The 8D layer below provides the familiar slow YouTube-style motion.
+
         const float* in[2] = {input[0].data(), input[1].data()};
         float* out[2] = {wet[0].data(), wet[1].data()};
         convolution.processBlock(in, out);
@@ -139,6 +148,29 @@ struct ImmersiveAudioEngine::Impl {
             dryWrite = (dryWrite + 1) % static_cast<std::size_t>(dryDelay);
         }
         blendCurrent = target;
+
+        if (orbitEnabled) {
+            constexpr float kDegToRad = 0.017453292519943295769f;
+            const float phaseStepDeg =
+                360.0f * kClassic8dRateHz / static_cast<float>(rate);
+            float az = orbitAzimuthDeg;
+            for (std::size_t n = 0; n < kBlock; ++n) {
+                const float mono = 0.5f * (output[0][n] + output[1][n]);
+                orbitLow += orbitSplit * (mono - orbitLow);
+                const float high = mono - orbitLow;
+
+                // Equal-power pan, normalized so centre remains unity.
+                const float pan = std::sin(az * kDegToRad);
+                const float left = std::sqrt(0.5f * (1.0f + pan)) * 1.41421356237f;
+                const float right = std::sqrt(0.5f * (1.0f - pan)) * 1.41421356237f;
+                output[0][n] = orbitLow + high * left;
+                output[1][n] = orbitLow + high * right;
+
+                az += phaseStepDeg;
+                if (az > 180.0f) az -= 360.0f;
+            }
+            orbitAzimuthDeg = az;
+        }
     }
 };
 

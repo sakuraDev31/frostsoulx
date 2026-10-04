@@ -180,7 +180,7 @@ fun SpatialAudioScreen(navController: NavController) {
                     horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) {
                         Text("3D Orbit Mode", style = MaterialTheme.typography.titleMedium)
-                        Text(if (controls.orbitEnabled) "Azimuth-based source orbit · works with every room" else "Off · source position is static", color = colors.onSurfaceMuted, fontSize = 12.sp)
+                        Text(if (controls.orbitEnabled) "Classic 8D motion · 360° auto orbit · works with every room" else "Off · source position is static", color = colors.onSurfaceMuted, fontSize = 12.sp)
                     }
                     Switch(checked = controls.orbitEnabled, enabled = !capturing,
                         onCheckedChange = { update(controls.copy(orbitEnabled = it)) },

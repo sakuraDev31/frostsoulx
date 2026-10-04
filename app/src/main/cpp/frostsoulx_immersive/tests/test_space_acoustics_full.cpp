@@ -201,6 +201,30 @@ void test11_3dOrbit() {
     }
 }
 
+
+// -----------------------------------------------------------------------------
+// Classic 8D orbit regression
+// -----------------------------------------------------------------------------
+void test12_Classic8dOrbitMotion() {
+    using namespace frostsoulx;
+    ImmersiveAudioEngine engine;
+    check(engine.prepare(48000, 384), "8D engine prepares");
+    engine.setSpatialBlend(1.0f);
+    engine.setOrbitPosition(0.0f, 0.0f, 1.5f);
+    engine.setOrbitEnabled(true);
+    engine.setEnabled(true);
+
+    std::vector<float> block(384 * 2, 0.0f);
+    for (int b = 0; b < 375; ++b) {
+        for (int n = 0; n < 384; ++n) {
+            const float s = 0.18f * std::sin(float(b * 384 + n) * 0.031f);
+            block[2*n] = s; block[2*n+1] = s;
+        }
+        check(engine.process(block.data(), 384), "8D block processes");
+    }
+    check(engine.orbitAzimuth() > 20.0f, "8D azimuth advances");
+}
+
 // -----------------------------------------------------------------------------
 // 12. Listener Rotation
 // -----------------------------------------------------------------------------
@@ -497,6 +521,7 @@ int main() {
     test9_SourceLeftRightMovement(gen);
     test10_OverheadArc();
     test11_3dOrbit();
+    test12_Classic8dOrbitMotion();
     test12_ListenerRotation(gen);
     test13_DistanceChange(gen);
     test14_MultiTierLongIr(gen);
