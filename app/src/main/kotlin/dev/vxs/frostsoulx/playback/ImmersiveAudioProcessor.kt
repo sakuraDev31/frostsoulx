@@ -438,13 +438,13 @@ class ImmersiveAudioProcessor : AudioProcessor {
 
     fun updateCustomIr(value: WavImpulseResponse?) {
         desiredCustomIr = value
-        CONTROL_EXECUTOR.execute { synchronized(controlLock) { if (nativeHandle != 0L) applyCustomIrLocked() } }
+        CONTROL_EXECUTOR.execute { synchronized(controlLock) { if (nativeHandle != 0L) { if (value == null) nativeClearCustomIr(nativeHandle) else applyCustomIrLocked() } } }
     }
     private fun applyCustomIrLocked(targetRate: Int = format.sampleRate) {
         val h = nativeHandle
         if (h == 0L) return
         val source = desiredCustomIr
-        if (source == null) { nativeClearCustomIr(h); return }
+        if (source == null) return
         val (left, right) = source.resampled(targetRate.takeIf { it > 0 } ?: source.sampleRate, 32768)
         nativeSetCustomIr(h, left, right)
     }
@@ -470,6 +470,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         if (old?.outputGainDb != c.outputGainDb) nativeSetOutputGainDb(h, c.outputGainDb)
         if (old?.quantumFrames != c.quantumFrames) nativeSetQuantumFrames(h, c.quantumFrames)
         if (old?.enabled != c.enabled) nativeSetEnabled(h, c.enabled)
+        if (desiredCustomIr != null) applyCustomIrLocked()
         applied = c
     }
 
