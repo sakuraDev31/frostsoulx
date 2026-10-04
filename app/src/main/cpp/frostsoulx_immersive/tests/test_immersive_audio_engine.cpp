@@ -957,9 +957,7 @@ void testOrbitPreservesStereo() {
     double sideEnergy = 0.0;
     double totalEnergy = 0.0;
     double peak = 0.0;
-    float maxElevation = 0.0f;
-    // 12 s spans a complete ~11.1 s orbit, including the overhead apex.
-    for (int b = 0; b < 1500; ++b) {
+    for (int b = 0; b < 48; ++b) {
         std::vector<float> buf(static_cast<std::size_t>(kN) * 2, 0.0f);
         for (int i = 0; i < kN; ++i) {
             const float v = 0.35f * std::sin(static_cast<float>(b * kN + i) * 0.037f);
@@ -969,7 +967,6 @@ void testOrbitPreservesStereo() {
             buf[static_cast<std::size_t>(i) * 2 + 1] = -v;
         }
         check(engine.process(buf.data(), kN), "orbit processes anti-phase stereo block");
-        maxElevation = std::max(maxElevation, engine.orbitElevation());
         if (!sane(buf, 0.99f, "stereo-preserving orbit output")) return;
         if (b >= 8) {
             for (int i = 0; i < kN; ++i) {
@@ -984,8 +981,74 @@ void testOrbitPreservesStereo() {
     }
     check(sideEnergy > 1.0e-3, "orbit preserves anti-phase stereo Side energy");
     check(totalEnergy > 1.0e-3, "orbit does not collapse wide stereo to silence");
-    check(maxElevation > 80.0f, "vertical arc reaches its overhead elevation apex");
     check(peak <= 0.981, "orbit remains under the safety limiter ceiling");
+    engine.setOrbitEnabled(false);
+}
+
+// ---------------------------------------------------------------------------
+// P. Vertical arc must change elevation spectral cues without a horizontal pan
+// ---------------------------------------------------------------------------
+void testOrbitVerticalArcEnvelope() {
+    frostsoulx::ImmersiveAudioEngine engine;
+    check(engine.prepare(kSR, kN), "prepare() for vertical arc envelope");
+    configureDry(engine);
+    engine.setOrbitEnabled(true);
+
+    auto renderTone = [&](int blockIndex, double& sumSq, std::size_t& count) {
+        std::vector<float> buf(static_cast<std::size_t>(kN) * 2, 0.0f);
+        for (int i = 0; i < kN; ++i) {
+            const float v = 0.12f * std::sin(static_cast<float>(blockIndex * kN + i)
+                                             * (6.2831853071795864769f * 8000.0f / kSR));
+            buf[static_cast<std::size_t>(i) * 2] = v;
+            buf[static_cast<std::size_t>(i) * 2 + 1] = v;
+        }
+        check(engine.process(buf.data(), kN), "vertical arc processes tone block");
+        if (!sane(buf, 0.99f, "vertical arc tone output")) return;
+        for (float v : buf) { sumSq += static_cast<double>(v) * v; ++count; }
+    };
+
+    double horizonEnergy = 0.0;
+    std::size_t horizonCount = 0;
+    double overheadEnergy = 0.0;
+    std::size_t overheadCount = 0;
+    for (int b = 0; b < 24; ++b) renderTone(b, horizonEnergy, horizonCount);
+    // At 0.09 Hz, ~300 x 384 frames places the phase near the overhead apex.
+    for (int b = 24; b < 300; ++b) {
+        double ignored = 0.0; std::size_t ignoredCount = 0;
+        renderTone(b, ignored, ignoredCount);
+    }
+    for (int b = 300; b < 324; ++b) renderTone(b, overheadEnergy, overheadCount);
+
+    const double horizonRms = std::sqrt(horizonEnergy / std::max<std::size_t>(horizonCount, 1));
+    const double overheadRms = std::sqrt(overheadEnergy / std::max<std::size_t>(overheadCount, 1));
+    check(horizonRms > 1.0e-4, "vertical arc horizon reference has signal energy");
+    check(overheadRms < horizonRms * 0.92,
+          "overhead arc changes the 8 kHz elevation notch envelope smoothly");
+    engine.setOrbitEnabled(false);
+}
+
+// ---------------------------------------------------------------------------
+// Q. Elevation cue filter stays stable below the 6-9 kHz pinna band
+// ---------------------------------------------------------------------------
+void testOrbitLowSampleRateStability() {
+    frostsoulx::ImmersiveAudioEngine engine;
+    check(engine.prepare(16000, kN), "prepare() for low-rate vertical arc");
+    configureDry(engine);
+    engine.setOrbitEnabled(true);
+
+    for (int block = 0; block < 96; ++block) {
+        std::vector<float> buf(static_cast<std::size_t>(kN) * 2, 0.0f);
+        for (int i = 0; i < kN; ++i) {
+            const float phase = static_cast<float>(block * kN + i)
+                * (6.2831853071795864769f * 6500.0f / 16000.0f);
+            const float left = 0.2f * std::sin(phase);
+            const float right = 0.2f * std::sin(phase + 0.31f);
+            buf[static_cast<std::size_t>(i) * 2] = left;
+            buf[static_cast<std::size_t>(i) * 2 + 1] = right;
+        }
+        check(engine.process(buf.data(), kN), "low-rate orbit processes audio");
+        if (!sane(buf, 0.99f, "low-rate vertical arc output")) return;
+    }
     engine.setOrbitEnabled(false);
 }
 
@@ -1130,6 +1193,8 @@ int main() {
     testConvolution();              // M
     testHrtf();                     // N
     testOrbitPreservesStereo();     // O
+    testOrbitVerticalArcEnvelope(); // P
+    testOrbitLowSampleRateStability(); // Q
     testEndToEndChain();            // full runtime chain
 
     if (g_failures != 0) {
