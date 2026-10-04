@@ -945,6 +945,47 @@ void testHrtf() {
 }
 
 // ---------------------------------------------------------------------------
+// O. Classic 8D orbit must retain stereo side information
+// ---------------------------------------------------------------------------
+void testOrbitPreservesStereo() {
+    frostsoulx::ImmersiveAudioEngine engine;
+    check(engine.prepare(kSR, kN), "prepare() for stereo-preserving orbit");
+    configureDry(engine);
+    engine.setStereoWidth(0.5f);
+    engine.setOrbitEnabled(true);
+
+    double sideEnergy = 0.0;
+    double totalEnergy = 0.0;
+    double peak = 0.0;
+    for (int b = 0; b < 48; ++b) {
+        std::vector<float> buf(static_cast<std::size_t>(kN) * 2, 0.0f);
+        for (int i = 0; i < kN; ++i) {
+            const float v = 0.35f * std::sin(static_cast<float>(b * kN + i) * 0.037f);
+            // Pure Side / anti-phase material is the regression sentinel: a
+            // mono average would erase it before the orbit effect can process it.
+            buf[static_cast<std::size_t>(i) * 2] = v;
+            buf[static_cast<std::size_t>(i) * 2 + 1] = -v;
+        }
+        check(engine.process(buf.data(), kN), "orbit processes anti-phase stereo block");
+        if (!sane(buf, 0.99f, "stereo-preserving orbit output")) return;
+        if (b >= 8) {
+            for (int i = 0; i < kN; ++i) {
+                const float l = buf[static_cast<std::size_t>(i) * 2];
+                const float r = buf[static_cast<std::size_t>(i) * 2 + 1];
+                const float side = 0.5f * (l - r);
+                sideEnergy += static_cast<double>(side) * side;
+                totalEnergy += static_cast<double>(l) * l + static_cast<double>(r) * r;
+                peak = std::max(peak, static_cast<double>(std::max(std::fabs(l), std::fabs(r))));
+            }
+        }
+    }
+    check(sideEnergy > 1.0e-3, "orbit preserves anti-phase stereo Side energy");
+    check(totalEnergy > 1.0e-3, "orbit does not collapse wide stereo to silence");
+    check(peak <= 0.981, "orbit remains under the safety limiter ceiling");
+    engine.setOrbitEnabled(false);
+}
+
+// ---------------------------------------------------------------------------
 // End-to-end: the chain must be a real runtime path, not just linked classes
 // ---------------------------------------------------------------------------
 void testEndToEndChain() {
@@ -1084,6 +1125,7 @@ int main() {
     testNonFullSphereVbap();        // L
     testConvolution();              // M
     testHrtf();                     // N
+    testOrbitPreservesStereo();     // O
     testEndToEndChain();            // full runtime chain
 
     if (g_failures != 0) {

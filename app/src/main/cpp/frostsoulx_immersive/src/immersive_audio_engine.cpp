@@ -39,14 +39,17 @@ struct ImmersiveAudioEngine::Impl {
     float blendCurrent = 1.0f;
     float normalizationGain = 1.0f;
 
-    // Orbit is control-thread only. Geometry/FFT work never runs from process().
-    // Classic 8D motion is an automatic azimuth sweep layered after the
-    // active room/HRTF stage. It is deliberately independent of room selection.
-    static constexpr float kClassic8dRateHz = 0.09f;       // ~11.1 s/revolution
-    static constexpr float kClassic8dLowCutHz = 170.0f;    // keep bass centred
+    // Orbit geometry/BRIR preparation stays on the control thread. The
+    // automatic 8D layer itself is allocation-free and stereo-preserving.
+    // It traces a vertical-arc envelope; it must not collapse L/R to mono or
+    // apply a left/right pan sweep after the HRTF stage.
+    static constexpr float kClassic8dRateHz = 0.09f; // ~11.1 s per cycle
+    static constexpr float kClassic8dLowCutHz = 170.0f;
     bool orbitEnabled = false;
     float orbitAzimuthDeg = 0.0f;
+    float orbitPhaseRad = 0.0f;
     float orbitLow = 0.0f;
+    float orbitSideLow = 0.0f;
     float orbitSplit = 0.0f;
     float orbitElevationDeg = 0.0f;
     float orbitRadiusMetres = 3.0f;
@@ -150,26 +153,36 @@ struct ImmersiveAudioEngine::Impl {
         blendCurrent = target;
 
         if (orbitEnabled) {
-            constexpr float kDegToRad = 0.017453292519943295769f;
-            const float phaseStepDeg =
-                360.0f * kClassic8dRateHz / static_cast<float>(rate);
-            float az = orbitAzimuthDeg;
+            constexpr float kTwoPi = 6.2831853071795864769f;
+            const float phaseStep = kTwoPi * kClassic8dRateHz / static_cast<float>(rate);
+            float phase = orbitPhaseRad;
             for (std::size_t n = 0; n < kBlock; ++n) {
-                const float mono = 0.5f * (output[0][n] + output[1][n]);
-                orbitLow += orbitSplit * (mono - orbitLow);
-                const float high = mono - orbitLow;
+                // Reversible M/S encoding retains the original stereo Side.
+                // Never use (L + R) / 2 as the complete orbit input: anti-phase
+                // and wide stereo material would otherwise disappear.
+                const float mid = 0.5f * (output[0][n] + output[1][n]);
+                const float side = 0.5f * (output[0][n] - output[1][n]);
+                orbitLow += orbitSplit * (mid - orbitLow);
+                orbitSideLow += orbitSplit * (side - orbitSideLow);
+                const float midHigh = mid - orbitLow;
+                const float sideHigh = side - orbitSideLow;
 
-                // Equal-power pan, normalized so centre remains unity.
-                const float pan = std::sin(az * kDegToRad);
-                const float left = std::sqrt(0.5f * (1.0f + pan)) * 1.41421356237f;
-                const float right = std::sqrt(0.5f * (1.0f - pan)) * 1.41421356237f;
-                output[0][n] = orbitLow + high * left;
-                output[1][n] = orbitLow + high * right;
+                // Vertical-arc contour: the overhead apex gently reduces upper
+                // Side energy while retaining the bass and the complete Mid.
+                // This is a stereo-preserving motion cue, not a claim of a
+                // continuously changing HRTF; BRIR swaps remain off the RT thread.
+                const float elevation = std::fabs(std::sin(phase));
+                const float midHighGain = 1.0f - 0.05f * elevation;
+                const float sideHighGain = 1.0f - 0.30f * elevation;
+                const float outMid = orbitLow + midHigh * midHighGain;
+                const float outSide = orbitSideLow + sideHigh * sideHighGain;
+                output[0][n] = outMid + outSide;
+                output[1][n] = outMid - outSide;
 
-                az += phaseStepDeg;
-                if (az > 180.0f) az -= 360.0f;
+                phase += phaseStep;
+                if (phase >= kTwoPi) phase -= kTwoPi;
             }
-            orbitAzimuthDeg = az;
+            orbitPhaseRad = phase;
         }
     }
 };
@@ -182,6 +195,9 @@ bool ImmersiveAudioEngine::prepare(int sampleRate, int maxFrames) noexcept {
     impl_->prepared = false;
     try {
         impl_->rate = sampleRate; impl_->maximum = maxFrames;
+        impl_->orbitSplit = 1.0f - std::exp(
+            -2.0f * 3.14159265358979323846f * Impl::kClassic8dLowCutHz /
+            static_cast<float>(sampleRate));
         std::size_t hrirTaps = 128;
         while (hrirTaps < static_cast<std::size_t>(sampleRate / 500)) hrirTaps *= 2;
         if (!impl_->hrtf.buildParametric(sampleRate, hrirTaps)) return false;
@@ -205,6 +221,7 @@ void ImmersiveAudioEngine::reset() noexcept {
         std::fill(impl_->dryRing.begin(), impl_->dryRing.end(), 0.0f);
         impl_->dryWrite = impl_->fill = 0;
         impl_->blendCurrent = impl_->blend.load();
+        impl_->orbitLow = impl_->orbitSideLow = 0.0f;
     }
     impl_->result.store(impl_->prepared ? ImmersiveProcessResult::Disabled : ImmersiveProcessResult::NotPrepared);
 }
@@ -327,6 +344,8 @@ void ImmersiveAudioEngine::setOrbitEnabled(bool enabled) noexcept {
         impl_->orbitRadiusMetres = radius;
         impl_->orbitAzimuthDeg = spatial::wrapAzimuth(std::atan2(offset.y, offset.x) * 57.29577951308232f);
         impl_->orbitElevationDeg = spatial::clampElevation(std::asin(std::clamp(offset.z / radius, -1.0f, 1.0f)) * 57.29577951308232f);
+        impl_->orbitPhaseRad = 0.0f;
+        impl_->orbitLow = impl_->orbitSideLow = 0.0f;
         impl_->orbitEnabled = true;
         impl_->reloadOrbitPosition();
     } else {
