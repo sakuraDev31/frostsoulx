@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -195,6 +196,7 @@ fun SpatialAudioScreen(navController: NavController) {
                         Text("Sound space", color = colors.onSurfaceMuted, style = MaterialTheme.typography.titleSmall)
                         val chipLabels = listOf("Off", "Tunnel", "Studio", "Hall")
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (customAdvanced) PresetChip("Custom", true, true) { }
                             chipLabels.take(3).forEach { label ->
                                 val selected = if (label == "Off") controls.roomPreset == ImmersiveRoomPreset.entries.firstOrNull() else controls.roomPreset.label.equals(label, true)
                                 PresetChip(label, selected && !customAdvanced, !capturing && controls.enabled) {
@@ -346,7 +348,9 @@ private fun AdvancedSlider(label: String, value: Float, range: ClosedFloatingPoi
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(label, style = MaterialTheme.typography.titleSmall)
-                Text("ⓘ", color = FrostSoulTheme.colors.onSurfaceMuted, modifier = Modifier.clickable(onClick = onHelp).padding(4.dp))
+                Box(Modifier.size(48.dp).clickable(onClick = onHelp), contentAlignment = Alignment.Center) {
+                    Text("ⓘ", color = FrostSoulTheme.colors.onSurfaceMuted)
+                }
             }
             Text(display, style = MaterialTheme.typography.titleSmall)
         }
