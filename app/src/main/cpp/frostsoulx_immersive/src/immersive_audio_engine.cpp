@@ -45,6 +45,16 @@ struct ImmersiveAudioEngine::Impl {
     // apply a left/right pan sweep after the HRTF stage.
     static constexpr float kClassic8dRateHz = 0.09f; // ~11.1 s per cycle
     static constexpr float kClassic8dLowCutHz = 170.0f;
+    struct OrbitNotchState {
+        float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f;
+        float process(float x, float b0, float b1, float b2, float a1, float a2) noexcept {
+            const float y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            x2 = x1; x1 = x; y2 = y1; y1 = std::isfinite(y) ? y : 0.0f;
+            return y1;
+        }
+        void reset() noexcept { x1 = x2 = y1 = y2 = 0.0f; }
+    };
+    std::array<OrbitNotchState, 2> orbitNotch{};
     bool orbitEnabled = false;
     float orbitAzimuthDeg = 0.0f;
     float orbitPhaseRad = 0.0f;
@@ -52,12 +62,6 @@ struct ImmersiveAudioEngine::Impl {
     float orbitSideLow = 0.0f;
     float orbitSplit = 0.0f;
     float orbitElevationDeg = 0.0f;
-    // Independent per-ear state for the smooth, elevation-dependent pinna cue.
-    // The cue is deliberately an envelope over the existing stereo output,
-    // not a second HRTF/convolution backend.
-    std::array<float, 2> orbitNotchX1{}, orbitNotchX2{}, orbitNotchY1{}, orbitNotchY2{};
-    float orbitNotchHz = 5800.0f;
-    float orbitNotchDepth = 0.10f;
     float orbitRadiusMetres = 3.0f;
     spatial::Vec3 preOrbitSourcePosition{0.0f, 0.0f, 0.0f};
     bool orbitBackupValid = false;
@@ -160,68 +164,57 @@ struct ImmersiveAudioEngine::Impl {
 
         if (orbitEnabled) {
             constexpr float kTwoPi = 6.2831853071795864769f;
+            constexpr float kPi = 3.14159265358979323846f;
             const float phaseStep = kTwoPi * kClassic8dRateHz / static_cast<float>(rate);
             float phase = orbitPhaseRad;
-
-            // Elevation is carried by pinna-like spectral contrast, not by a
-            // left/right pan. Research places important elevation-dependent
-            // HRTF peaks/notches around 6-9 kHz. Smooth targets at block rate
-            // avoid zipper noise while keeping all filter work allocation-free.
-            const float elevationNow = std::fabs(std::sin(phase));
-            const float frontRear = std::cos(phase);
-            const float targetNotchHz = 5800.0f + 2500.0f * elevationNow
-                                      + (frontRear < 0.0f ? 350.0f : 0.0f);
-            const float targetDepth = 0.10f + 0.35f * elevationNow;
-            orbitNotchHz += 0.15f * (targetNotchHz - orbitNotchHz);
-            orbitNotchDepth += 0.15f * (targetDepth - orbitNotchDepth);
-
-            const float omega = kTwoPi * orbitNotchHz / static_cast<float>(rate);
-            const float cosine = std::cos(omega);
-            const float sine = std::sin(omega);
-            constexpr float kNotchQ = 2.2f;
-            const float alpha = sine / (2.0f * kNotchQ);
-            const float invA0 = 1.0f / (1.0f + alpha);
-            const float b0 = invA0;
-            const float b1 = -2.0f * cosine * invA0;
-            const float b2 = invA0;
-            const float a1 = b1;
-            const float a2 = (1.0f - alpha) * invA0;
-
             for (std::size_t n = 0; n < kBlock; ++n) {
-                // Reversible M/S encoding retains the original stereo Side.
-                // Never fold the complete signal to mono: anti-phase/wide
-                // stereo material must remain audible throughout the orbit.
+                // Smooth raised arc: front -> overhead -> rear -> overhead -> front.
+                // sin² avoids a cusp at the horizon and at the overhead apex.
+                const float s = std::sin(phase);
+                const float elevation = s * s;
+                const float frontBack = std::cos(phase);
+
+                // Preserve stereo with reversible M/S processing. Bass stays
+                // anchored; only high-band Side is gently narrowed near zenith.
                 const float mid = 0.5f * (output[0][n] + output[1][n]);
                 const float side = 0.5f * (output[0][n] - output[1][n]);
                 orbitLow += orbitSplit * (mid - orbitLow);
                 orbitSideLow += orbitSplit * (side - orbitSideLow);
                 const float midHigh = mid - orbitLow;
                 const float sideHigh = side - orbitSideLow;
-                const float elevation = std::fabs(std::sin(phase));
-                const float midHighGain = 1.0f - 0.02f * elevation;
-                const float sideHighGain = 1.0f - 0.18f * elevation;
-                const float outMid = orbitLow + midHigh * midHighGain;
-                const float outSide = orbitSideLow + sideHigh * sideHighGain;
-                const float stereo[2] = {outMid + outSide, outMid - outSide};
+                const float outMid = orbitLow + midHigh * (1.0f - 0.025f * elevation);
+                const float outSide = orbitSideLow + sideHigh * (1.0f - 0.12f * elevation);
+                const float left = outMid + outSide;
+                const float right = outMid - outSide;
 
-                // Same smoothly moving pinna notch on each ear. Independent
-                // histories preserve channel detail and stereo image cues.
-                for (std::size_t c = 0; c < 2; ++c) {
-                    const float x = stereo[c];
-                    const float y = b0 * x + b1 * orbitNotchX1[c]
-                                  + b2 * orbitNotchX2[c] - a1 * orbitNotchY1[c]
-                                  - a2 * orbitNotchY2[c];
-                    orbitNotchX2[c] = orbitNotchX1[c];
-                    orbitNotchX1[c] = x;
-                    orbitNotchY2[c] = orbitNotchY1[c];
-                    orbitNotchY1[c] = rt::flushDenormal(y);
-                    output[c][n] = x + orbitNotchDepth * (y - x);
-                }
+                // Elevation-dependent pinna spectral cue. Research places important
+                // elevation structure in the upper-mid/high band; move a restrained
+                // notch from ~6.2 kHz toward ~8.8 kHz as the source rises. This is
+                // an envelope layered over the existing BRIR, not a substitute for
+                // individualized, continuously interpolated HRTFs.
+                const float notchHz = 6200.0f + 2600.0f * elevation;
+                const float omega = kTwoPi * std::min(notchHz, 0.45f * static_cast<float>(rate)) /
+                                    static_cast<float>(rate);
+                const float cosine = std::cos(omega);
+                const float alpha = std::sin(omega) / 2.4f; // notch Q = 2.4
+                const float invA0 = 1.0f / (1.0f + alpha);
+                const float b0 = invA0;
+                const float b1 = -2.0f * cosine * invA0;
+                const float b2 = invA0;
+                const float a1 = b1;
+                const float a2 = (1.0f - alpha) * invA0;
+                const float notchMix = 0.38f * elevation;
+                const float notchL = orbitNotch[0].process(left, b0, b1, b2, a1, a2);
+                const float notchR = orbitNotch[1].process(right, b0, b1, b2, a1, a2);
+                output[0][n] = left + notchMix * (notchL - left);
+                output[1][n] = right + notchMix * (notchR - right);
 
                 phase += phaseStep;
                 if (phase >= kTwoPi) phase -= kTwoPi;
             }
             orbitPhaseRad = phase;
+            orbitElevationDeg = 85.0f * std::sin(phase) * std::sin(phase);
+            orbitAzimuthDeg = phase < kPi ? 0.0f : 180.0f;
         }
     }
 };
@@ -261,9 +254,7 @@ void ImmersiveAudioEngine::reset() noexcept {
         impl_->dryWrite = impl_->fill = 0;
         impl_->blendCurrent = impl_->blend.load();
         impl_->orbitLow = impl_->orbitSideLow = 0.0f;
-        impl_->orbitNotchX1 = {}; impl_->orbitNotchX2 = {};
-        impl_->orbitNotchY1 = {}; impl_->orbitNotchY2 = {};
-        impl_->orbitNotchHz = 5800.0f; impl_->orbitNotchDepth = 0.10f;
+        for (auto& state : impl_->orbitNotch) state.reset();
     }
     impl_->result.store(impl_->prepared ? ImmersiveProcessResult::Disabled : ImmersiveProcessResult::NotPrepared);
 }
@@ -388,9 +379,7 @@ void ImmersiveAudioEngine::setOrbitEnabled(bool enabled) noexcept {
         impl_->orbitElevationDeg = spatial::clampElevation(std::asin(std::clamp(offset.z / radius, -1.0f, 1.0f)) * 57.29577951308232f);
         impl_->orbitPhaseRad = 0.0f;
         impl_->orbitLow = impl_->orbitSideLow = 0.0f;
-        impl_->orbitNotchX1 = {}; impl_->orbitNotchX2 = {};
-        impl_->orbitNotchY1 = {}; impl_->orbitNotchY2 = {};
-        impl_->orbitNotchHz = 5800.0f; impl_->orbitNotchDepth = 0.10f;
+        for (auto& state : impl_->orbitNotch) state.reset();
         impl_->orbitEnabled = true;
         impl_->reloadOrbitPosition();
     } else {
