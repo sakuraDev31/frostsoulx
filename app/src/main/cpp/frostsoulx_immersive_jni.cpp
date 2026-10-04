@@ -440,6 +440,25 @@ Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetEnabled(
     }
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetCustomIr(JNIEnv* env, jclass, jlong address, jfloatArray leftArray, jfloatArray rightArray) {
+    auto* handle = reinterpret_cast<Handle*>(address);
+    if (!handle || !leftArray || !rightArray) return JNI_FALSE;
+    const jsize leftSize = env->GetArrayLength(leftArray), rightSize = env->GetArrayLength(rightArray);
+    if (leftSize <= 0 || leftSize != rightSize || leftSize > 32768) return JNI_FALSE;
+    jfloat* left = env->GetFloatArrayElements(leftArray, nullptr);
+    if (!left) return JNI_FALSE;
+    jfloat* right = env->GetFloatArrayElements(rightArray, nullptr);
+    if (!right) { env->ReleaseFloatArrayElements(leftArray, left, JNI_ABORT); return JNI_FALSE; }
+    const bool loaded = handle->engine.setCustomImpulseResponse(left, right, static_cast<std::size_t>(leftSize));
+    env->ReleaseFloatArrayElements(leftArray, left, JNI_ABORT);
+    env->ReleaseFloatArrayElements(rightArray, right, JNI_ABORT);
+    return loaded ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeClearCustomIr(JNIEnv*, jclass, jlong address) {
+    if (auto* handle = reinterpret_cast<Handle*>(address)) handle->engine.clearCustomImpulseResponse();
+}
 extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetSpatialBlend(
     JNIEnv*, jclass, jlong address, jfloat blend) {

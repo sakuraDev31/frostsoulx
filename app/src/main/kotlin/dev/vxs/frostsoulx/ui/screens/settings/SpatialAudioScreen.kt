@@ -1,7 +1,10 @@
 package dev.vxs.frostsoulx.ui.screens.settings
 
 import android.content.Intent
+import android.net.Uri
 import android.os.SystemClock
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +65,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.navigation.NavController
 import dev.vxs.frostsoulx.LocalPlayerAwareWindowInsets
+import dev.vxs.frostsoulx.constants.ConvolverActiveIrPresetKey
+import dev.vxs.frostsoulx.constants.ConvolverIrPresetsKey
 import dev.vxs.frostsoulx.constants.SpatialAzimuthKey
 import dev.vxs.frostsoulx.constants.SpatialBassWidthKey
 import dev.vxs.frostsoulx.constants.SpatialDistanceKey
@@ -84,6 +89,7 @@ import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
 import dev.vxs.frostsoulx.playback.ImmersiveAudioDiagnostics
 import dev.vxs.frostsoulx.playback.ImmersiveAudioPreset
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
+import dev.vxs.frostsoulx.playback.WavImpulseResponse
 import dev.vxs.frostsoulx.playback.ImmersiveControls
 import dev.vxs.frostsoulx.playback.ImmersiveDiagnosticCapture
 import dev.vxs.frostsoulx.playback.ImmersiveDiagnosticSample
@@ -93,6 +99,11 @@ import dev.vxs.frostsoulx.playback.defaultDeviceDescription
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.utils.dataStore
 import java.util.Locale
+import java.io.File
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.cos
@@ -110,6 +121,40 @@ fun SpatialAudioScreen(navController: NavController) {
     var presetMenu by remember { mutableStateOf(false) }
     var showSave by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
+    var showIrSave by remember { mutableStateOf(false) }
+    var irName by remember { mutableStateOf("") }
+    var pendingIr by remember { mutableStateOf<WavImpulseResponse?>(null) }
+    var pendingIrBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var irError by remember { mutableStateOf<String?>(null) }
+    var renameIrId by remember { mutableStateOf<String?>(null) }
+    var renameIrName by remember { mutableStateOf("") }
+    val irPresets = remember(preferences) {
+        runCatching {
+            val array=JSONArray(preferences?.get(ConvolverIrPresetsKey) ?: "[]")
+            buildList { for(i in 0 until array.length()) array.optJSONObject(i)?.let { obj ->
+                val id=obj.optString("id");val name=obj.optString("name").trim();val file=obj.optString("file")
+                if(id.isNotBlank()&&name.isNotBlank()&&file.isNotBlank()) add(Triple(id,name,file))
+            } }
+        }.getOrDefault(emptyList())
+    }
+    val activeIrId=preferences?.get(ConvolverActiveIrPresetKey).orEmpty()
+    val irPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri:Uri? ->
+        if(uri!=null) scope.launch { runCatching {
+            val bytes=withContext(Dispatchers.IO){context.contentResolver.openInputStream(uri)?.use{it.readBytes()} ?: error("Could not read selected file")}
+            val decoded=withContext(Dispatchers.Default){WavImpulseResponse.decode(bytes)}
+            pendingIrBytes=bytes;pendingIr=decoded
+            irName=runCatching{context.contentResolver.query(uri,arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),null,null,null)?.use{if(it.moveToFirst())it.getString(0)?.substringBeforeLast('.') else null}}.getOrNull().orEmpty().ifBlank{"Custom IR"}.take(64)
+            irError=null;showIrSave=true
+        }.onFailure{irError=it.message ?: "Could not import this WAV"} }
+    }
+    LaunchedEffect(activeIrId,irPresets){
+        val selected=irPresets.firstOrNull{it.first==activeIrId}
+        if(selected==null){if(activeIrId.isBlank())ImmersiveAudioRuntime.setCustomIr(null)}
+        else runCatching{
+            val bytes=withContext(Dispatchers.IO){File(File(context.filesDir,"convolver-ir"),selected.third).readBytes()}
+            ImmersiveAudioRuntime.setCustomIr(withContext(Dispatchers.Default){WavImpulseResponse.decode(bytes)})
+        }.onFailure{irError=it.message ?: "Could not load saved IR"}
+    }
     var showDetails by remember { mutableStateOf(false) }
     var capturing by remember { mutableStateOf(false) }
     var captureProgress by remember { mutableStateOf(0f) }
@@ -192,6 +237,22 @@ fun SpatialAudioScreen(navController: NavController) {
                             modifier = Modifier.semantics { contentDescription = "Enable spatial audio" })
                     }
                     androidx.compose.material3.HorizontalDivider(color = colors.outline.copy(alpha = 0.35f))
+                    Card(colors = CardDefaults.cardColors(containerColor = colors.surface.copy(alpha = 0.72f))) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Convolver IR", style = MaterialTheme.typography.titleMedium)
+                            Text(irPresets.firstOrNull { it.first == activeIrId }?.second ?: "Generated room response", color = colors.onSurfaceMuted)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { irError=null; irPicker.launch(arrayOf("audio/wav","audio/x-wav","audio/*")) }, enabled = !capturing) { Text("Import WAV") }
+                                OutlinedButton(onClick = { ImmersiveAudioRuntime.setCustomIr(null); scope.launch { context.dataStore.edit { it.remove(ConvolverActiveIrPresetKey) } } }, enabled = !capturing && activeIrId.isNotBlank()) { Text("Use room IR") }
+                            }
+                            irPresets.forEach { preset -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = { scope.launch { context.dataStore.edit { it[ConvolverActiveIrPresetKey]=preset.first } } }, modifier = Modifier.weight(1f)) { Text((if(preset.first==activeIrId)"✓ " else "")+preset.second,maxLines=1) }
+                                TextButton(onClick = { renameIrId=preset.first;renameIrName=preset.second }) { Text("Rename") }
+                            } }
+                            irError?.let { Text(it,color=MaterialTheme.colorScheme.error,fontSize=12.sp) }
+                            Text("Mono/stereo WAV · PCM 16/24/32-bit or float32 · max 32,768 taps",color=colors.onSurfaceMuted,fontSize=11.sp)
+                        }
+                    }
                     Column(Modifier.alpha(mutedAlpha), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text("Sound space", color = colors.onSurfaceMuted, style = MaterialTheme.typography.titleSmall)
                         val chipLabels = listOf("Off", "Tunnel", "Studio", "Hall")
@@ -312,6 +373,35 @@ fun SpatialAudioScreen(navController: NavController) {
         }
     }
     if (helpText != null) AlertDialog(onDismissRequest = { helpText = null }, title = { Text("Control help") }, text = { Text(helpText.orEmpty()) }, confirmButton = { TextButton(onClick = { helpText = null }) { Text("Got it") } })
+    if(showIrSave) AlertDialog(
+        onDismissRequest={showIrSave=false;pendingIr=null;pendingIrBytes=null},title={Text("Save impulse response")},
+        text={OutlinedTextField(value=irName,onValueChange={irName=it.take(64)},label={Text("Preset name")},singleLine=true)},
+        confirmButton={TextButton(enabled=irName.isNotBlank()&&pendingIr!=null&&pendingIrBytes!=null&&irPresets.size<32,onClick={
+            val decoded=pendingIr ?: return@TextButton;val bytes=pendingIrBytes ?: return@TextButton
+            val id=java.util.UUID.randomUUID().toString();val filename="$id.wav"
+            scope.launch{runCatching{
+                withContext(Dispatchers.IO){File(File(context.filesDir,"convolver-ir").apply{mkdirs()},filename).writeBytes(bytes)}
+                val next=irPresets.map{(a,b,c)->JSONObject().put("id",a).put("name",b).put("file",c)}.toMutableList()
+                next.add(JSONObject().put("id",id).put("name",irName.trim()).put("file",filename))
+                context.dataStore.edit{it[ConvolverIrPresetsKey]=JSONArray().apply{next.takeLast(32).forEach{put(it)}}.toString();it[ConvolverActiveIrPresetKey]=id}
+                ImmersiveAudioRuntime.setCustomIr(decoded);showIrSave=false;pendingIr=null;pendingIrBytes=null
+            }.onFailure{irError=it.message ?: "Could not save IR preset"}}
+        }){Text("Save & load")}},
+        dismissButton={TextButton(onClick={showIrSave=false;pendingIr=null;pendingIrBytes=null}){Text("Cancel")}}
+    )
+    if(renameIrId!=null) AlertDialog(
+        onDismissRequest={renameIrId=null},title={Text("Rename IR preset")},
+        text={OutlinedTextField(value=renameIrName,onValueChange={renameIrName=it.take(64)},label={Text("Preset name")},singleLine=true)},
+        confirmButton={TextButton(enabled=renameIrName.isNotBlank(),onClick={
+            val target=renameIrId ?: return@TextButton
+            scope.launch{
+                val next=irPresets.map{(id,name,file)->JSONObject().put("id",id).put("name",if(id==target)renameIrName.trim() else name).put("file",file)}
+                context.dataStore.edit{it[ConvolverIrPresetsKey]=JSONArray().apply{next.forEach{put(it)}}.toString()}
+                renameIrId=null
+            }
+        }){Text("Save name")}},
+        dismissButton={TextButton(onClick={renameIrId=null}){Text("Cancel")}}
+    )
     if (showSave) AlertDialog(onDismissRequest = { showSave = false }, title = { Text("Save listening space") },
         text = { OutlinedTextField(value = presetName, onValueChange = { presetName = it.take(64) }, label = { Text("Preset name") }, singleLine = true) },
         confirmButton = { TextButton(enabled = presetName.isNotBlank(), onClick = {

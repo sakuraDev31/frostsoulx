@@ -50,6 +50,8 @@ public:
     void reset() noexcept;
     void setEnabled(bool enabled) noexcept;
     void setSpatialBlend(float blend) noexcept;
+    bool setCustomImpulseResponse(const float* left, const float* right, std::size_t taps) noexcept;
+    void clearCustomImpulseResponse() noexcept;
 
     // One control producer may update parameters concurrently with process().
     // Geometry/IR generation allocates and performs FFTs on that control thread.

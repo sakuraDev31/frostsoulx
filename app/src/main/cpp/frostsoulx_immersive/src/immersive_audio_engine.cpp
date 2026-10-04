@@ -26,6 +26,8 @@ struct ImmersiveAudioEngine::Impl {
     RoomSimulationPreset room = RoomSimulationPreset::Studio;
     float roomMix = 0.18f, reflections = 0.28f, reverbTime = 1.35f, density = 0.5f;
     std::size_t irLength = 16384;
+    bool customIrActive = false;
+    std::vector<float> customIrLeft, customIrRight, customIrZero;
     spatial::SpaceProfile space = spatial::SpaceProfile::createLivingRoom();
     spatial::HrtfDatabase hrtf;
     spatial::RirGenerator generator;
@@ -83,6 +85,10 @@ struct ImmersiveAudioEngine::Impl {
     bool reload() noexcept {
         if (!prepared) return true;
         try {
+            if (customIrActive && !customIrLeft.empty() && customIrLeft.size() == customIrRight.size()) {
+                const float* matrix[4] = {customIrLeft.data(), customIrZero.data(), customIrZero.data(), customIrRight.data()};
+                return convolution.loadMatrix(matrix, customIrLeft.size());
+            }
             spatial::RirGeneratorConfig cfg;
             cfg.sampleRate = rate;
             cfg.maxTaps = irLength;
@@ -284,6 +290,31 @@ void ImmersiveAudioEngine::reset() noexcept {
 }
 void ImmersiveAudioEngine::setEnabled(bool enabled) noexcept { impl_->enabled.store(enabled); }
 void ImmersiveAudioEngine::setSpatialBlend(float blend) noexcept { impl_->blend.store(unit(blend)); }
+bool ImmersiveAudioEngine::setCustomImpulseResponse(const float* left, const float* right, std::size_t taps) noexcept {
+    if (!impl_->prepared || !left || !right || taps == 0 || taps > 32768) return false;
+    try {
+        std::vector<float> nextLeft(taps), nextRight(taps), zero(taps, 0.0f);
+        float peak = 0.0f;
+        for (std::size_t i = 0; i < taps; ++i) {
+            if (!std::isfinite(left[i]) || !std::isfinite(right[i])) return false;
+            nextLeft[i] = left[i]; nextRight[i] = right[i];
+            peak = std::max(peak, std::max(std::fabs(left[i]), std::fabs(right[i])));
+        }
+        const float gain = peak > 1.0f ? 1.0f / peak : 1.0f;
+        for (float& value : nextLeft) value *= gain;
+        for (float& value : nextRight) value *= gain;
+        const float* matrix[4] = {nextLeft.data(), zero.data(), zero.data(), nextRight.data()};
+        if (!impl_->convolution.loadMatrix(matrix, taps)) return false;
+        impl_->customIrLeft = std::move(nextLeft); impl_->customIrRight = std::move(nextRight);
+        impl_->customIrZero = std::move(zero); impl_->customIrActive = true;
+        return true;
+    } catch (...) { return false; }
+}
+void ImmersiveAudioEngine::clearCustomImpulseResponse() noexcept {
+    impl_->customIrActive = false;
+    impl_->customIrLeft.clear(); impl_->customIrRight.clear(); impl_->customIrZero.clear();
+    impl_->reload();
+}
 void ImmersiveAudioEngine::setBassGain(float gain) noexcept { impl_->bassGain.store(std::clamp(finite(gain), 0.0f, 2.0f)); }
 void ImmersiveAudioEngine::setBassWidth(float width) noexcept { impl_->bassWidth.store(std::clamp(finite(width), 0.0f, 2.0f)); }
 void ImmersiveAudioEngine::setHighBandWidth(float width) noexcept { impl_->highWidth.store(std::clamp(finite(width), 0.0f, 2.0f)); }

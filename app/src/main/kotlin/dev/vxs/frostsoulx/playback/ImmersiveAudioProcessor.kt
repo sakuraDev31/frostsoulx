@@ -422,6 +422,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
     @Volatile private var desired = ImmersiveControls()
     private var applied: ImmersiveControls? = null
     @Volatile private var diagnostics = ImmersiveAudioDiagnostics()
+    @Volatile private var desiredCustomIr: WavImpulseResponse? = null
     private val updatePending = AtomicBoolean(false)
 
     fun updateControls(value: ImmersiveControls) {
@@ -435,6 +436,18 @@ class ImmersiveAudioProcessor : AudioProcessor {
         }, 40, TimeUnit.MILLISECONDS)
     }
 
+    fun updateCustomIr(value: WavImpulseResponse?) {
+        desiredCustomIr = value
+        CONTROL_EXECUTOR.execute { synchronized(controlLock) { if (nativeHandle != 0L) applyCustomIrLocked() } }
+    }
+    private fun applyCustomIrLocked(targetRate: Int = format.sampleRate) {
+        val h = nativeHandle
+        if (h == 0L) return
+        val source = desiredCustomIr
+        if (source == null) { nativeClearCustomIr(h); return }
+        val (left, right) = source.resampled(targetRate.takeIf { it > 0 } ?: source.sampleRate, 32768)
+        nativeSetCustomIr(h, left, right)
+    }
     private fun applyControls(c: ImmersiveControls) {
         val h = nativeHandle
         val old = applied
@@ -474,6 +487,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
                 nativeHandle = nativeCreate(inputAudioFormat.sampleRate, inputAudioFormat.encoding)
                 if (nativeHandle != 0L) {
                     applyControls(desired)
+                    applyCustomIrLocked(inputAudioFormat.sampleRate)
                     algorithmicLatency = ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle)).algorithmicLatencySamples
                 }
             }
@@ -567,6 +581,8 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeSetEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetBassGainDb(handle: Long, gainDb: Float)
         @JvmStatic private external fun nativeSetOutputGainDb(handle: Long, gainDb: Float)
+        @JvmStatic private external fun nativeSetCustomIr(handle: Long, left: FloatArray, right: FloatArray): Boolean
+        @JvmStatic private external fun nativeClearCustomIr(handle: Long)
         @JvmStatic private external fun nativeSetSpatialBlend(handle: Long, blend: Float)
         @JvmStatic private external fun nativeSetRoomPreset(handle: Long, preset: Int)
         @JvmStatic private external fun nativeSetRoomMix(handle: Long, wetMix: Float)
@@ -589,6 +605,7 @@ object ImmersiveAudioRuntime {
     @Volatile private var processor: ImmersiveAudioProcessor? = null
     @Volatile private var transitionHandler: ((Boolean) -> Unit)? = null
     @Volatile private var controls = ImmersiveControls()
+    @Volatile private var customIr: WavImpulseResponse? = null
     @Volatile private var b1Meter: ImmersiveStageMeter? = null
     @Volatile private var b2Meter: ImmersiveStageMeter? = null
     @Volatile private var b3Meter: ImmersiveStageMeter? = null
@@ -597,7 +614,7 @@ object ImmersiveAudioRuntime {
     fun attachStageMeters(b1: ImmersiveStageMeter, b2: ImmersiveStageMeter, b3: ImmersiveStageMeter, b5: ImmersiveStageMeter) {
         b1Meter = b1; b2Meter = b2; b3Meter = b3; b5Meter = b5
     }
-    fun attach(value: ImmersiveAudioProcessor) { processor = value; value.updateControls(controls) }
+    fun attach(value: ImmersiveAudioProcessor) { processor = value; value.updateControls(controls); value.updateCustomIr(customIr) }
     fun detachProcessor() { processor = null }
     fun detach() { processor = null; transitionHandler = null; b1Meter = null; b2Meter = null; b3Meter = null; b5Meter = null }
     fun setTransitionHandler(handler: ((Boolean) -> Unit)?) { transitionHandler = handler }
@@ -607,6 +624,7 @@ object ImmersiveAudioRuntime {
         processor?.updateControls(controls)
         if (oldEnabled != controls.enabled) transitionHandler?.invoke(controls.enabled)
     }
+    @Synchronized fun setCustomIr(value: WavImpulseResponse?) { customIr = value; processor?.updateCustomIr(value) }
     @Synchronized private fun change(update: (ImmersiveControls) -> ImmersiveControls) = applyControls(update(controls))
     fun currentControls(): ImmersiveControls = controls
     fun setEnabled(value: Boolean) = change { it.copy(enabled = value) }
