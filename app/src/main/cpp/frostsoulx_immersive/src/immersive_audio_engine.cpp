@@ -40,6 +40,11 @@ struct ImmersiveAudioEngine::Impl {
     std::size_t dryWrite = 0, fill = 0;
     float blendCurrent = 1.0f;
     float normalizationGain = 1.0f;
+    // Slow wet-vs-dry power matching offsets conservative IR normalization without
+    // applying a fixed boost to every track. Updated only on the render thread.
+    double dryPowerAverage = 0.0;
+    double wetPowerAverage = 0.0;
+    float spatialMakeupGain = 1.0f;
 
     // Orbit geometry/BRIR preparation stays on the control thread. The
     // automatic 8D layer is allocation-free: independent per-ear level/delay
@@ -153,6 +158,50 @@ struct ImmersiveAudioEngine::Impl {
         float* out[2] = {wet[0].data(), wet[1].data()};
         convolution.processBlock(in, out);
         const float target = blend.load(std::memory_order_relaxed);
+
+        // The BRIR matrix is deliberately normalized conservatively to keep the
+        // convolution bounded. That can make the wet path quieter than the
+        // delay-matched dry reference. Estimate both powers over the current
+        // block, smooth the estimate, and compensate the wet path only. A 6 dB
+        // ceiling plus the downstream true-peak safety stage prevents an
+        // unconditional gain boost from reintroducing clipping. Quiet/silent
+        // passages are gated so the matcher does not amplify IR tails/noise.
+        double dryPower = 0.0;
+        double wetPower = 0.0;
+        const std::size_t ringFrames = static_cast<std::size_t>(dryDelay);
+        for (std::size_t n = 0; n < kBlock; ++n) {
+            const std::size_t ringFrame = (dryWrite + n) % ringFrames;
+            const std::size_t pos = 2 * ringFrame;
+            for (std::size_t c = 0; c < 2; ++c) {
+                const double dry = dryRing[pos + c];
+                const double wetSample = wet[c][n];
+                dryPower += dry * dry;
+                wetPower += wetSample * wetSample;
+            }
+        }
+        const double powerDivisor = static_cast<double>(2 * kBlock);
+        dryPower /= powerDivisor;
+        wetPower /= powerDivisor;
+        const double meterAlpha = 1.0 - std::exp(
+            -static_cast<double>(kBlock) / (0.75 * static_cast<double>(rate)));
+        dryPowerAverage += meterAlpha * (dryPower - dryPowerAverage);
+        wetPowerAverage += meterAlpha * (wetPower - wetPowerAverage);
+
+        float makeupTarget = 1.0f;
+        constexpr double kDryGatePower = 0.003 * 0.003; // about -50 dBFS RMS
+        constexpr double kWetGatePower = 0.001 * 0.001; // about -60 dBFS RMS
+        constexpr float kMaxSpatialMakeup = 1.9952623f; // +6 dB
+        if (target > 0.10f && dryPowerAverage > kDryGatePower &&
+            wetPowerAverage > kWetGatePower) {
+            const double ratio = std::sqrt(dryPowerAverage / wetPowerAverage);
+            makeupTarget = static_cast<float>(std::clamp(
+                ratio, 1.0, static_cast<double>(kMaxSpatialMakeup)));
+        }
+        const float makeupTimeSeconds = makeupTarget > spatialMakeupGain ? 0.35f : 1.0f;
+        const float makeupAlpha = 1.0f - std::exp(
+            -static_cast<float>(kBlock) / (makeupTimeSeconds * static_cast<float>(rate)));
+        spatialMakeupGain += makeupAlpha * (makeupTarget - spatialMakeupGain);
+
         const float step = (target - blendCurrent) / static_cast<float>(kBlock);
         for (std::size_t n = 0; n < kBlock; ++n) {
             const float b = blendCurrent + step * static_cast<float>(n);
@@ -164,7 +213,8 @@ struct ImmersiveAudioEngine::Impl {
                 bassRing[pos] = bassInput[c][n];
                 // Convex, delay-matched blend. Equal power is WRONG for
                 // correlated dry/wet and gave a +3 dB boost at half intensity.
-                output[c][n] = dry + b * (wet[c][n] - dry);
+                const float compensatedWet = wet[c][n] * spatialMakeupGain;
+                output[c][n] = dry + b * (compensatedWet - dry);
             }
             dryWrite = (dryWrite + 1) % static_cast<std::size_t>(dryDelay);
         }
@@ -313,6 +363,9 @@ void ImmersiveAudioEngine::reset() noexcept {
         std::fill(impl_->bassRing.begin(), impl_->bassRing.end(), 0.0f);
         impl_->dryWrite = impl_->fill = 0;
         impl_->blendCurrent = impl_->blend.load();
+        impl_->dryPowerAverage = 0.0;
+        impl_->wetPowerAverage = 0.0;
+        impl_->spatialMakeupGain = 1.0f;
         impl_->orbitLow = impl_->orbitSideLow = 0.0f;
         impl_->orbitNotchX1 = {}; impl_->orbitNotchX2 = {};
         impl_->orbitNotchY1 = {}; impl_->orbitNotchY2 = {};
