@@ -141,11 +141,19 @@ internal fun FrostSoulHomeFeed(
     val communityPlaylists = remember(uiState.homePage, uiState.accountPlaylists) {
         val fromOnline = uiState.homePage?.sections.orEmpty()
             .filter { section ->
-                section.title.contains("playlist", ignoreCase = true) ||
-                    section.title.contains("community", ignoreCase = true) ||
-                    section.title.contains("mix", ignoreCase = true) ||
-                    section.title.contains("chart", ignoreCase = true) ||
-                    section.items.any { it is PlaylistItem }
+                val title = section.title
+                val isFeatured = title.contains("featured", ignoreCase = true) ||
+                    title.contains("for you", ignoreCase = true) ||
+                    title.contains("recommend", ignoreCase = true) ||
+                    title.contains("made for you", ignoreCase = true)
+                !isFeatured && (
+                    title.contains("playlist", ignoreCase = true) ||
+                        title.contains("community", ignoreCase = true) ||
+                        title.contains("mix", ignoreCase = true) ||
+                        title.contains("chart", ignoreCase = true) ||
+                        title.contains("trending", ignoreCase = true) ||
+                        section.items.any { it is PlaylistItem }
+                )
             }
             .flatMap { it.items }
             .filterIsInstance<PlaylistItem>()
