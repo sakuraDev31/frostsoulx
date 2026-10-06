@@ -391,7 +391,7 @@ internal fun FrostSoulHomeFeed(
                     FSSectionHeader(
                         title = "Trending community playlists",
                         actionLabel = "See all ›",
-                        onAction = { navController.navigate("browse") },
+                        onAction = { navController.navigate("home_playlist_collection/community") },
                     )
                 }
                 item(key = "frostsoul_community_playlists_shelf") {
@@ -491,7 +491,7 @@ internal fun FrostSoulHomeFeed(
                     FSSectionHeader(
                         title = "Featured playlists for you",
                         actionLabel = "See all ›",
-                        onAction = { navController.navigate("browse") },
+                        onAction = { navController.navigate("home_playlist_collection/featured") },
                     )
                 }
                 item(key = "frostsoul_featured_playlists_shelf") {

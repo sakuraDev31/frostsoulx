@@ -135,6 +135,16 @@ fun NavGraphBuilder.navigationBuilder(
             viewModel = homeViewModel,
         )
     }
+    composable(
+        route = "home_playlist_collection/{kind}",
+        arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+    ) { backStackEntry ->
+        HomePlaylistCollectionScreen(
+            navController = navController,
+            kind = backStackEntry.arguments?.getString("kind").orEmpty(),
+            viewModel = homeViewModel,
+        )
+    }
     composable("stats") {
         StatsScreen(navController)
     }

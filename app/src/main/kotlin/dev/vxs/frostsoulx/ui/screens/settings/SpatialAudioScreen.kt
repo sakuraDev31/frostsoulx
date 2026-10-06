@@ -233,10 +233,10 @@ fun SpatialAudioScreen(navController: NavController) {
         Column(Modifier.fillMaxSize().padding(padding)
             .padding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Bottom).asPaddingValues())
             .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when (screenMode) {
                 "simple" -> {
-                    SpatialCard("Your listening space", "Headphones recommended for binaural sound") {
+                    SpatialCard("Listening space", "Headphones recommended") {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(if (controls.enabled) "Spatial audio is on" else "Original stereo", style = MaterialTheme.typography.titleMedium)
@@ -251,7 +251,7 @@ fun SpatialAudioScreen(navController: NavController) {
                             Button(onClick = { showSave = true }, enabled = preferences != null && !capturing && savedPresets.size < 32, modifier = Modifier.weight(1f)) { Text("Save setup") }
                         }
                     }
-                    SpatialCard("3D orbit · 8D motion", "A slow circle around your head, with height cues") {
+                    SpatialCard("3D orbit · 8D motion", "Slow movement with spatial cues") {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(if (controls.orbitEnabled) "Orbit on · 11 s per circle" else "Orbit off · fixed position", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                             Switch(checked = controls.orbitEnabled, enabled = preferences != null && !capturing,
@@ -260,7 +260,7 @@ fun SpatialAudioScreen(navController: NavController) {
                         }
                         Text("Works with no room, any room, or a custom response. Bass does not orbit. The spatial audio switch is the master bypass.", color = colors.onSurfaceMuted, fontSize = 12.sp)
                     }
-                    SpatialCard("Room ambience", "Choose the space, then adjust how much you hear") {
+                    SpatialCard("Room ambience", "Choose a room and mix level") {
                         var roomMenu by remember { mutableStateOf(false) }
                         Box {
                             OutlinedButton(onClick = { roomMenu = true }, enabled = preferences != null && !capturing, modifier = Modifier.fillMaxWidth()) {
@@ -309,7 +309,7 @@ fun SpatialAudioScreen(navController: NavController) {
                         }
                         irError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                     }
-                    SpatialCard("Stereo bass & balance", "Bass is split at 180 Hz and kept out of all room responses") {
+                    SpatialCard("Stereo bass & balance", "Bass stays outside room effects") {
                         AdvancedSlider("Bass level", controls.bassGainDb, -12f..6f, "${fmt(controls.bassGainDb, 1)} dB", "0 dB = unchanged", !capturing && controls.enabled, { helpText = "Adjusts only the stereo low band. Bass bypasses room echoes, custom IRs and orbit; safety limiting still protects the final output." }) { update(controls.copy(bassGainDb = it)) }
                         AdvancedSlider("Stereo width", controls.stereoWidth, 0f..1f, "${fmt(controls.stereoWidth * 2)}×", "1× = original width above the bass band", !capturing && controls.enabled, { helpText = "Narrows or widens the upper stereo band. Bass width is separate in fine tuning." }) { update(controls.copy(stereoWidth = it)) }
                     }
@@ -469,8 +469,8 @@ fun SpatialAudioScreen(navController: NavController) {
 @Composable
 private fun SpatialCard(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = FrostSoulTheme.colors.surface.copy(alpha = 0.72f))) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FrostSoulTheme.colors.onSurfaceMuted)
             content()
         }
