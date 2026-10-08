@@ -332,8 +332,10 @@ void applyPhysicalPreset(Handle& handle, int preset) noexcept {
             handle.engine.setSpacePreset(Preset::Stadium);
             break;
         case 13:
-            handle.engine.setSpatialMode(frostsoulx::SpatialMode::SparseImmersive);
+            // Select the room geometry first; sparse mode intentionally
+            // overrides the acoustic tail/IR settings without changing it.
             handle.engine.setSpacePreset(Preset::LivingRoom);
+            handle.engine.setSpatialMode(frostsoulx::SpatialMode::SparseImmersive);
             handle.engine.setSpatialBlend(1.0f);
             handle.engine.setRoomMix(1.0f);
             handle.engine.setReflectionAmount(0.20f);
