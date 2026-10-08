@@ -1052,6 +1052,46 @@ void testOrbitLowSampleRateStability() {
     engine.setOrbitEnabled(false);
 }
 
+void testSparseImmersiveMode() {
+    frostsoulx::ImmersiveAudioEngine engine;
+    check(engine.prepare(kSR, kN), "prepare() for sparse immersive mode");
+    engine.setSpatialMode(frostsoulx::SpatialMode::SparseImmersive);
+    engine.setSpatialBlend(1.0f);
+    engine.setEnabled(true);
+
+    const auto& matrix = engine.activeTransferMatrix();
+    double rowEnergy[2] = {0.0, 0.0};
+    for (int ear = 0; ear < 2; ++ear) {
+        for (const auto& source : matrix) {
+            const auto& taps = ear == 0 ? source.left : source.right;
+            for (float x : taps) rowEnergy[ear] += static_cast<double>(x) * x;
+        }
+    }
+    check(rowEnergy[0] > 1.0e-8 && rowEnergy[1] > 1.0e-8,
+          "sparse mode keeps both complete transfer rows active");
+    check(engine.matrixNormalizationGain() > 0.0f,
+          "sparse mode transfer matrix is normalized");
+
+    double total = 0.0;
+    double peak = 0.0;
+    for (int b = 0; b < 12; ++b) {
+        std::vector<float> buf(static_cast<std::size_t>(kN) * 2, 0.0f);
+        for (int i = 0; i < kN; ++i) {
+            const float t = static_cast<float>(b * kN + i);
+            const float l = 0.35f * std::sin(t * 0.021f);
+            const float r = 0.35f * std::sin(t * 0.021f + 0.37f);
+            buf[static_cast<std::size_t>(i) * 2] = l;
+            buf[static_cast<std::size_t>(i) * 2 + 1] = r;
+        }
+        check(engine.process(buf.data(), kN), "sparse mode processes stereo audio");
+        sane(buf, 0.99f, "sparse immersive output");
+        total += energy(buf, 0) + energy(buf, 1);
+        peak = std::max(peak, peakOf(buf));
+    }
+    check(total > 1.0e-3, "sparse mode does not collapse to silence");
+    check(peak <= 0.981, "sparse mode remains below the safety ceiling");
+}
+
 // ---------------------------------------------------------------------------
 // End-to-end: the chain must be a real runtime path, not just linked classes
 // ---------------------------------------------------------------------------
@@ -1180,6 +1220,7 @@ void testEndToEndChain() {
 int main() {
     static_assert(frostsoulx::ImmersiveAudioEngine::kPreferredQuantumFrames == 384);
     static_assert(static_cast<int>(frostsoulx::RoomSimulationPreset::Subway) == 5);
+    static_assert(static_cast<int>(frostsoulx::SpatialMode::SparseImmersive) == 1);
 
     testPrepareAndParameters();     // A
     testUnifiedPreparation();         // B
@@ -1195,6 +1236,7 @@ int main() {
     testOrbitPreservesStereo();     // O
     testOrbitVerticalArcEnvelope(); // P
     testOrbitLowSampleRateStability(); // Q
+    testSparseImmersiveMode();          // R
     testEndToEndChain();            // full runtime chain
 
     if (g_failures != 0) {

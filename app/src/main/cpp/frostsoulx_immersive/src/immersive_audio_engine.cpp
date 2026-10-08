@@ -24,6 +24,7 @@ struct ImmersiveAudioEngine::Impl {
     std::atomic<ImmersiveProcessResult> result{ImmersiveProcessResult::NotPrepared};
     SpaceDesignControls controls{};
     RoomSimulationPreset room = RoomSimulationPreset::Studio;
+    SpatialMode spatialMode = SpatialMode::PhysicalRoom;
     float roomMix = 0.18f, reflections = 0.28f, reverbTime = 1.35f, density = 0.5f;
     std::size_t irLength = 16384;
     bool customIrActive = false;
@@ -100,18 +101,22 @@ struct ImmersiveAudioEngine::Impl {
             }
             spatial::RirGeneratorConfig cfg;
             cfg.sampleRate = rate;
-            cfg.maxTaps = irLength;
-            cfg.maxIsmOrder = room == RoomSimulationPreset::Off ? 0 : 2;
-            cfg.enableDiffuseTail = room != RoomSimulationPreset::Off;
-            cfg.diffuseEnergyRatio = density * roomMix;
-            cfg.reflectionGain = reflections * roomMix;
-            cfg.reverbTimeScale = reverbTime / 1.35f;
+            const bool sparse = spatialMode == SpatialMode::SparseImmersive;
+            cfg.maxTaps = sparse ? std::min<std::size_t>(irLength, 2048) : irLength;
+            cfg.maxIsmOrder = sparse ? 1 : (room == RoomSimulationPreset::Off ? 0 : 2);
+            cfg.enableDiffuseTail = sparse ? false : (room != RoomSimulationPreset::Off);
+            cfg.diffuseEnergyRatio = sparse ? 0.0f : density * roomMix;
+            cfg.reflectionGain = sparse ? 0.20f : reflections * roomMix;
+            cfg.reverbTimeScale = sparse ? 0.25f : reverbTime / 1.35f;
             cfg.alignDirectArrival = true;
             cfg.normalize = false; // Normalize the COMPLETE transfer matrix below.
             generator.setConfig(cfg);
             std::array<spatial::StereoBrir, 2> next;
             const auto centre = space.sourcePosition() - space.listenerPosition();
-            const float az = 30.0f * rt::kDegToRad;
+            // Four independent L->L, L->R, R->L, R->R paths are always loaded
+            // into MimoConvolver. Sparse mode keeps the two virtual source rays
+            // close to centre so ITD/ILD stays subtle instead of becoming panning.
+            const float az = (sparse ? 18.0f : 30.0f) * rt::kDegToRad;
             for (std::size_t i = 0; i < 2; ++i) {
                 const float angle = i == 0 ? az : -az;
                 const spatial::Vec3 ray{centre.x * std::cos(angle) - centre.y * std::sin(angle),
@@ -375,6 +380,19 @@ void ImmersiveAudioEngine::reset() noexcept {
 }
 void ImmersiveAudioEngine::setEnabled(bool enabled) noexcept { impl_->enabled.store(enabled); }
 void ImmersiveAudioEngine::setSpatialBlend(float blend) noexcept { impl_->blend.store(unit(blend)); }
+void ImmersiveAudioEngine::setSpatialMode(SpatialMode mode) noexcept {
+    impl_->spatialMode = mode;
+    if (mode == SpatialMode::SparseImmersive) {
+        impl_->irLength = std::min<std::size_t>(impl_->irLength, 2048);
+        impl_->roomMix = 1.0f;
+        impl_->reflections = 0.20f;
+        impl_->reverbTime = 0.25f;
+        impl_->density = 0.0f;
+    } else if (impl_->irLength < 4096) {
+        impl_->irLength = 16384;
+    }
+    impl_->reload();
+}
 bool ImmersiveAudioEngine::setCustomImpulseResponse(const float* left, const float* right, std::size_t taps) noexcept {
     const float* matrix[4] = {left, nullptr, nullptr, right};
     return left && right && setCustomTransferMatrix(matrix, taps);
@@ -428,6 +446,7 @@ int ImmersiveAudioEngine::latencySamples() const noexcept {
     return impl_->prepared ? static_cast<int>(Impl::kBlock) + impl_->dryDelay + dsp::TruePeakSafety::kLookahead : 0;
 }
 void ImmersiveAudioEngine::setRoomSimulationPreset(RoomSimulationPreset preset) noexcept {
+    impl_->spatialMode = SpatialMode::PhysicalRoom;
     impl_->room = preset;
     switch (preset) {
         case RoomSimulationPreset::Off: break;
@@ -485,6 +504,7 @@ bool ImmersiveAudioEngine::process(float* pcm, int frames) noexcept {
 }
 
 void ImmersiveAudioEngine::setSpacePreset(spatial::SpaceProfile::Preset preset) noexcept {
+    impl_->spatialMode = SpatialMode::PhysicalRoom;
     impl_->space = spatial::SpaceProfile::createPreset(preset);
     impl_->room = RoomSimulationPreset::Studio;
     impl_->irLength = preset == spatial::SpaceProfile::Preset::ClosedCar ? 8192 : 32768;

@@ -27,6 +27,11 @@ enum class RoomSimulationPreset {
     Subway,
 };
 
+enum class SpatialMode {
+    PhysicalRoom,
+    SparseImmersive, ///< Four-path sparse early-reflection convolution for a wider headphone image
+};
+
 // UI-friendly normalized controls in [0, 1].
 struct SpaceDesignControls {
     float roomSize = 0.5f;
@@ -50,6 +55,7 @@ public:
     void reset() noexcept;
     void setEnabled(bool enabled) noexcept;
     void setSpatialBlend(float blend) noexcept;
+    void setSpatialMode(SpatialMode mode) noexcept;
     bool setCustomImpulseResponse(const float* left, const float* right, std::size_t taps) noexcept;
     // Input-major order: L→L, L→R, R→L, R→R; null paths mean silence.
     bool setCustomTransferMatrix(const float* const paths[4], std::size_t taps) noexcept;

@@ -331,6 +331,14 @@ void applyPhysicalPreset(Handle& handle, int preset) noexcept {
         case 12:
             handle.engine.setSpacePreset(Preset::Stadium);
             break;
+        case 13:
+            handle.engine.setSpatialMode(frostsoulx::SpatialMode::SparseImmersive);
+            handle.engine.setSpacePreset(Preset::LivingRoom);
+            handle.engine.setSpatialBlend(1.0f);
+            handle.engine.setRoomMix(1.0f);
+            handle.engine.setReflectionAmount(0.20f);
+            handle.engine.setReverbTimeSeconds(0.25f);
+            break;
         case 0:
         default:
             handle.engine.setSpacePreset(Preset::Anechoic);
@@ -482,7 +490,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_vxs_frostsoulx_playback_ImmersiveAudioProcessor_nativeSetRoomPreset(
     JNIEnv*, jclass, jlong address, jint preset) {
     if (auto* handle = reinterpret_cast<Handle*>(address)) {
-        const int safePreset = std::clamp(static_cast<int>(preset), 0, 12);
+        const int safePreset = std::clamp(static_cast<int>(preset), 0, 13);
         applyPhysicalPreset(*handle, safePreset);
         if (handle->orbitEnabled) handle->engine.setOrbitPosition(handle->azimuth, handle->elevation, handle->distance);
         else applySourcePosition(*handle);
