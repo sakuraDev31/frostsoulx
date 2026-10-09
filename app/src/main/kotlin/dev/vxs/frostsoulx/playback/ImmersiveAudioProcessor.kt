@@ -55,22 +55,18 @@ class ImmersiveStageMeterAudioProcessor(private val stage: ImmersiveStageMeter) 
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        val readable = inputBuffer.duplicate().order(ByteOrder.nativeOrder())
-        val byteCount = inputBuffer.remaining()
-        if (outputBuffer.capacity() < byteCount) {
-            outputBuffer = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
-        } else {
-            outputBuffer.clear()
+        // Media3 drains processor output before reusing upstream buffers. A read-only view
+        // therefore preserves PCM byte-for-byte without four redundant direct-buffer copies.
+        outputBuffer = inputBuffer.slice().order(ByteOrder.nativeOrder())
+        inputBuffer.position(inputBuffer.limit())
+        if (ImmersiveAudioRuntime.diagnosticsRequested()) {
+            stage.observe(outputBuffer.duplicate().order(ByteOrder.nativeOrder()))
         }
-        outputBuffer.limit(byteCount)
-        outputBuffer.put(inputBuffer)
-        outputBuffer.flip()
-        stage.observe(readable)
     }
 
     override fun queueEndOfStream() { ended = true }
-    override fun getOutput(): ByteBuffer = outputBuffer
-    override fun isEnded(): Boolean = ended && !outputBuffer.hasRemaining()
+    override fun getOutput(): ByteBuffer = outputBuffer.also { outputBuffer = EMPTY_BUFFER }
+    override fun isEnded(): Boolean = ended && outputBuffer === EMPTY_BUFFER
     override fun flush() { outputBuffer = EMPTY_BUFFER; ended = false; stage.reset() }
     override fun reset() { flush(); format = AudioProcessor.AudioFormat.NOT_SET; stage.reset() }
 
@@ -107,38 +103,43 @@ class ImmersiveStageMeter {
         }
         if (channels != 2 || buffer.remaining() < bytesPerSample * 2) return
         val frameCount = buffer.remaining() / (bytesPerSample * 2)
+        var blockSquares = 0.0
+        var blockPeak = 0f
+        var blockTruePeak = 0f
+        var blockClipped = 0L
+        var blockNan = 0L
+        var blockInf = 0L
         repeat(frameCount) {
-            val left = readSample(buffer, bytesPerSample)
-            val right = readSample(buffer, bytesPerSample)
-            observeSample(left)
-            observeSample(right)
-            if (left.isFinite()) {
-                updateMax(truePeakBits, maxOf(kotlin.math.abs(left), kotlin.math.abs((previousL + left) * 0.5f)))
-                previousL = left
-            }
-            if (right.isFinite()) {
-                updateMax(truePeakBits, maxOf(kotlin.math.abs(right), kotlin.math.abs((previousR + right) * 0.5f)))
-                previousR = right
+            repeat(2) { channel ->
+                val value = readSample(buffer, bytesPerSample)
+                when {
+                    value.isNaN() -> blockNan++
+                    value.isInfinite() -> blockInf++
+                    else -> {
+                        val magnitude = kotlin.math.abs(value)
+                        blockSquares += value.toDouble() * value
+                        blockPeak = maxOf(blockPeak, magnitude)
+                        if (magnitude >= 1f) blockClipped++
+                        val previous = if (channel == 0) previousL else previousR
+                        blockTruePeak = maxOf(blockTruePeak, magnitude, kotlin.math.abs((previous + value) * 0.5f))
+                        if (channel == 0) previousL = value else previousR = value
+                    }
+                }
             }
         }
+        // Publish once per block, not with atomic operations on every sample.
+        sumSquares.add(blockSquares)
+        updateMax(peakBits, blockPeak)
+        updateMax(truePeakBits, blockTruePeak)
+        clipped.addAndGet(blockClipped)
+        nan.addAndGet(blockNan)
+        inf.addAndGet(blockInf)
         frames.addAndGet(frameCount.toLong())
     }
 
     private fun readSample(buffer: ByteBuffer, bytes: Int): Float = when (bytes) {
         4 -> buffer.float
         else -> buffer.short / 32768f
-    }
-
-    private fun observeSample(value: Float) {
-        when {
-            value.isNaN() -> nan.incrementAndGet()
-            value.isInfinite() -> inf.incrementAndGet()
-            else -> {
-                sumSquares.add(value.toDouble() * value.toDouble())
-                updateMax(peakBits, kotlin.math.abs(value))
-                if (kotlin.math.abs(value) >= 1f) clipped.incrementAndGet()
-            }
-        }
     }
 
     private fun updateMax(target: AtomicLong, value: Float) {
@@ -165,6 +166,7 @@ class ImmersiveStageMeter {
     fun reset() {
         sumSquares.reset(); peakBits.set(0L); truePeakBits.set(0L)
         clipped.set(0L); nan.set(0L); inf.set(0L); frames.set(0L)
+        previousL = 0f; previousR = 0f
     }
 }
 
@@ -612,6 +614,8 @@ class ImmersiveAudioProcessor : AudioProcessor {
 }
 
 object ImmersiveAudioRuntime {
+    @Volatile private var diagnosticsDeadlineNanos = 0L
+    internal fun diagnosticsRequested(): Boolean = System.nanoTime() - diagnosticsDeadlineNanos < 0L
     @Volatile private var processor: ImmersiveAudioProcessor? = null
     @Volatile private var transitionHandler: ((Boolean) -> Unit)? = null
     @Volatile private var controls = ImmersiveControls()
@@ -626,7 +630,7 @@ object ImmersiveAudioRuntime {
     }
     fun attach(value: ImmersiveAudioProcessor) { processor = value; value.updateControls(controls); value.updateCustomIr(customIr) }
     fun detachProcessor() { processor = null }
-    fun detach() { processor = null; transitionHandler = null; b1Meter = null; b2Meter = null; b3Meter = null; b5Meter = null }
+    fun detach() { diagnosticsDeadlineNanos = 0L; processor = null; transitionHandler = null; b1Meter = null; b2Meter = null; b3Meter = null; b5Meter = null }
     fun setTransitionHandler(handler: ((Boolean) -> Unit)?) { transitionHandler = handler }
     @Synchronized fun applyControls(value: ImmersiveControls) {
         val oldEnabled = controls.enabled
@@ -666,6 +670,7 @@ object ImmersiveAudioRuntime {
     fun stereoWidth(): Float = controls.stereoWidth
     fun quantumFrames(): Int = controls.quantumFrames
     fun readDiagnostics(): ImmersiveAudioDiagnostics {
+        diagnosticsDeadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
         val native = processor?.readDiagnostics() ?: ImmersiveAudioDiagnostics()
         return native.copy(
             b1AfterSilenceSkipping = b1Meter?.snapshot() ?: ImmersiveStageDiagnostics(),

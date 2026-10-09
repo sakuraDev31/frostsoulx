@@ -118,3 +118,5 @@ core.*
 # Workspace-only verification tools and native build products
 /.tools/
 /.engine-build/
+
+/.validation/

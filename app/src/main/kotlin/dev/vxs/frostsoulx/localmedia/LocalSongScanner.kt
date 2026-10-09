@@ -39,12 +39,16 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
+import javax.inject.Singleton
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 data class LocalSongScanConfig(
     val minimumDurationSeconds: Int = 0,
     val includedFolders: Set<String> = emptySet(),
     val excludedFolders: Set<String> = emptySet(),
+    val forceMetadataRefresh: Boolean = false,
 ) {
     val sanitizedMinimumDurationSeconds: Int
         get() = minimumDurationSeconds.coerceAtLeast(0)
@@ -83,168 +87,181 @@ data class LocalSongScanSummary(
     val removedSongs: Int,
 )
 
+@Singleton
 class LocalSongScanner
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
         private val database: MusicDatabase,
     ) {
+        private val scanMutex = Mutex()
+        private data class CachedMetadata(val modified: Long, val size: Long, val thumbnail: String?, val lyrics: String?)
+        private val metadataCache = LinkedHashMap<String, CachedMetadata>()
+        private var artworkFilesByPrefix: Map<String, File> = emptyMap()
+
         suspend fun scanDevice(scanConfig: LocalSongScanConfig = LocalSongScanConfig()): LocalSongScanSummary =
             withContext(Dispatchers.IO) {
-                val snapshot = queryTracks(scanConfig)
-                database.withTransaction {
-                    val existingLocalIds = localSongIds()
-                    val scannedIds = snapshot.tracks.map(LocalTrackRecord::id)
-                    val scannedIdSet = scannedIds.toSet()
-                    val removedIds = existingLocalIds.filterNot(scannedIdSet::contains)
+                scanMutex.withLock { scanDeviceLocked(scanConfig) }
+            }
 
-                    if (scannedIds.isEmpty()) {
-                        clearLocalSongs()
-                    } else {
-                        removedIds.chunked(SqlBatchSize).forEach(::deleteSongsByIds)
-                    }
+        private suspend fun scanDeviceLocked(scanConfig: LocalSongScanConfig): LocalSongScanSummary {
+            if (scanConfig.forceMetadataRefresh) metadataCache.clear()
+            artworkFilesByPrefix = localArtworkDirectory().listFiles()?.filter { it.isFile && it.length() > 0L }
+                ?.associateBy { it.name.substringBeforeLast('.') }.orEmpty()
+            val snapshot = queryTracks(scanConfig)
+            return database.withTransaction {
+                val existingLocalIds = localSongIds()
+                val scannedIds = snapshot.tracks.map(LocalTrackRecord::id)
+                val scannedIdSet = scannedIds.toSet()
+                val removedIds = existingLocalIds.filterNot(scannedIdSet::contains)
 
-                    val existingSongs = loadSongs(scannedIds)
-                    val existingLyrics = loadLyrics(scannedIds)
-                    val existingArtists = loadArtists(snapshot.artists.map(LocalArtistRecord::id))
-                    val existingAlbums = loadAlbums(snapshot.albums.map(LocalAlbumRecord::id))
+                if (scannedIds.isEmpty()) {
+                    clearLocalSongs()
+                } else {
+                    removedIds.chunked(SqlBatchSize).forEach(::deleteSongsByIds)
+                }
 
-                    val existingFormats =
-                        scannedIds
-                            .chunked(SqlBatchSize)
-                            .flatMap { chunk -> database.getFormatsByIds(chunk) }
-                            .associateBy { it.id }
+                val existingSongs = loadSongs(scannedIds)
+                val existingLyrics = loadLyrics(scannedIds)
+                val existingArtists = loadArtists(snapshot.artists.map(LocalArtistRecord::id))
+                val existingAlbums = loadAlbums(snapshot.albums.map(LocalAlbumRecord::id))
 
-                    snapshot.artists.forEach { artist ->
-                        val existingArtist = existingArtists[artist.id]
-                        upsert(
-                            ArtistEntity(
-                                id = artist.id,
-                                name = artist.name,
-                                thumbnailUrl = existingArtist?.thumbnailUrl,
-                                channelId = null,
-                                lastUpdateTime = existingArtist?.lastUpdateTime ?: LocalDateTime.now(),
-                                bookmarkedAt = existingArtist?.bookmarkedAt,
-                                isLocal = true,
-                            ),
-                        )
-                    }
-
-                    snapshot.albums.forEach { album ->
-                        val existingAlbum = existingAlbums[album.id]
-                        upsert(
-                            AlbumEntity(
-                                id = album.id,
-                                playlistId = null,
-                                title = album.title,
-                                year = album.year ?: existingAlbum?.year,
-                                thumbnailUrl = album.thumbnailUrl,
-                                themeColor = existingAlbum?.themeColor,
-                                songCount = album.songCount,
-                                duration = album.duration,
-                                explicit = false,
-                                lastUpdateTime = LocalDateTime.now(),
-                                bookmarkedAt = existingAlbum?.bookmarkedAt,
-                                likedDate = existingAlbum?.likedDate,
-                                inLibrary = existingAlbum?.inLibrary,
-                                isLocal = true,
-                            ),
-                        )
-                    }
-
-                    snapshot.albums
-                        .map(LocalAlbumRecord::id)
-                        .distinct()
+                val existingFormats =
+                    scannedIds
                         .chunked(SqlBatchSize)
-                        .forEach(::deleteAlbumArtistMapsByAlbumIds)
-                    snapshot.albums.forEach { album ->
-                        album.artistIds.forEachIndexed { index, artistId ->
-                            insert(
-                                AlbumArtistMap(
-                                    albumId = album.id,
-                                    artistId = artistId,
-                                    order = index,
-                                ),
-                            )
-                        }
-                    }
+                        .flatMap { chunk -> database.getFormatsByIds(chunk) }
+                        .associateBy { it.id }
 
-                    snapshot.tracks.forEach { track ->
-                        val existingSong = existingSongs[track.id]?.song
-                        val existingFormat = existingFormats[track.id]
-                        upsert(
-                            SongEntity(
-                                id = track.id,
-                                title = track.title,
-                                duration = track.durationSeconds,
-                                thumbnailUrl = track.thumbnailUrl,
-                                albumId = track.albumId,
-                                albumName = track.albumName,
-                                explicit = existingSong?.explicit ?: false,
-                                year = track.year ?: existingSong?.year,
-                                date = existingSong?.date,
-                                dateModified = track.dateModified ?: existingSong?.dateModified,
-                                liked = existingSong?.liked ?: false,
-                                likedDate = existingSong?.likedDate,
-                                totalPlayTime = existingSong?.totalPlayTime ?: 0L,
-                                inLibrary = null,
-                                dateDownload = existingSong?.dateDownload,
-                                isLocal = true,
-                            ),
-                        )
-
-                        val isFileUnchanged =
-                            existingFormat != null &&
-                                existingFormat.contentLength == track.sizeBytes &&
-                                (track.dateModified == null || existingSong?.dateModified == track.dateModified)
-                        upsert(
-                            FormatEntity(
-                                id = track.id,
-                                itag = -1,
-                                mimeType = track.mimeType,
-                                codecs = if (isFileUnchanged) existingFormat!!.codecs else "",
-                                bitrate = if (isFileUnchanged && existingFormat!!.bitrate != 0) existingFormat.bitrate else 0,
-                                sampleRate = if (isFileUnchanged) existingFormat!!.sampleRate else null,
-                                contentLength = track.sizeBytes,
-                                loudnessDb = if (isFileUnchanged) existingFormat!!.loudnessDb else null,
-                                perceptualLoudnessDb = if (isFileUnchanged) existingFormat!!.perceptualLoudnessDb else null,
-                                playbackUrl = null,
-                            ),
-                        )
-                        deleteSongArtistMaps(track.id)
-                        track.artists.forEachIndexed { index, artist ->
-                            insert(
-                                SongArtistMap(
-                                    songId = track.id,
-                                    artistId = artist.id,
-                                    position = index,
-                                ),
-                            )
-                        }
-                        deleteSongAlbumMaps(track.id)
-                        track.albumId?.let { albumId ->
-                            insert(
-                                SongAlbumMap(
-                                    songId = track.id,
-                                    albumId = albumId,
-                                    index = 0,
-                                ),
-                            )
-                        }
-                        updateEmbeddedLyrics(track, existingLyrics[track.id])
-                    }
-
-                    pruneLocalAlbums()
-                    pruneLocalArtists()
-                    pruneFormats()
-                    prunePlayCounts()
-
-                    LocalSongScanSummary(
-                        scannedSongs = snapshot.tracks.size,
-                        removedSongs = removedIds.size,
+                snapshot.artists.forEach { artist ->
+                    val existingArtist = existingArtists[artist.id]
+                    upsert(
+                        ArtistEntity(
+                            id = artist.id,
+                            name = artist.name,
+                            thumbnailUrl = existingArtist?.thumbnailUrl,
+                            channelId = null,
+                            lastUpdateTime = existingArtist?.lastUpdateTime ?: LocalDateTime.now(),
+                            bookmarkedAt = existingArtist?.bookmarkedAt,
+                            isLocal = true,
+                        ),
                     )
                 }
+
+                snapshot.albums.forEach { album ->
+                    val existingAlbum = existingAlbums[album.id]
+                    upsert(
+                        AlbumEntity(
+                            id = album.id,
+                            playlistId = null,
+                            title = album.title,
+                            year = album.year ?: existingAlbum?.year,
+                            thumbnailUrl = album.thumbnailUrl,
+                            themeColor = existingAlbum?.themeColor,
+                            songCount = album.songCount,
+                            duration = album.duration,
+                            explicit = false,
+                            lastUpdateTime = LocalDateTime.now(),
+                            bookmarkedAt = existingAlbum?.bookmarkedAt,
+                            likedDate = existingAlbum?.likedDate,
+                            inLibrary = existingAlbum?.inLibrary,
+                            isLocal = true,
+                        ),
+                    )
+                }
+
+                snapshot.albums
+                    .map(LocalAlbumRecord::id)
+                    .distinct()
+                    .chunked(SqlBatchSize)
+                    .forEach(::deleteAlbumArtistMapsByAlbumIds)
+                snapshot.albums.forEach { album ->
+                    album.artistIds.forEachIndexed { index, artistId ->
+                        insert(
+                            AlbumArtistMap(
+                                albumId = album.id,
+                                artistId = artistId,
+                                order = index,
+                            ),
+                        )
+                    }
+                }
+
+                snapshot.tracks.forEach { track ->
+                    val existingSong = existingSongs[track.id]?.song
+                    val existingFormat = existingFormats[track.id]
+                    upsert(
+                        SongEntity(
+                            id = track.id,
+                            title = track.title,
+                            duration = track.durationSeconds,
+                            thumbnailUrl = track.thumbnailUrl,
+                            albumId = track.albumId,
+                            albumName = track.albumName,
+                            explicit = existingSong?.explicit ?: false,
+                            year = track.year ?: existingSong?.year,
+                            date = existingSong?.date,
+                            dateModified = track.dateModified ?: existingSong?.dateModified,
+                            liked = existingSong?.liked ?: false,
+                            likedDate = existingSong?.likedDate,
+                            totalPlayTime = existingSong?.totalPlayTime ?: 0L,
+                            inLibrary = null,
+                            dateDownload = existingSong?.dateDownload,
+                            isLocal = true,
+                        ),
+                    )
+
+                    val isFileUnchanged =
+                        existingFormat != null &&
+                            existingFormat.contentLength == track.sizeBytes &&
+                            (track.dateModified == null || existingSong?.dateModified == track.dateModified)
+                    upsert(
+                        FormatEntity(
+                            id = track.id,
+                            itag = -1,
+                            mimeType = track.mimeType,
+                            codecs = if (isFileUnchanged) existingFormat!!.codecs else "",
+                            bitrate = if (isFileUnchanged && existingFormat!!.bitrate != 0) existingFormat.bitrate else 0,
+                            sampleRate = if (isFileUnchanged) existingFormat!!.sampleRate else null,
+                            contentLength = track.sizeBytes,
+                            loudnessDb = if (isFileUnchanged) existingFormat!!.loudnessDb else null,
+                            perceptualLoudnessDb = if (isFileUnchanged) existingFormat!!.perceptualLoudnessDb else null,
+                            playbackUrl = null,
+                        ),
+                    )
+                    deleteSongArtistMaps(track.id)
+                    track.artists.forEachIndexed { index, artist ->
+                        insert(
+                            SongArtistMap(
+                                songId = track.id,
+                                artistId = artist.id,
+                                position = index,
+                            ),
+                        )
+                    }
+                    deleteSongAlbumMaps(track.id)
+                    track.albumId?.let { albumId ->
+                        insert(
+                            SongAlbumMap(
+                                songId = track.id,
+                                albumId = albumId,
+                                index = 0,
+                            ),
+                        )
+                    }
+                    updateEmbeddedLyrics(track, existingLyrics[track.id])
+                }
+
+                pruneLocalAlbums()
+                pruneLocalArtists()
+                pruneFormats()
+                prunePlayCounts()
+
+                LocalSongScanSummary(
+                    scannedSongs = snapshot.tracks.size,
+                    removedSongs = removedIds.size,
+                )
             }
+        }
 
         private suspend fun loadSongs(ids: List<String>): Map<String, Song> =
             ids
@@ -386,7 +403,13 @@ class LocalSongScanner
                             )
                         val dateModifiedSeconds = cursor.getLong(dateModifiedIndex)
                         val sizeBytes = cursor.getLong(sizeIndex).coerceAtLeast(0L)
-                        val thumbnailUrl =
+                        val cached = metadataCache[contentUri.toString()]?.takeIf {
+                            val art = it.thumbnail?.let(Uri::parse)
+                            val artworkPresent = art?.authority != "${context.packageName}.FileProvider" ||
+                                art.lastPathSegment?.substringBeforeLast('.') in artworkFilesByPrefix
+                            !scanConfig.forceMetadataRefresh && it.modified == dateModifiedSeconds && it.size == sizeBytes && artworkPresent
+                        }
+                        val thumbnailUrl = if (cached != null) cached.thumbnail else
                             resolveTrackThumbnail(
                                 contentUri = contentUri,
                                 albumName = albumName,
@@ -394,8 +417,12 @@ class LocalSongScanner
                                 dateModifiedSeconds = dateModifiedSeconds,
                                 sizeBytes = sizeBytes,
                                 retainedArtworkFileNames = retainedArtworkFileNames,
+                                forceRefresh = scanConfig.forceMetadataRefresh,
                             )
-                        val embeddedLyrics =
+                        cached?.thumbnail?.let { thumbnail ->
+                            Uri.parse(thumbnail).lastPathSegment?.let { fileName -> retainedArtworkFileNames += fileName }
+                        }
+                        val embeddedLyrics = if (cached != null) cached.lyrics else
                             embeddedLyricsExtractor
                                 .extract(
                                     contentUri = contentUri,
@@ -403,6 +430,10 @@ class LocalSongScanner
                                     mimeType = mimeType,
                                 )?.let(LyricsUtils::lyricsOrNotFound)
                                 ?.takeIf { lyrics -> lyrics != LyricsEntity.LYRICS_NOT_FOUND }
+                        if (metadataCache.size >= 4096 && contentUri.toString() !in metadataCache) {
+                            metadataCache.remove(metadataCache.keys.first())
+                        }
+                        metadataCache[contentUri.toString()] = CachedMetadata(dateModifiedSeconds, sizeBytes, thumbnailUrl, embeddedLyrics)
                         tracks +=
                             LocalTrackRecord(
                                 id = contentUri.toString(),
@@ -474,12 +505,14 @@ class LocalSongScanner
             dateModifiedSeconds: Long,
             sizeBytes: Long,
             retainedArtworkFileNames: MutableSet<String>,
+            forceRefresh: Boolean,
         ): String? =
             extractEmbeddedArtwork(
                 contentUri = contentUri,
                 dateModifiedSeconds = dateModifiedSeconds,
                 sizeBytes = sizeBytes,
                 retainedArtworkFileNames = retainedArtworkFileNames,
+                forceRefresh = forceRefresh,
             ) ?: mediaStoreAlbumId
                 ?.takeIf { !albumName.isNullOrBlank() }
                 ?.takeIf { it > 0L }
@@ -490,7 +523,13 @@ class LocalSongScanner
             dateModifiedSeconds: Long,
             sizeBytes: Long,
             retainedArtworkFileNames: MutableSet<String>,
+            forceRefresh: Boolean,
         ): String? {
+            val cachePrefix = stableHash("$contentUri|$dateModifiedSeconds|$sizeBytes")
+            (if (forceRefresh) null else artworkFilesByPrefix[cachePrefix])?.let { file ->
+                    retainedArtworkFileNames += file.name
+                    return FileProvider.getUriForFile(context, "${context.packageName}.FileProvider", file).toString()
+                }
             val retriever = MediaMetadataRetriever()
             return try {
                 retriever.setDataSource(context, contentUri)
@@ -500,7 +539,7 @@ class LocalSongScanner
                 val artworkDirectory = localArtworkDirectory()
                 val artworkFile = File(artworkDirectory, fileName)
                 retainedArtworkFileNames += fileName
-                if (!artworkFile.exists() || artworkFile.length() != artworkBytes.size.toLong()) {
+                if (forceRefresh || !artworkFile.exists() || artworkFile.length() != artworkBytes.size.toLong()) {
                     artworkDirectory.mkdirs()
                     FileOutputStream(artworkFile).use { outputStream ->
                         outputStream.write(artworkBytes)

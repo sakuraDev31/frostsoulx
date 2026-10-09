@@ -7,7 +7,7 @@
 
 package dev.vxs.frostsoulx.playback
 
-import android.graphics.BitmapFactory
+import dev.vxs.frostsoulx.utils.decodeSampledArtwork
 import android.net.Uri
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -58,6 +58,7 @@ internal class MusicServiceWidgetUpdater(
     private val widgetManager = GlanceAppWidgetManager(service)
     private var stateJob: Job? = null
     private var progressJob: Job? = null
+    private val paletteCache = LinkedHashMap<String, Int>()
 
     fun update() {
         stateJob?.cancel()
@@ -244,38 +245,33 @@ internal class MusicServiceWidgetUpdater(
 
     private suspend fun cacheAlbumArt(uri: Uri): File? =
         withContext(Dispatchers.IO) {
-            val dest = File(service.cacheDir, "widget_art_${Integer.toHexString(uri.toString().hashCode())}.jpg")
+            val dest = File(service.cacheDir, "widget_art_v2_${Integer.toHexString(uri.toString().hashCode())}.jpg")
             if (dest.isFile && dest.length() > 0L) return@withContext dest
 
-            if (uri.scheme == "content" || uri.scheme == "file") {
-                return@withContext try {
-                    service.contentResolver.openInputStream(uri)?.use { src ->
-                        dest.outputStream().use { dst -> src.copyTo(dst) }
-                    }
-                    if (dest.exists() && dest.length() > 0) dest else null
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    null
-                }
-            }
-
-            if (uri.scheme == "https" || uri.scheme == "http") {
+            if (uri.scheme in setOf("content", "file", "https", "http")) {
                 return@withContext try {
                     val loader = service.applicationContext.imageLoader
                     val request =
                         ImageRequest
                             .Builder(service.applicationContext)
-                            .data(uri.toString())
+                            .data(uri)
                             .size(512, 512)
                             .allowHardware(false)
                             .build()
                     val result = loader.execute(request)
                     if (result is SuccessResult) {
                         val bitmap = result.image.toBitmap()
-                        dest.outputStream().use { out ->
-                            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out)
-                        }
+                        val temp = File(service.cacheDir, "${dest.name}.${java.util.UUID.randomUUID()}.tmp")
+                        try {
+                            temp.outputStream().use { out ->
+                                check(bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out))
+                            }
+                            check(temp.renameTo(dest)) { "Cannot publish widget artwork" }
+                        } finally { temp.delete() }
+                        service.cacheDir.listFiles { file -> file.name.startsWith("widget_art_") }
+                            ?.sortedByDescending(File::lastModified)?.drop(64)
+                            ?.filter { it != dest && System.currentTimeMillis() - it.lastModified() > 24 * 60 * 60 * 1000L }
+                            ?.forEach(File::delete)
                         if (dest.exists() && dest.length() > 0) dest else null
                     } else {
                         null
@@ -293,11 +289,18 @@ internal class MusicServiceWidgetUpdater(
     private suspend fun extractDominantColor(file: File): Int? =
         withContext(Dispatchers.Default) {
             try {
-                val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@withContext null
-                val palette = Palette.from(bitmap).generate()
-                palette.getDarkVibrantColor(
-                    palette.getDominantColor(android.graphics.Color.DKGRAY),
-                )
+                val key = "${file.absolutePath}|${file.lastModified()}|${file.length()}"
+                synchronized(paletteCache) { paletteCache[key] }?.let { return@withContext it }
+                val bitmap = decodeSampledArtwork(file, 128) ?: return@withContext null
+                val color = try {
+                    val palette = Palette.from(bitmap).generate()
+                    palette.getDarkVibrantColor(palette.getDominantColor(android.graphics.Color.DKGRAY))
+                } finally { bitmap.recycle() } // This sampled bitmap is exclusively owned here.
+                synchronized(paletteCache) {
+                    if (paletteCache.size >= 64) paletteCache.remove(paletteCache.keys.first())
+                    paletteCache[key] = color
+                }
+                color
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {

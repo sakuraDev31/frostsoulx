@@ -9,6 +9,9 @@ package dev.vxs.frostsoulx.musicrecognition
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
+import dev.vxs.frostsoulx.utils.reportException
+import android.widget.Toast
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
@@ -32,8 +35,7 @@ class MusicRecognitionCaptureActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val data = result.data
             if (result.resultCode == Activity.RESULT_OK && data != null) {
-                ContextCompat.startForegroundService(
-                    this,
+                startRecognitionService(
                     BackgroundMusicRecognitionService.devicePlaybackIntent(
                         context = this,
                         resultCode = result.resultCode,
@@ -74,8 +76,7 @@ class MusicRecognitionCaptureActivity : ComponentActivity() {
 
     private fun requestPlaybackCapture() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            ContextCompat.startForegroundService(
-                this,
+            startRecognitionService(
                 BackgroundMusicRecognitionService.microphoneIntent(this),
             )
             finishWithoutAnimation()
@@ -85,6 +86,18 @@ class MusicRecognitionCaptureActivity : ComponentActivity() {
         val projectionManager =
             getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         captureLauncher.launch(projectionManager.createScreenCaptureIntent())
+    }
+
+    private fun startRecognitionService(intent: Intent) {
+        if (!hasRequiredPermissions()) return
+        try {
+            ContextCompat.startForegroundService(this, intent)
+        } catch (error: RuntimeException) {
+            if (error !is SecurityException && error !is IllegalStateException) throw error
+            reportException(error)
+            MusicRecognitionRuntimeState.update(BackgroundRecognitionState.Idle)
+            Toast.makeText(this, "Unable to start recognition. Reopen the app and check microphone permission.", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun hasRequiredPermissions(): Boolean {

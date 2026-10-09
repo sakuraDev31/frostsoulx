@@ -188,3 +188,76 @@ class ImmersivePipelineTelemetryTest {
         assertTrue(report.contains("Safety detector peak="))
     }
 }
+
+class PlaybackSafetyRegressionTest {
+    @Test
+    fun everyLegacyTelemetryLengthIsSafe() {
+        for (length in 0..61) {
+            val d = ImmersiveAudioDiagnostics.fromNative(DoubleArray(length))
+            assertEquals(0f, d.brirNormalizationGain, 0f)
+        }
+    }
+
+    @Test
+    fun idleDiagnosticsDoNotMeasureOrModifyPcm() {
+        ImmersiveAudioRuntime.detach()
+        val stage = ImmersiveStageMeter()
+        val processor = ImmersiveStageMeterAudioProcessor(stage)
+        processor.configure(androidx.media3.common.audio.AudioProcessor.AudioFormat(48000, 2, androidx.media3.common.C.ENCODING_PCM_16BIT))
+        val input = java.nio.ByteBuffer.allocateDirect(4).order(java.nio.ByteOrder.nativeOrder())
+        input.putShort(16384).putShort(-16384).flip()
+        processor.queueInput(input)
+        assertEquals(0, input.remaining())
+        assertFalse(stage.snapshot().available)
+        val output = processor.getOutput()
+        assertEquals(16384.toShort(), output.short)
+        assertEquals((-16384).toShort(), output.short)
+        assertEquals(0, processor.getOutput().remaining())
+        processor.queueEndOfStream()
+        assertTrue(processor.isEnded)
+    }
+
+    @Test
+    fun requestedDiagnosticsAggregateFiniteAndInvalidSamplesPerBlock() {
+        val stage = ImmersiveStageMeter()
+        val processor = ImmersiveStageMeterAudioProcessor(stage)
+        processor.configure(androidx.media3.common.audio.AudioProcessor.AudioFormat(48000, 2, androidx.media3.common.C.ENCODING_PCM_FLOAT))
+        val input = java.nio.ByteBuffer.allocateDirect(16).order(java.nio.ByteOrder.nativeOrder())
+        input.putFloat(0.5f).putFloat(-1f).putFloat(Float.NaN).putFloat(Float.POSITIVE_INFINITY).flip()
+        ImmersiveAudioRuntime.readDiagnostics()
+        try {
+            processor.queueInput(input)
+            val measurement = stage.snapshot()
+            assertEquals(2L, measurement.frames)
+            assertEquals(1f, measurement.peak, 0f)
+            assertEquals(1L, measurement.clippedSamples)
+            assertEquals(1L, measurement.nanCount)
+            assertEquals(1L, measurement.infCount)
+            assertEquals(kotlin.math.sqrt(1.25 / 4.0).toFloat(), measurement.rms, 0.0001f)
+            assertEquals(16, processor.getOutput().remaining())
+        } finally { ImmersiveAudioRuntime.detach() }
+    }
+
+    @Test
+    fun artworkSamplingBoundsLargeAndPanoramicAllocations() {
+        assertEquals(8, dev.vxs.frostsoulx.utils.artworkSampleSize(8000, 8000, 1080))
+        assertEquals(64, dev.vxs.frostsoulx.utils.artworkSampleSize(8000, 8000, 128))
+        assertEquals(1, dev.vxs.frostsoulx.utils.artworkSampleSize(640, 480, 1080))
+        assertEquals(256, dev.vxs.frostsoulx.utils.artworkSampleSize(256000, 1, 1080))
+    }
+
+    @Test
+    fun invalidArtworkBoundsAreRejectedBeforeDecode() {
+        for ((width, height) in listOf(0 to 10, -1 to 10, Int.MAX_VALUE to Int.MAX_VALUE)) {
+            assertTrue(runCatching { dev.vxs.frostsoulx.utils.artworkSampleSize(width, height, 128) }.isFailure)
+        }
+    }
+
+    @Test
+    fun streamCacheRequiresMatchingAccountAndEnoughLifetime() {
+        val cache = dev.vxs.frostsoulx.utils.AuthScopedCacheValue("https://example.test/audio", 12000, "account-a")
+        assertTrue(cache.isValidFor("account-a", nowMs = 10000, minimumRemainingMs = 1000))
+        assertFalse(cache.isValidFor("account-b", nowMs = 10000))
+        assertFalse(cache.isValidFor("account-a", nowMs = 11000, minimumRemainingMs = 1000))
+    }
+}
