@@ -189,7 +189,7 @@ SourceTrajectory TrajectoryFactory::createCompoundDemo(float radius, float durat
 
         for (int step = 0; step < kStepsPerSeg; ++step) {
             const float u = static_cast<float>(step) / static_cast<float>(kStepsPerSeg);
-            const float time = (seg + u) * segDuration;
+            const float time = (static_cast<float>(seg) + u) * segDuration;
             const Coord3D p = p0 + (p1 - p0) * u;
 
             TrajectoryWaypoint wp;

@@ -30,7 +30,10 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -76,6 +79,7 @@ import dev.vxs.frostsoulx.LocalPlayerConnection
 import dev.vxs.frostsoulx.LocalSyncUtils
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.constants.ArtistSeparatorsKey
+import dev.vxs.frostsoulx.constants.AudioQuality
 import dev.vxs.frostsoulx.constants.ExternalDownloaderEnabledKey
 import dev.vxs.frostsoulx.constants.ExternalDownloaderPackageKey
 import dev.vxs.frostsoulx.constants.ListItemHeight
@@ -134,6 +138,8 @@ fun YouTubeSongMenu(
     val (externalDownloaderEnabled) = rememberPreference(ExternalDownloaderEnabledKey, defaultValue = false)
     val (externalDownloaderPackage) = rememberPreference(ExternalDownloaderPackageKey, defaultValue = "")
     val (speedDialSongIds, onSpeedDialSongIdsChange) = rememberPreference(SpeedDialSongIdsKey, "")
+    var showDownloadQualityDialog by rememberSaveable(song.id) { mutableStateOf(false) }
+    var selectedDownloadQuality by rememberSaveable(song.id) { mutableStateOf(AudioQuality.AUTO) }
     val speedDialPins = remember(speedDialSongIds) { parseSpeedDialPins(speedDialSongIds) }
     val songPin = remember(song.id) { SpeedDialPin(type = SpeedDialPinType.SONG, id = song.id) }
     val isInSpeedDial =
@@ -624,24 +630,7 @@ fun YouTubeSongMenu(
                                         contentDescription = null,
                                     )
                                 },
-                                modifier =
-                                    Modifier.clickable {
-                                        database.transaction {
-                                            insert(song.toMediaMetadata())
-                                        }
-                                        val downloadRequest =
-                                            DownloadRequest
-                                                .Builder(song.id, song.id.toUri())
-                                                .setCustomCacheKey(song.id)
-                                                .setData(song.title.toByteArray())
-                                                .build()
-                                        DownloadService.sendAddDownload(
-                                            context,
-                                            ExoDownloadService::class.java,
-                                            downloadRequest,
-                                            false,
-                                        )
-                                    },
+                                modifier = Modifier.clickable { showDownloadQualityDialog = true },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             )
                         }
@@ -783,4 +772,49 @@ fun YouTubeSongMenu(
             }
         }
     }
+
+    if (showDownloadQualityDialog) {
+        AlertDialog(
+            onDismissRequest = { showDownloadQualityDialog = false },
+            title = { Text("Download quality") },
+            text = {
+                Column {
+                    Text(
+                        "Choose the best source quality available. Higher quality may use more data.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    listOf(
+                        AudioQuality.LOW to "Data saver",
+                        AudioQuality.AUTO to "Standard · Auto",
+                        AudioQuality.HIGH to "High",
+                        AudioQuality.HIGHEST to "Best available",
+                    ).forEach { (quality, label) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { selectedDownloadQuality = quality }.padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = selectedDownloadQuality == quality, onClick = { selectedDownloadQuality = quality })
+                            Text(label, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    database.transaction { insert(song.toMediaMetadata()) }
+                    val downloadRequest = DownloadRequest.Builder(song.id, song.id.toUri())
+                        .setCustomCacheKey("${song.id}|quality=${selectedDownloadQuality.name}")
+                        .setData(song.title.toByteArray())
+                        .build()
+                    DownloadService.sendAddDownload(context, ExoDownloadService::class.java, downloadRequest, false)
+                    showDownloadQualityDialog = false
+                    onDismiss()
+                }) { Text("Download") }
+            },
+            dismissButton = { TextButton(onClick = { showDownloadQualityDialog = false }) { Text("Cancel") } },
+        )
+    }
+
 }

@@ -4,8 +4,11 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.DoubleAdder
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 data class ImmersiveStageDiagnostics(
     val available: Boolean = false,
@@ -52,22 +55,18 @@ class ImmersiveStageMeterAudioProcessor(private val stage: ImmersiveStageMeter) 
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        val readable = inputBuffer.duplicate().order(ByteOrder.nativeOrder())
-        val byteCount = inputBuffer.remaining()
-        if (outputBuffer.capacity() < byteCount) {
-            outputBuffer = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
-        } else {
-            outputBuffer.clear()
+        // Media3 drains processor output before reusing upstream buffers. A read-only view
+        // therefore preserves PCM byte-for-byte without four redundant direct-buffer copies.
+        outputBuffer = inputBuffer.slice().order(ByteOrder.nativeOrder())
+        inputBuffer.position(inputBuffer.limit())
+        if (ImmersiveAudioRuntime.diagnosticsRequested()) {
+            stage.observe(outputBuffer.duplicate().order(ByteOrder.nativeOrder()))
         }
-        outputBuffer.limit(byteCount)
-        outputBuffer.put(inputBuffer)
-        outputBuffer.flip()
-        stage.observe(readable)
     }
 
     override fun queueEndOfStream() { ended = true }
-    override fun getOutput(): ByteBuffer = outputBuffer
-    override fun isEnded(): Boolean = ended && !outputBuffer.hasRemaining()
+    override fun getOutput(): ByteBuffer = outputBuffer.also { outputBuffer = EMPTY_BUFFER }
+    override fun isEnded(): Boolean = ended && outputBuffer === EMPTY_BUFFER
     override fun flush() { outputBuffer = EMPTY_BUFFER; ended = false; stage.reset() }
     override fun reset() { flush(); format = AudioProcessor.AudioFormat.NOT_SET; stage.reset() }
 
@@ -86,11 +85,14 @@ class ImmersiveStageMeter {
     private val frames = AtomicLong(0L)
     @Volatile private var sampleRate = 0
     @Volatile private var encoding = 0
-    @Volatile private var previous = 0f
+    private var previousL = 0f
+    private var previousR = 0f
+    @Volatile private var channels = 0
 
     fun configure(format: AudioProcessor.AudioFormat) {
         sampleRate = format.sampleRate
         encoding = format.encoding
+        channels = format.channelCount
     }
 
     fun observe(buffer: ByteBuffer) {
@@ -99,35 +101,45 @@ class ImmersiveStageMeter {
             C.ENCODING_PCM_16BIT -> 2
             else -> return
         }
-        if (buffer.remaining() < bytesPerSample * 2) return
+        if (channels != 2 || buffer.remaining() < bytesPerSample * 2) return
         val frameCount = buffer.remaining() / (bytesPerSample * 2)
+        var blockSquares = 0.0
+        var blockPeak = 0f
+        var blockTruePeak = 0f
+        var blockClipped = 0L
+        var blockNan = 0L
+        var blockInf = 0L
         repeat(frameCount) {
-            val left = readSample(buffer, bytesPerSample)
-            val right = readSample(buffer, bytesPerSample)
-            observeSample(left)
-            observeSample(right)
-            val interpolated = maxOf(kotlin.math.abs(previous), kotlin.math.abs((previous + left) * 0.5f))
-            updateMax(truePeakBits, interpolated)
-            previous = left
+            repeat(2) { channel ->
+                val value = readSample(buffer, bytesPerSample)
+                when {
+                    value.isNaN() -> blockNan++
+                    value.isInfinite() -> blockInf++
+                    else -> {
+                        val magnitude = kotlin.math.abs(value)
+                        blockSquares += value.toDouble() * value
+                        blockPeak = maxOf(blockPeak, magnitude)
+                        if (magnitude >= 1f) blockClipped++
+                        val previous = if (channel == 0) previousL else previousR
+                        blockTruePeak = maxOf(blockTruePeak, magnitude, kotlin.math.abs((previous + value) * 0.5f))
+                        if (channel == 0) previousL = value else previousR = value
+                    }
+                }
+            }
         }
+        // Publish once per block, not with atomic operations on every sample.
+        sumSquares.add(blockSquares)
+        updateMax(peakBits, blockPeak)
+        updateMax(truePeakBits, blockTruePeak)
+        clipped.addAndGet(blockClipped)
+        nan.addAndGet(blockNan)
+        inf.addAndGet(blockInf)
         frames.addAndGet(frameCount.toLong())
     }
 
     private fun readSample(buffer: ByteBuffer, bytes: Int): Float = when (bytes) {
         4 -> buffer.float
         else -> buffer.short / 32768f
-    }
-
-    private fun observeSample(value: Float) {
-        when {
-            value.isNaN() -> nan.incrementAndGet()
-            value.isInfinite() -> inf.incrementAndGet()
-            else -> {
-                sumSquares.add(value.toDouble() * value.toDouble())
-                updateMax(peakBits, kotlin.math.abs(value))
-                if (kotlin.math.abs(value) >= 1f) clipped.incrementAndGet()
-            }
-        }
     }
 
     private fun updateMax(target: AtomicLong, value: Float) {
@@ -153,7 +165,8 @@ class ImmersiveStageMeter {
 
     fun reset() {
         sumSquares.reset(); peakBits.set(0L); truePeakBits.set(0L)
-        clipped.set(0L); nan.set(0L); inf.set(0L); frames.set(0L); previous = 0f
+        clipped.set(0L); nan.set(0L); inf.set(0L); frames.set(0L)
+        previousL = 0f; previousR = 0f
     }
 }
 
@@ -229,10 +242,8 @@ data class ImmersiveAudioDiagnostics(
     val b5AfterNativeDsp: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
     val b5AudioTrack: ImmersiveStageDiagnostics = ImmersiveStageDiagnostics(),
 ) {
-    fun backendLabel(): String = when (activeBackend) {
-        1 -> "Steam Audio"
-        2 -> "Native HOA/HRTF"
-        3 -> "Full Convolution"
+    fun backendLabel(): String = if (!processorEnabled) "Off / unavailable" else when (activeBackend) {
+        3 -> "FrostSoulX unified convolution"
         else -> if (processorEnabled) "Unavailable" else "Off / unavailable"
     }
 
@@ -294,7 +305,7 @@ data class ImmersiveAudioDiagnostics(
 
         fun fromNative(values: DoubleArray?): ImmersiveAudioDiagnostics {
             if (values == null || values.size < 41) return ImmersiveAudioDiagnostics()
-            fun f(index: Int): Float = values[index].toFloat().takeIf(Float::isFinite) ?: 0f
+            fun f(index: Int): Float = values.getOrNull(index)?.toFloat()?.takeIf(Float::isFinite) ?: 0f
             fun l(index: Int): Long = values[index].toLong().coerceAtLeast(0L)
             return ImmersiveAudioDiagnostics(
                 inputRmsL = f(0), inputRmsR = f(1), outputRmsL = f(2), outputRmsR = f(3),
@@ -340,12 +351,12 @@ data class ImmersiveAudioDiagnostics(
 }
 
 enum class ImmersiveRoomPreset(val nativeValue: Int, val label: String) {
-    OFF(0, "Off"),
-    SMALL_ROOM(1, "Small room"),
-    STUDIO(2, "Studio"),
+    OFF(0, "Anechoic / no room"),
+    SMALL_ROOM(1, "Bathroom"),
+    STUDIO(2, "Living room"),
     CONCERT_HALL(3, "Concert hall"),
-    CATHEDRAL(4, "Cathedral"),
-    SUBWAY(5, "Subway"),
+    CATHEDRAL(4, "Large hall"),
+    SUBWAY(5, "Long subway tunnel"),
     CLOSED_CAR(6, "Closed car"),
     MEDIUM_HALL(7, "Medium hall"),
     SUBWAY_PLATFORM(8, "Subway platform"),
@@ -353,6 +364,7 @@ enum class ImmersiveRoomPreset(val nativeValue: Int, val label: String) {
     OPEN_ROAD(10, "Open road"),
     CAVE(11, "Cave"),
     STADIUM(12, "Stadium"),
+    SPARSE_IMMERSIVE(13, "Sparse immersive"),
     ;
 
     companion object {
@@ -361,197 +373,205 @@ enum class ImmersiveRoomPreset(val nativeValue: Int, val label: String) {
     }
 }
 
-/** Media3 adapter for the Steam Audio HRTF binaural engine. */
+/** Immutable, validated targets; names of persisted keys remain migration-compatible. */
+data class ImmersiveControls(
+    val enabled: Boolean = false,
+    val intensity: Float = 0.5f,
+    val roomPreset: ImmersiveRoomPreset = ImmersiveRoomPreset.STUDIO,
+    val roomMix: Float = 0.18f,
+    val reflectionAmount: Float = 0.28f,
+    val reverbTimeSeconds: Float = 1.35f,
+    val roomSize: Float = 0.5f,
+    val dampening: Float = 0.5f,
+    val stereoWidth: Float = 0.5f,
+    val bassWidth: Float = 1f,
+    val bassGainDb: Float = 0f,
+    val outputGainDb: Float = 0f,
+    val carFader: Float = 0f,
+    val azimuth: Float = 0f,
+    val elevation: Float = 0f,
+    val distance: Float = 1f,
+    val orbitEnabled: Boolean = false,
+    val quantumFrames: Int = 384,
+) {
+    fun sanitized(): ImmersiveControls {
+        fun safe(v: Float, min: Float, max: Float, default: Float) =
+            v.takeIf(Float::isFinite)?.coerceIn(min, max) ?: default
+        return copy(
+            intensity = safe(intensity, 0f, 1f, 0.5f),
+            roomMix = safe(roomMix, 0f, 1f, 0.18f),
+            reflectionAmount = safe(reflectionAmount, 0f, 1f, 0.28f),
+            reverbTimeSeconds = safe(reverbTimeSeconds, 0.2f, 8f, 1.35f),
+            roomSize = safe(roomSize, 0f, 1f, 0.5f), dampening = safe(dampening, 0f, 1f, 0.5f),
+            stereoWidth = safe(stereoWidth, 0f, 1f, 0.5f), bassWidth = safe(bassWidth, 0f, 2f, 1f),
+            bassGainDb = safe(bassGainDb, -12f, 6f, 0f), outputGainDb = safe(outputGainDb, -24f, 0f, 0f),
+            carFader = safe(carFader, -1f, 1f, 0f), azimuth = safe(azimuth, -180f, 180f, 0f),
+            elevation = safe(elevation, -90f, 90f, 0f), distance = safe(distance, 0.2f, 10f, 1f),
+            quantumFrames = quantumFrames.coerceIn(96, 2048),
+        )
+    }
+}
+
+/** Media3 owns lifecycle/PCM. One shared control producer builds IRs off the UI/audio thread. */
 class ImmersiveAudioProcessor : AudioProcessor {
-    private var inputAudioFormat = AudioProcessor.AudioFormat.NOT_SET
-    private var outputAudioFormat = AudioProcessor.AudioFormat.NOT_SET
+    private var format = AudioProcessor.AudioFormat.NOT_SET
+    private var reusableBuffer: ByteBuffer = EMPTY_BUFFER
     private var outputBuffer: ByteBuffer = EMPTY_BUFFER
     private var inputEnded = false
-    private var nativeHandle = 0L
-    @Volatile private var enabled = false
-    @Volatile private var intensity = 0.0f
-    @Volatile private var roomPreset = ImmersiveRoomPreset.STUDIO
-    @Volatile private var roomMix = 0.18f
-    @Volatile private var reflectionAmount = 0.28f
-    @Volatile private var reverbTimeSeconds = 1.35f
-    @Volatile private var roomSize = 0.5f
-    @Volatile private var dampening = 0.5f
-    @Volatile private var stereoWidth = 0.5f
-    @Volatile private var carFader = 0f
-    @Volatile private var quantumFrames = DEFAULT_QUANTUM_FRAMES
-    @Volatile private var limiterEnabled = true
-    @Volatile private var bassGainDb = 0f
-    @Volatile private var trebleGainDb = 0f
-    @Volatile private var outputGainDb = 0f
+    private var hasInput = false
+    private var algorithmicLatency = 0
+    private var nativeHandle = 0L // playback lifecycle thread, or under controlLock
+    private val controlLock = Any()
+    @Volatile private var desired = ImmersiveControls()
+    private var applied: ImmersiveControls? = null
+    @Volatile private var diagnostics = ImmersiveAudioDiagnostics()
+    @Volatile private var desiredCustomIr: WavImpulseResponse? = null
+    private val updatePending = AtomicBoolean(false)
 
-    override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        val supportedEncoding =
-            inputAudioFormat.encoding == C.ENCODING_PCM_16BIT ||
-                inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
-        if (!supportedEncoding || inputAudioFormat.channelCount != 2) {
-            this.inputAudioFormat = inputAudioFormat
-            outputAudioFormat = AudioProcessor.AudioFormat.NOT_SET
-            return AudioProcessor.AudioFormat.NOT_SET
-        }
-        if (this.inputAudioFormat != inputAudioFormat) {
-            releaseNative()
-            nativeHandle = nativeCreate(inputAudioFormat.sampleRate, inputAudioFormat.encoding)
-            this.inputAudioFormat = inputAudioFormat
-            setIntensity(intensity)
-            setRoomPreset(roomPreset)
-            setRoomMix(roomMix)
-            setReflectionAmount(reflectionAmount)
-            setReverbTimeSeconds(reverbTimeSeconds)
-            setRoomSize(roomSize)
-            setDampening(dampening)
-            setStereoWidth(stereoWidth)
-            setCarFader(carFader)
-            setQuantumFrames(quantumFrames)
-            setLimiterEnabled(limiterEnabled)
-            setBassGainDb(bassGainDb)
-            setTrebleGainDb(trebleGainDb)
-            setOutputGainDb(outputGainDb)
-            setEnabled(enabled)
-        }
-        outputAudioFormat = inputAudioFormat
-        return outputAudioFormat
+    fun updateControls(value: ImmersiveControls) {
+        desired = value.sanitized()
+        if (!updatePending.compareAndSet(false, true)) return
+        CONTROL_EXECUTOR.schedule({
+            synchronized(controlLock) {
+                updatePending.set(false)
+                if (nativeHandle != 0L) applyControls(desired)
+            }
+        }, 40, TimeUnit.MILLISECONDS)
     }
 
-    override fun isActive(): Boolean = nativeHandle != 0L
+    fun updateCustomIr(value: WavImpulseResponse?) {
+        desiredCustomIr = value
+        CONTROL_EXECUTOR.execute {
+            synchronized(controlLock) {
+                if (nativeHandle != 0L) {
+                    if (desiredCustomIr == null) nativeClearCustomIr(nativeHandle) else applyCustomIrLocked()
+                }
+            }
+        }
+    }
+    private fun applyCustomIrLocked(targetRate: Int = format.sampleRate) {
+        val h = nativeHandle
+        if (h == 0L) return
+        val source = desiredCustomIr
+        if (source == null) return
+        val matrix = source.resampledMatrix(targetRate.takeIf { it > 0 } ?: source.sampleRate, 32768)
+        if (!nativeSetCustomIr(h, matrix[0], matrix[1], matrix[2], matrix[3])) {
+            nativeClearCustomIr(h)
+            android.util.Log.w("ImmersiveAudio", "Native engine rejected the custom IR; using built-in response")
+        }
+    }
+    private fun applyControls(c: ImmersiveControls) {
+        val h = nativeHandle
+        val old = applied
+        val roomChanged = old?.roomPreset != c.roomPreset
+        if (roomChanged) nativeSetRoomPreset(h, c.roomPreset.nativeValue)
+        if (roomChanged || old?.roomSize != c.roomSize) nativeSetRoomSize(h, c.roomSize)
+        if (roomChanged || old?.dampening != c.dampening) nativeSetDampening(h, c.dampening)
+        if (roomChanged || old?.roomMix != c.roomMix) nativeSetRoomMix(h, c.roomMix)
+        if (roomChanged || old?.reflectionAmount != c.reflectionAmount) nativeSetReflectionAmount(h, c.reflectionAmount)
+        if (roomChanged || old?.reverbTimeSeconds != c.reverbTimeSeconds) nativeSetReverbTimeSeconds(h, c.reverbTimeSeconds)
+        if (roomChanged || old?.orbitEnabled != c.orbitEnabled) nativeSetOrbitEnabled(h, c.orbitEnabled)
+        if (roomChanged || old?.azimuth != c.azimuth || old?.elevation != c.elevation || old?.distance != c.distance || old?.orbitEnabled != c.orbitEnabled) {
+            nativeSetSource(h, c.azimuth, c.elevation, c.distance)
+        }
+        if (roomChanged || old?.carFader != c.carFader) nativeSetCarFader(h, c.carFader)
+        if (old?.intensity != c.intensity) nativeSetSpatialBlend(h, c.intensity)
+        if (old?.stereoWidth != c.stereoWidth) nativeSetStereoWidth(h, c.stereoWidth)
+        if (old?.bassWidth != c.bassWidth) nativeSetBassWidth(h, c.bassWidth)
+        if (old?.bassGainDb != c.bassGainDb) nativeSetBassGainDb(h, c.bassGainDb)
+        if (old?.outputGainDb != c.outputGainDb) nativeSetOutputGainDb(h, c.outputGainDb)
+        if (old?.quantumFrames != c.quantumFrames) nativeSetQuantumFrames(h, c.quantumFrames)
+        if (old?.enabled != c.enabled) nativeSetEnabled(h, c.enabled)
+        applied = c
+    }
+
+    override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        val supported = inputAudioFormat.channelCount == 2 &&
+            inputAudioFormat.encoding in listOf(C.ENCODING_PCM_16BIT, C.ENCODING_PCM_FLOAT)
+        if (!supported || !nativeAvailable) {
+            releaseNative()
+            format = AudioProcessor.AudioFormat.NOT_SET
+            return AudioProcessor.AudioFormat.NOT_SET
+        }
+        if (format != inputAudioFormat) {
+            releaseNative()
+            synchronized(controlLock) {
+                nativeHandle = nativeCreate(inputAudioFormat.sampleRate, inputAudioFormat.encoding)
+                if (nativeHandle != 0L) {
+                    applyControls(desired)
+                    applyCustomIrLocked(inputAudioFormat.sampleRate)
+                    algorithmicLatency = ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle)).algorithmicLatencySamples
+                }
+            }
+        }
+        format = inputAudioFormat
+        return if (nativeHandle != 0L) format else AudioProcessor.AudioFormat.NOT_SET
+    }
+
+    override fun isActive(): Boolean = nativeHandle != 0L && desired.enabled
+    override fun getDurationAfterProcessorApplied(durationUs: Long): Long =
+        if (!isActive() || durationUs <= 0 || format.sampleRate <= 0) durationUs
+        else durationUs + algorithmicLatency * 1_000_000L / format.sampleRate
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        val inputBytes = inputBuffer.remaining()
-        val readableBuffer = prepareOutputBuffer(inputBytes)
-        readableBuffer.put(inputBuffer)
-        readableBuffer.flip()
-        val bytesPerSample = if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) 4 else 2
-        val frameBytes = bytesPerSample * 2
-        val frames = readableBuffer.remaining() / frameBytes
+        val result = prepareOutputBuffer(inputBuffer.remaining())
+        result.put(inputBuffer).flip()
+        val bytesPerFrame = if (format.encoding == C.ENCODING_PCM_FLOAT) 8 else 4
+        val frames = result.remaining() / bytesPerFrame
         if (nativeHandle != 0L && frames > 0) {
-            nativeProcess(nativeHandle, readableBuffer, frames, inputAudioFormat.encoding)
+            nativeProcess(nativeHandle, result, frames, format.encoding)
+            hasInput = true
         }
     }
 
-    private fun prepareOutputBuffer(byteCount: Int): ByteBuffer {
-        if (outputBuffer.capacity() < byteCount) {
-            outputBuffer = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
-        } else {
-            outputBuffer.clear()
-        }
-        outputBuffer.limit(byteCount)
+    private fun prepareOutputBuffer(bytes: Int): ByteBuffer {
+        if (reusableBuffer.capacity() < bytes) reusableBuffer = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
+        reusableBuffer.clear()
+        reusableBuffer.limit(bytes)
+        outputBuffer = reusableBuffer
         return outputBuffer
     }
 
     override fun queueEndOfStream() {
+        // Drain the engine's reported algorithmic delay so the final input frames are not lost.
+        if (nativeHandle != 0L && hasInput && !inputEnded && desired.enabled) {
+            val frames = algorithmicLatency
+            val bytesPerFrame = if (format.encoding == C.ENCODING_PCM_FLOAT) 8 else 4
+            val result = prepareOutputBuffer(frames * bytesPerFrame)
+            repeat(frames * bytesPerFrame) { result.put(0.toByte()) }
+            result.flip()
+            if (frames > 0) nativeProcess(nativeHandle, result, frames, format.encoding)
+        }
         inputEnded = true
     }
 
-    override fun getOutput(): ByteBuffer = outputBuffer
-
-    override fun isEnded(): Boolean = inputEnded && outputBuffer.remaining() == 0
-
+    override fun getOutput(): ByteBuffer = outputBuffer.also { outputBuffer = EMPTY_BUFFER }
+    override fun isEnded(): Boolean = inputEnded && outputBuffer === EMPTY_BUFFER
     override fun flush() {
-        outputBuffer = EMPTY_BUFFER
-        inputEnded = false
-        if (nativeHandle != 0L) nativeReset(nativeHandle)
+        outputBuffer = EMPTY_BUFFER; inputEnded = false; hasInput = false
+        synchronized(controlLock) { if (nativeHandle != 0L) nativeReset(nativeHandle) }
+        diagnostics = ImmersiveAudioDiagnostics()
     }
-
     override fun reset() {
-        flush()
-        releaseNative()
-        inputAudioFormat = AudioProcessor.AudioFormat.NOT_SET
-        outputAudioFormat = AudioProcessor.AudioFormat.NOT_SET
+        flush(); releaseNative(); format = AudioProcessor.AudioFormat.NOT_SET
+        reusableBuffer = EMPTY_BUFFER
     }
-
-    fun setEnabled(value: Boolean) {
-        enabled = value
-        if (nativeHandle != 0L) nativeSetEnabled(nativeHandle, value)
+    private fun releaseNative() = synchronized(controlLock) {
+        if (nativeHandle != 0L) nativeRelease(nativeHandle)
+        nativeHandle = 0L; algorithmicLatency = 0; applied = null; diagnostics = ImmersiveAudioDiagnostics()
     }
-
-    fun setIntensity(value: Float) {
-        intensity = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
-        if (nativeHandle != 0L) nativeSetSpatialBlend(nativeHandle, intensity)
+    fun readDiagnostics(): ImmersiveAudioDiagnostics {
+        CONTROL_EXECUTOR.execute {
+            synchronized(controlLock) {
+                if (nativeHandle != 0L) diagnostics = ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
+            }
+        }
+        return diagnostics
     }
-
-    fun setRoomPreset(value: ImmersiveRoomPreset) {
-        roomPreset = value
-        if (nativeHandle != 0L) nativeSetRoomPreset(nativeHandle, value.nativeValue)
-    }
-
-    fun setRoomMix(value: Float) {
-        roomMix = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
-        if (nativeHandle != 0L) nativeSetRoomMix(nativeHandle, roomMix)
-    }
-
-    fun setReflectionAmount(value: Float) {
-        reflectionAmount = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
-        if (nativeHandle != 0L) nativeSetReflectionAmount(nativeHandle, reflectionAmount)
-    }
-
-    fun setReverbTimeSeconds(value: Float) {
-        reverbTimeSeconds = value.takeIf(Float::isFinite)?.coerceIn(0.2f, 8f) ?: 1.35f
-        if (nativeHandle != 0L) nativeSetReverbTimeSeconds(nativeHandle, reverbTimeSeconds)
-    }
-
-    fun setRoomSize(value: Float) {
-        roomSize = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
-        if (nativeHandle != 0L) nativeSetRoomSize(nativeHandle, roomSize)
-    }
-
-    fun setDampening(value: Float) {
-        dampening = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
-        if (nativeHandle != 0L) nativeSetDampening(nativeHandle, dampening)
-    }
-
-    fun setStereoWidth(value: Float) {
-        stereoWidth = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
-        if (nativeHandle != 0L) nativeSetStereoWidth(nativeHandle, stereoWidth)
-    }
-
-    fun setCarFader(value: Float) {
-        carFader = value.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
-        if (nativeHandle != 0L) nativeSetCarFader(nativeHandle, carFader)
-    }
-
-    fun setQuantumFrames(value: Int) {
-        quantumFrames = value.coerceIn(MIN_QUANTUM_FRAMES, MAX_QUANTUM_FRAMES)
-        if (nativeHandle != 0L) nativeSetQuantumFrames(nativeHandle, quantumFrames)
-    }
-
-    fun quantumFrames(): Int = quantumFrames
-
-    fun setLimiterEnabled(value: Boolean) {
-        limiterEnabled = value
-        if (nativeHandle != 0L) nativeSetLimiterEnabled(nativeHandle, value)
-    }
-
-    fun setBassGainDb(value: Float) {
-        bassGainDb = value.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f
-        if (nativeHandle != 0L) nativeSetBassGainDb(nativeHandle, bassGainDb)
-    }
-
-    fun setTrebleGainDb(value: Float) {
-        trebleGainDb = value.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f
-        if (nativeHandle != 0L) nativeSetTrebleGainDb(nativeHandle, trebleGainDb)
-    }
-
-    fun setOutputGainDb(value: Float) {
-        outputGainDb = value.takeIf(Float::isFinite)?.coerceIn(-24f, 12f) ?: 0f
-        if (nativeHandle != 0L) nativeSetOutputGainDb(nativeHandle, outputGainDb)
-    }
-
-    fun readDiagnostics(): ImmersiveAudioDiagnostics =
-        if (nativeHandle == 0L) ImmersiveAudioDiagnostics() else ImmersiveAudioDiagnostics.fromNative(nativeReadDiagnostics(nativeHandle))
-
     fun resetDiagnostics() {
-        if (nativeHandle != 0L) nativeResetDiagnostics(nativeHandle)
-    }
-
-    private fun releaseNative() {
-        if (nativeHandle != 0L) {
-            nativeRelease(nativeHandle)
-            nativeHandle = 0L
+        CONTROL_EXECUTOR.execute {
+            synchronized(controlLock) { if (nativeHandle != 0L) nativeResetDiagnostics(nativeHandle) }
         }
     }
 
@@ -560,20 +580,21 @@ class ImmersiveAudioProcessor : AudioProcessor {
         const val MIN_QUANTUM_FRAMES = 96
         const val MAX_QUANTUM_FRAMES = 2048
         private val EMPTY_BUFFER = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
-
-        init {
-            System.loadLibrary("frostsoulx_immersive_jni")
+        private val CONTROL_EXECUTOR = Executors.newSingleThreadScheduledExecutor { task ->
+            Thread(task, "FrostSoulX-IR-control").apply { isDaemon = true }
         }
-
+        val nativeAvailable: Boolean = try {
+            System.loadLibrary("frostsoulx_immersive_jni"); true
+        } catch (_: LinkageError) { false }
         @JvmStatic private external fun nativeCreate(sampleRate: Int, encoding: Int): Long
         @JvmStatic private external fun nativeRelease(handle: Long)
         @JvmStatic private external fun nativeReset(handle: Long)
         @JvmStatic private external fun nativeResetDiagnostics(handle: Long)
         @JvmStatic private external fun nativeSetEnabled(handle: Long, enabled: Boolean)
-        @JvmStatic private external fun nativeSetLimiterEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetBassGainDb(handle: Long, gainDb: Float)
-        @JvmStatic private external fun nativeSetTrebleGainDb(handle: Long, gainDb: Float)
         @JvmStatic private external fun nativeSetOutputGainDb(handle: Long, gainDb: Float)
+        @JvmStatic private external fun nativeSetCustomIr(handle: Long, ll: FloatArray, lr: FloatArray, rl: FloatArray, rr: FloatArray): Boolean
+        @JvmStatic private external fun nativeClearCustomIr(handle: Long)
         @JvmStatic private external fun nativeSetSpatialBlend(handle: Long, blend: Float)
         @JvmStatic private external fun nativeSetRoomPreset(handle: Long, preset: Int)
         @JvmStatic private external fun nativeSetRoomMix(handle: Long, wetMix: Float)
@@ -582,6 +603,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeSetRoomSize(handle: Long, size: Float)
         @JvmStatic private external fun nativeSetDampening(handle: Long, dampening: Float)
         @JvmStatic private external fun nativeSetStereoWidth(handle: Long, width: Float)
+        @JvmStatic private external fun nativeSetBassWidth(handle: Long, width: Float)
+        @JvmStatic private external fun nativeSetSource(handle: Long, azimuth: Float, elevation: Float, distance: Float)
+        @JvmStatic private external fun nativeSetOrbitEnabled(handle: Long, enabled: Boolean)
         @JvmStatic private external fun nativeSetCarFader(handle: Long, fader: Float)
         @JvmStatic private external fun nativeSetQuantumFrames(handle: Long, quantumFrames: Int)
         @JvmStatic private external fun nativeReadDiagnostics(handle: Long): DoubleArray?
@@ -590,175 +614,72 @@ class ImmersiveAudioProcessor : AudioProcessor {
 }
 
 object ImmersiveAudioRuntime {
+    @Volatile private var diagnosticsDeadlineNanos = 0L
+    internal fun diagnosticsRequested(): Boolean = System.nanoTime() - diagnosticsDeadlineNanos < 0L
     @Volatile private var processor: ImmersiveAudioProcessor? = null
     @Volatile private var transitionHandler: ((Boolean) -> Unit)? = null
-    @Volatile private var enabled = false
-    @Volatile private var intensity = 0.5f
-    @Volatile private var roomPreset = ImmersiveRoomPreset.STUDIO
-    @Volatile private var roomMix = 0.18f
-    @Volatile private var reflectionAmount = 0.28f
-    @Volatile private var reverbTimeSeconds = 1.35f
-    @Volatile private var roomSize = 0.5f
-    @Volatile private var dampening = 0.5f
-    @Volatile private var stereoWidth = 0.5f
-    @Volatile private var carFader = 0f
-    @Volatile private var quantumFrames = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES
-    @Volatile private var limiterEnabled = true
-    @Volatile private var bassGainDb = 0f
-    @Volatile private var trebleGainDb = 0f
-    @Volatile private var outputGainDb = 0f
+    @Volatile private var controls = ImmersiveControls()
+    @Volatile private var customIr: WavImpulseResponse? = null
     @Volatile private var b1Meter: ImmersiveStageMeter? = null
     @Volatile private var b2Meter: ImmersiveStageMeter? = null
     @Volatile private var b3Meter: ImmersiveStageMeter? = null
     @Volatile private var b5Meter: ImmersiveStageMeter? = null
 
-    fun attachStageMeters(
-        b1: ImmersiveStageMeter,
-        b2: ImmersiveStageMeter,
-        b3: ImmersiveStageMeter,
-        b5: ImmersiveStageMeter,
-    ) {
-        b1Meter = b1
-        b2Meter = b2
-        b3Meter = b3
-        b5Meter = b5
+    fun attachStageMeters(b1: ImmersiveStageMeter, b2: ImmersiveStageMeter, b3: ImmersiveStageMeter, b5: ImmersiveStageMeter) {
+        b1Meter = b1; b2Meter = b2; b3Meter = b3; b5Meter = b5
     }
-
-    fun attach(value: ImmersiveAudioProcessor) {
-        processor = value
-        value.setIntensity(intensity)
-        value.setRoomPreset(roomPreset)
-        value.setRoomMix(roomMix)
-        value.setReflectionAmount(reflectionAmount)
-        value.setReverbTimeSeconds(reverbTimeSeconds)
-        value.setRoomSize(roomSize)
-        value.setDampening(dampening)
-        value.setStereoWidth(stereoWidth)
-        value.setCarFader(carFader)
-        value.setQuantumFrames(quantumFrames)
-        value.setLimiterEnabled(limiterEnabled)
-        value.setBassGainDb(bassGainDb)
-        value.setTrebleGainDb(trebleGainDb)
-        value.setOutputGainDb(outputGainDb)
-        value.setEnabled(enabled)
+    fun attach(value: ImmersiveAudioProcessor) { processor = value; value.updateControls(controls); value.updateCustomIr(customIr) }
+    fun detachProcessor() { processor = null }
+    fun detach() { diagnosticsDeadlineNanos = 0L; processor = null; transitionHandler = null; b1Meter = null; b2Meter = null; b3Meter = null; b5Meter = null }
+    fun setTransitionHandler(handler: ((Boolean) -> Unit)?) { transitionHandler = handler }
+    @Synchronized fun applyControls(value: ImmersiveControls) {
+        val oldEnabled = controls.enabled
+        controls = value.sanitized()
+        processor?.updateControls(controls)
+        if (oldEnabled != controls.enabled) transitionHandler?.invoke(controls.enabled)
     }
-
-    fun detachProcessor() {
-        processor = null
-    }
-
-    fun detach() {
-        processor = null
-        transitionHandler = null
-    }
-
-    fun setTransitionHandler(handler: ((Boolean) -> Unit)?) {
-        transitionHandler = handler
-    }
-
-    fun setEnabled(value: Boolean) {
-        val changed = enabled != value
-        enabled = value
-        processor?.setEnabled(value)
-        if (changed) transitionHandler?.invoke(value)
-    }
-
-    fun setIntensity(value: Float) {
-        intensity = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
-        processor?.setIntensity(intensity)
-    }
-
-    fun setRoomPreset(value: ImmersiveRoomPreset) {
-        roomPreset = value
-        processor?.setRoomPreset(value)
-    }
-
-    fun setRoomMix(value: Float) {
-        roomMix = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
-        processor?.setRoomMix(roomMix)
-    }
-
-    fun setReflectionAmount(value: Float) {
-        reflectionAmount = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
-        processor?.setReflectionAmount(reflectionAmount)
-    }
-
-    fun setReverbTimeSeconds(value: Float) {
-        reverbTimeSeconds = value.takeIf(Float::isFinite)?.coerceIn(0.2f, 8f) ?: 1.35f
-        processor?.setReverbTimeSeconds(reverbTimeSeconds)
-    }
-
-    fun setRoomSize(value: Float) {
-        roomSize = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
-        processor?.setRoomSize(roomSize)
-    }
-
-    fun setDampening(value: Float) {
-        dampening = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
-        processor?.setDampening(dampening)
-    }
-
-    fun setStereoWidth(value: Float) {
-        stereoWidth = value.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.5f
-        processor?.setStereoWidth(stereoWidth)
-    }
-
-    fun setCarFader(value: Float) {
-        carFader = value.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
-        processor?.setCarFader(carFader)
-    }
-    fun setQuantumFrames(value: Int) {
-        quantumFrames = value.coerceIn(ImmersiveAudioProcessor.MIN_QUANTUM_FRAMES, ImmersiveAudioProcessor.MAX_QUANTUM_FRAMES)
-        processor?.setQuantumFrames(quantumFrames)
-    }
-
+    @Synchronized fun setCustomIr(value: WavImpulseResponse?) { customIr = value; processor?.updateCustomIr(value) }
+    @Synchronized private fun change(update: (ImmersiveControls) -> ImmersiveControls) = applyControls(update(controls))
+    fun currentControls(): ImmersiveControls = controls
+    fun setEnabled(value: Boolean) = change { it.copy(enabled = value) }
+    fun setIntensity(value: Float) = change { it.copy(intensity = value) }
+    fun setRoomPreset(value: ImmersiveRoomPreset) = change { it.copy(roomPreset = value) }
+    fun setRoomMix(value: Float) = change { it.copy(roomMix = value) }
+    fun setReflectionAmount(value: Float) = change { it.copy(reflectionAmount = value) }
+    fun setReverbTimeSeconds(value: Float) = change { it.copy(reverbTimeSeconds = value) }
+    fun setRoomSize(value: Float) = change { it.copy(roomSize = value) }
+    fun setDampening(value: Float) = change { it.copy(dampening = value) }
+    fun setStereoWidth(value: Float) = change { it.copy(stereoWidth = value) }
+    fun setBassWidth(value: Float) = change { it.copy(bassWidth = value) }
+    fun setCarFader(value: Float) = change { it.copy(carFader = value) }
+    fun setAzimuth(value: Float) = change { it.copy(azimuth = value) }
+    fun setElevation(value: Float) = change { it.copy(elevation = value) }
+    fun setDistance(value: Float) = change { it.copy(distance = value) }
+    fun setOrbitEnabled(value: Boolean) = change { it.copy(orbitEnabled = value) }
+    fun setQuantumFrames(value: Int) = change { it.copy(quantumFrames = value) }
+    fun setBassGainDb(value: Float) = change { it.copy(bassGainDb = value) }
+    fun setOutputGainDb(value: Float) = change { it.copy(outputGainDb = value) }
+    fun isEnabled(): Boolean = controls.enabled
+    fun intensity(): Float = controls.intensity
+    fun roomPreset(): ImmersiveRoomPreset = controls.roomPreset
+    fun roomMix(): Float = controls.roomMix
+    fun reflectionAmount(): Float = controls.reflectionAmount
+    fun reverbTimeSeconds(): Float = controls.reverbTimeSeconds
+    fun roomSize(): Float = controls.roomSize
+    fun dampening(): Float = controls.dampening
+    fun stereoWidth(): Float = controls.stereoWidth
+    fun quantumFrames(): Int = controls.quantumFrames
     fun readDiagnostics(): ImmersiveAudioDiagnostics {
+        diagnosticsDeadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
         val native = processor?.readDiagnostics() ?: ImmersiveAudioDiagnostics()
         return native.copy(
             b1AfterSilenceSkipping = b1Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
             b2AfterSonic = b2Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
             b3BeforeNativeDsp = b3Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
             b5AfterNativeDsp = b5Meter?.snapshot() ?: ImmersiveStageDiagnostics(),
-            // AudioTrack and physical device output are intentionally unavailable.
-            b5AudioTrack = ImmersiveStageDiagnostics(),
         )
     }
     fun resetDiagnostics() {
-        processor?.resetDiagnostics()
-        b1Meter?.reset()
-        b2Meter?.reset()
-        b3Meter?.reset()
-        b5Meter?.reset()
-    }
-
-    fun isEnabled(): Boolean = enabled
-    fun intensity(): Float = intensity
-    fun roomPreset(): ImmersiveRoomPreset = roomPreset
-    fun roomMix(): Float = roomMix
-    fun reflectionAmount(): Float = reflectionAmount
-    fun reverbTimeSeconds(): Float = reverbTimeSeconds
-    fun roomSize(): Float = roomSize
-    fun dampening(): Float = dampening
-    fun stereoWidth(): Float = stereoWidth
-    fun quantumFrames(): Int = quantumFrames
-
-    fun setLimiterEnabled(value: Boolean) {
-        limiterEnabled = value
-        processor?.setLimiterEnabled(value)
-    }
-
-    fun setBassGainDb(value: Float) {
-        bassGainDb = value.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f
-        processor?.setBassGainDb(bassGainDb)
-    }
-
-    fun setTrebleGainDb(value: Float) {
-        trebleGainDb = value.takeIf(Float::isFinite)?.coerceIn(-12f, 12f) ?: 0f
-        processor?.setTrebleGainDb(trebleGainDb)
-    }
-
-    fun setOutputGainDb(value: Float) {
-        outputGainDb = value.takeIf(Float::isFinite)?.coerceIn(-24f, 12f) ?: 0f
-        processor?.setOutputGainDb(outputGainDb)
+        processor?.resetDiagnostics(); b1Meter?.reset(); b2Meter?.reset(); b3Meter?.reset(); b5Meter?.reset()
     }
 }

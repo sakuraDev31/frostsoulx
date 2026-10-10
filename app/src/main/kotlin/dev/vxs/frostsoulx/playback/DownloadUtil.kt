@@ -21,6 +21,8 @@ import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadManager
 import androidx.media3.exoplayer.offline.DownloadNotificationHelper
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineExceptionHandler
+import dev.vxs.frostsoulx.utils.reportException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -69,11 +71,12 @@ class DownloadUtil
     ) {
         private val connectivityManager = context.getSystemService<ConnectivityManager>()!!
         private val audioQuality by enumPreference(context, AudioQualityKey, AudioQuality.AUTO)
-        private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO +
+            CoroutineExceptionHandler { _, error -> reportException(error) })
         private val songUrlCache = ConcurrentHashMap<String, AuthScopedCacheValue>()
         // Prevent duplicate stream-resolution requests when multiple download workers open the same media item.
         // This mirrors the upstream resolver's in-flight deduplication without changing stream selection.
-        private val songUrlResolutionLocks = ConcurrentHashMap<String, Mutex>()
+        private val songUrlResolutionLocks = Array(64) { Mutex() }
         private val downloadExecutor = Executors.newFixedThreadPool(DEFAULT_MAX_PARALLEL_DOWNLOADS)
 
         private val mediaOkHttpClient: OkHttpClient by lazy {
@@ -134,19 +137,25 @@ class DownloadUtil
                         CacheDataSink.Factory().setCache(playerCache).setBufferSize(DOWNLOAD_WRITE_BUFFER_SIZE),
                     ),
             ) { dataSpec ->
-                val mediaId = dataSpec.key ?: error("No media id")
+                val downloadKey = dataSpec.key ?: error("No media id")
+                val qualityMarker = "|quality="
+                val markerIndex = downloadKey.indexOf(qualityMarker)
+                val mediaId = if (markerIndex >= 0) downloadKey.substring(0, markerIndex) else downloadKey
+                val explicitQuality = if (markerIndex >= 0) {
+                    runCatching { AudioQuality.valueOf(downloadKey.substring(markerIndex + qualityMarker.length)) }.getOrNull()
+                } else null
                 val length = if (dataSpec.length >= 0) dataSpec.length else 1
-                if (playerCache.isCached(mediaId, dataSpec.position, length)) {
+                if (explicitQuality == null && playerCache.isCached(mediaId, dataSpec.position, length)) {
                     return@Factory dataSpec
                 }
                 val lowDataModeActive = context.isLowDataModeActive()
-                val requestedAudioQuality = resolveDownloadAudioQuality(lowDataModeActive)
+                val requestedAudioQuality = explicitQuality ?: resolveDownloadAudioQuality(lowDataModeActive)
                 val streamCacheKey = buildSongUrlCacheKey(mediaId, requestedAudioQuality)
-                val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
-                val resolutionLock = songUrlResolutionLocks.getOrPut(streamCacheKey) { Mutex() }
+                val resolutionLock = songUrlResolutionLocks[(streamCacheKey.hashCode() and Int.MAX_VALUE) % songUrlResolutionLocks.size]
                 val streamUrl =
                     runBlocking(Dispatchers.IO) {
                         resolutionLock.withLock {
+                            val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
                             songUrlCache[streamCacheKey]
                                 ?.takeIf {
                                     it.isValidFor(
@@ -161,17 +170,22 @@ class DownloadUtil
                                                 mediaId,
                                                 audioQuality = requestedAudioQuality,
                                                 connectivityManager = connectivityManager,
-                                                networkMetered = lowDataModeActive,
+                                                networkMetered = lowDataModeActive && explicitQuality == null,
                                             )
                                         }.getOrThrow()
                                     persistPlaybackMetadata(mediaId, playbackData)
                                     val resolvedUrl = playbackData.streamUrl
-                                    songUrlCache[streamCacheKey] =
-                                        AuthScopedCacheValue(
+                                    songUrlCache.entries.removeIf { (_, cached) ->
+                                        !cached.isValidFor(playbackData.authFingerprint, minimumRemainingMs = YTPlayerUtils.STREAM_URL_EXPIRY_SAFETY_MS)
+                                    }
+                                    if (songUrlCache.size >= 256) songUrlCache.clear()
+                                    if (playbackData.authFingerprint == YouTube.currentPlaybackAuthState().fingerprint) {
+                                        songUrlCache[streamCacheKey] = AuthScopedCacheValue(
                                             url = resolvedUrl,
                                             expiresAtMs = System.currentTimeMillis() + (playbackData.streamExpiresInSeconds * 1000L),
                                             authFingerprint = playbackData.authFingerprint,
                                         )
+                                    }
                                     resolvedUrl
                                 }
                         }
@@ -218,11 +232,12 @@ class DownloadUtil
         init {
             downloadScope.launch {
                 val result = mutableMapOf<String, Download>()
-                val cursor = downloadManager.downloadIndex.getDownloads()
-                while (cursor.moveToNext()) {
-                    result[cursor.download.request.id] = cursor.download
+                downloadManager.downloadIndex.getDownloads().use { cursor ->
+                    while (cursor.moveToNext()) {
+                        result[cursor.download.request.id] = cursor.download
+                    }
                 }
-                downloads.value = result
+                downloads.update { current -> result + current }
             }
             downloadScope.launch {
                 var previousFingerprint: String? = null
@@ -232,7 +247,6 @@ class DownloadUtil
                     .collect { fingerprint ->
                         if (previousFingerprint != null && previousFingerprint != fingerprint) {
                             songUrlCache.clear()
-                            songUrlResolutionLocks.clear()
                         }
                         previousFingerprint = fingerprint
                     }

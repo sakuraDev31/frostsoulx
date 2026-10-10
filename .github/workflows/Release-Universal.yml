@@ -1,0 +1,129 @@
+name: Build Universal Release APK
+
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: >-
+    -Dorg.gradle.jvmargs="-Xmx5g -XX:+UseG1GC -XX:MaxMetaspaceSize=2g"
+    -Dorg.gradle.daemon=false
+    -Dorg.gradle.parallel=false
+    -Dorg.gradle.configureondemand=false
+    -Dorg.gradle.caching=true
+
+jobs:
+  build_universal_release:
+    name: Build and sign Universal APK
+    if: github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+
+      - name: Grant execute permission for Gradle wrapper
+        run: chmod +x ./gradlew
+
+      - name: Build Universal Release APK
+        run: ./gradlew assembleGmsMobileUniversalRelease --no-daemon
+        env:
+          PULL_REQUEST: 'false'
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+          API_BEARER_TOKEN: ${{ secrets.API_BEARER_TOKEN }}
+          TOGETHER_BEARER_TOKEN: ${{ secrets.TOGETHER_BEARER_TOKEN }}
+          CANVAS_BEARER_TOKEN: ${{ secrets.CANVAS_BEARER_TOKEN }}
+          EXTRACTOR_BEARER: ${{ secrets.EXTRACTOR_BEARER }}
+
+      - name: Resolve release output directory
+        id: release_dir
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANDIDATES=(
+            "app/build/outputs/apk/gmsMobileUniversal/release"
+            "app/build/outputs/apk/gms/mobile/universal/release"
+            "app/build/outputs/apk/mobile/universal/release"
+            "app/build/outputs/apk/mobileUniversal/release"
+          )
+          for d in "${CANDIDATES[@]}"; do
+            if [ -d "$d" ]; then
+              echo "release_dir=$d" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          FOUND_METADATA="$(
+            find app/build/outputs/apk -type f -name output-metadata.json \
+              \( -path "*/gmsMobileUniversal/release/output-metadata.json" -o \
+                 -path "*/gms/mobile/universal/release/output-metadata.json" -o \
+                 -path "*/mobile/universal/release/output-metadata.json" -o \
+                 -path "*/mobileUniversal/release/output-metadata.json" \) |
+              head -n 1 || true
+          )"
+          if [ -n "${FOUND_METADATA:-}" ]; then
+            echo "release_dir=$(dirname "$FOUND_METADATA")" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Could not resolve Universal APK release output directory."
+          find app/build/outputs/apk -maxdepth 8 -type d -print || true
+          exit 1
+
+      - name: Sign APK
+        uses: ilharp/sign-android-release@v2.0.0
+        with:
+          releaseDir: ${{ steps.release_dir.outputs.release_dir }}/
+          signingKey: ${{ secrets.KEYSTORE }}
+          keyAlias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+          buildToolsVersion: 35.0.0
+
+      - name: Verify and stage signed APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_DIR="${{ steps.release_dir.outputs.release_dir }}"
+          mkdir -p "$RELEASE_DIR/out"
+          SIGNED_APK="$(find "$RELEASE_DIR" -type f \( -name "*-signed.apk" -o -name "*-unsigned-signed.apk" \) -not -path "$RELEASE_DIR/out/*" | head -n 1)"
+          if [ -z "${SIGNED_APK:-}" ]; then
+            echo "Signed APK not found."
+            find "$RELEASE_DIR" -type f -name "*.apk" -print || true
+            exit 1
+          fi
+          DEST="$RELEASE_DIR/out/app-gms-mobile-universal-release.apk"
+          mv "$SIGNED_APK" "$DEST"
+          test -s "$DEST"
+          echo "Signed Universal APK staged: $DEST"
+          du -h "$DEST"
+
+      - name: Upload signed Universal APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-gms-mobile-universal-release
+          path: ${{ steps.release_dir.outputs.release_dir }}/out/app-gms-mobile-universal-release.apk
+          if-no-files-found: error
+
+      - name: Upload R8 mapping files
+        uses: actions/upload-artifact@v7
+        with:
+          name: r8-mapping-universal-release
+          path: app/build/outputs/mapping/**/mapping.txt
+          if-no-files-found: warn

@@ -79,7 +79,7 @@ import dev.vxs.frostsoulx.ui.screens.settings.PoTokenScreen
 import dev.vxs.frostsoulx.ui.screens.settings.PrivacySettings
 import dev.vxs.frostsoulx.ui.screens.settings.SettingsScreen
 import dev.vxs.frostsoulx.ui.screens.settings.StorageSettings
-import dev.vxs.frostsoulx.ui.screens.settings.StereoSurroundScreen
+import dev.vxs.frostsoulx.ui.screens.settings.SpatialAudioScreen
 import dev.vxs.frostsoulx.ui.screens.settings.UpdateScreen
 import dev.vxs.frostsoulx.viewmodels.HomeViewModel
 import dev.vxs.frostsoulx.viewmodels.OnlineSearchSort
@@ -130,6 +130,16 @@ fun NavGraphBuilder.navigationBuilder(
         arguments = listOf(navArgument("kind") { type = NavType.StringType }),
     ) { backStackEntry ->
         FrostSoulHomeCollectionScreen(
+            navController = navController,
+            kind = backStackEntry.arguments?.getString("kind").orEmpty(),
+            viewModel = homeViewModel,
+        )
+    }
+    composable(
+        route = "home_playlist_collection/{kind}",
+        arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+    ) { backStackEntry ->
+        HomePlaylistCollectionScreen(
             navController = navController,
             kind = backStackEntry.arguments?.getString("kind").orEmpty(),
             viewModel = homeViewModel,
@@ -438,7 +448,7 @@ fun NavGraphBuilder.navigationBuilder(
         FrostSoulSettingsPage { MusicTogetherScreen(navController) }
     }
     composable("settings/surround") {
-        FrostSoulSettingsPage { StereoSurroundScreen(navController) }
+        FrostSoulSettingsPage { SpatialAudioScreen(navController) }
     }
     composable("settings/lastfm") {
         FrostSoulSettingsPage { LastFMSettings(navController) }

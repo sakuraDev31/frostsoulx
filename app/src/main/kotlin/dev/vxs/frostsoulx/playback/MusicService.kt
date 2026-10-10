@@ -50,6 +50,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.MediaItem
 import androidx.media3.common.ParserException
 import androidx.media3.common.PlaybackException
@@ -100,6 +101,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -177,6 +179,10 @@ import dev.vxs.frostsoulx.constants.PauseListenHistoryKey
 import dev.vxs.frostsoulx.constants.PauseOnDeviceMuteKey
 import dev.vxs.frostsoulx.constants.PermanentShuffleKey
 import dev.vxs.frostsoulx.constants.PersistentQueueKey
+import dev.vxs.frostsoulx.constants.SpatialAzimuthKey
+import dev.vxs.frostsoulx.constants.SpatialElevationKey
+import dev.vxs.frostsoulx.constants.SpatialDistanceKey
+import dev.vxs.frostsoulx.constants.SpatialBassWidthKey
 import dev.vxs.frostsoulx.constants.StereoSurroundEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundIntensityKey
 import dev.vxs.frostsoulx.constants.StereoSurroundRoomPresetKey
@@ -188,9 +194,7 @@ import dev.vxs.frostsoulx.constants.StereoSurroundDampeningKey
 import dev.vxs.frostsoulx.constants.StereoSurroundStereoWidthKey
 import dev.vxs.frostsoulx.constants.StereoSurroundCarFaderKey
 import dev.vxs.frostsoulx.constants.StereoSurroundQuantumFramesKey
-import dev.vxs.frostsoulx.constants.StereoSurroundLimiterEnabledKey
 import dev.vxs.frostsoulx.constants.StereoSurroundBassGainDbKey
-import dev.vxs.frostsoulx.constants.StereoSurroundTrebleGainDbKey
 import dev.vxs.frostsoulx.constants.StereoSurroundOutputGainDbKey
 import dev.vxs.frostsoulx.constants.PlayerStreamClient
 import dev.vxs.frostsoulx.constants.PlayerStreamClientKey
@@ -474,7 +478,22 @@ class MusicService :
             .build()
     }
 
+    private var queueGeneration = 0L
+    private var initialQueueJob: Job? = null
+    private var paginationJob: Job? = null
     private var currentQueue: Queue = EmptyQueue
+        set(value) {
+            queueGeneration++
+            initialQueueJob?.cancel()
+            paginationJob?.cancel()
+            field = value
+        }
+    private val queueFailureHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, error ->
+        reportException(error)
+        scope.launch {
+            Toast.makeText(this@MusicService, error.message ?: "Unable to load queue", Toast.LENGTH_LONG).show()
+        }
+    }
     private var playbackCore: Media3PlaybackCore? = null
     val playbackCoreState: kotlinx.coroutines.flow.StateFlow<PlaybackCoreState>?
         get() = playbackCore?.state
@@ -1108,15 +1127,16 @@ class MusicService :
         ImmersiveAudioRuntime.setDampening(dataStore.get(StereoSurroundDampeningKey, 0.5f))
         ImmersiveAudioRuntime.setStereoWidth(dataStore.get(StereoSurroundStereoWidthKey, 0.5f))
         ImmersiveAudioRuntime.setCarFader(dataStore.get(StereoSurroundCarFaderKey, 0f))
+        ImmersiveAudioRuntime.setAzimuth(dataStore.get(SpatialAzimuthKey, 0f))
+        ImmersiveAudioRuntime.setElevation(dataStore.get(SpatialElevationKey, 0f))
+        ImmersiveAudioRuntime.setDistance(dataStore.get(SpatialDistanceKey, 1f))
+        ImmersiveAudioRuntime.setBassWidth(dataStore.get(SpatialBassWidthKey, 1f))
+        ImmersiveAudioRuntime.setOrbitEnabled(dataStore.get(dev.vxs.frostsoulx.constants.SpatialOrbitEnabledKey, false))
         ImmersiveAudioRuntime.setQuantumFrames(
             dataStore.get(StereoSurroundQuantumFramesKey, 384), // Keep the persisted quantum default without initializing the disabled JNI processor.
         )
-        ImmersiveAudioRuntime.setLimiterEnabled(dataStore.get(StereoSurroundLimiterEnabledKey, true))
         ImmersiveAudioRuntime.setBassGainDb(
             dataStore.get(StereoSurroundBassGainDbKey, 0f),
-        )
-        ImmersiveAudioRuntime.setTrebleGainDb(
-            dataStore.get(StereoSurroundTrebleGainDbKey, 0f),
         )
         ImmersiveAudioRuntime.setOutputGainDb(
             dataStore.get(StereoSurroundOutputGainDbKey, 0f),
@@ -1473,6 +1493,29 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { enabled ->
                 ImmersiveAudioRuntime.setEnabled(enabled)
+            }
+
+        // Restore custom responses even when the spatial settings page is closed.
+        dataStore.data
+            .map { prefs ->
+                (prefs[dev.vxs.frostsoulx.constants.ConvolverActiveIrPresetKey] ?: "") to
+                    (prefs[dev.vxs.frostsoulx.constants.ConvolverIrPresetsKey] ?: "[]")
+            }
+            .distinctUntilChanged()
+            .collectLatest(ioScope) { (activeId, raw) ->
+                val response = runCatching {
+                    if (activeId.isBlank()) return@runCatching null
+                    val presets = org.json.JSONArray(raw)
+                    val selected = (0 until presets.length()).asSequence()
+                        .mapNotNull { presets.optJSONObject(it) }
+                        .firstOrNull { it.optString("id") == activeId } ?: return@runCatching null
+                    val filename = selected.optString("file")
+                    require(filename.isNotBlank() && java.io.File(filename).name == filename)
+                    val file = java.io.File(java.io.File(filesDir, "convolver-ir"), filename)
+                    require(file.length() in 44..(32L * 1024 * 1024)) { "Invalid saved IR size" }
+                    WavImpulseResponse.decode(file.readBytes())
+                }.onFailure { android.util.Log.w("ImmersiveAudio", "Could not restore custom room response", it) }.getOrNull()
+                ImmersiveAudioRuntime.setCustomIr(response)
             }
 
         combine(
@@ -3820,7 +3863,8 @@ class MusicService :
 
         clearAutomix()
         autoAddedMediaIds.clear()
-        scope.launch(SilentHandler) {
+        val requestGeneration = queueGeneration
+        initialQueueJob = scope.launch(queueFailureHandler) {
             val hideExplicit = dataStore.get(HideExplicitKey, false)
             val hideVideo = dataStore.get(HideVideoKey, false)
             val autoLoadMoreEnabled = dataStore.get(AutoLoadMoreKey, true)
@@ -3830,6 +3874,7 @@ class MusicService :
                     ?.takeUnless { item ->
                         item.hasBlockedArtist(loadBlockedArtistIds())
                     }
+            if (requestGeneration != queueGeneration) return@launch
             if (preloadItem != null) {
                 player.setMediaItem(preloadItem)
                 player.prepare()
@@ -3844,7 +3889,7 @@ class MusicService :
             if (!autoLoadMoreEnabled && queue.shouldExpandToFullQueueWhenAutoLoadMoreDisabled() && queue.hasNextPage()) {
                 val expandedItems = initialStatus.items.toMutableList()
                 var pagesLoaded = 0
-                while (queue.hasNextPage() && pagesLoaded < 200) {
+                while (isActive && requestGeneration == queueGeneration && queue.hasNextPage() && pagesLoaded < 200) {
                     pagesLoaded++
                     val nextItems =
                         withContext(Dispatchers.IO) {
@@ -3858,6 +3903,7 @@ class MusicService :
                 }
                 initialStatus = initialStatus.copy(items = expandedItems)
             }
+            if (!isActive || requestGeneration != queueGeneration || currentQueue !== queue) return@launch
             if (initialStatus.title != null) {
                 queueTitle = initialStatus.title
             }
@@ -3976,7 +4022,8 @@ class MusicService :
             return
         }
 
-        scope.launch(SilentHandler) {
+        val requestGeneration = queueGeneration
+        scope.launch(queueFailureHandler) {
             val radioQueue =
                 YouTubeQueue(
                     endpoint = WatchEndpoint(videoId = currentMediaId),
@@ -3992,6 +4039,7 @@ class MusicService :
                         )
                 }
 
+            if (requestGeneration != queueGeneration || player.currentMediaItem?.mediaId != currentMediaId) return@launch
             if (initialStatus.title != null) {
                 queueTitle = initialStatus.title
             }
@@ -6652,18 +6700,24 @@ class MusicService :
             reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT &&
             player.mediaItemCount - player.currentMediaItemIndex <= 5 &&
             currentQueue.hasNextPage() &&
+            initialQueueJob?.isActive != true &&
+            paginationJob?.isActive != true &&
             player.repeatMode == REPEAT_MODE_OFF
         ) {
-            scope.launch(SilentHandler) {
+            val requestedQueue = currentQueue
+            val requestGeneration = queueGeneration
+            paginationJob = scope.launch(queueFailureHandler) {
                 val mediaItems =
-                    currentQueue
+                    requestedQueue
                         .nextPage()
                         .filterPlaybackContent(
                             hideExplicit = dataStore.get(HideExplicitKey, false),
                             hideVideo = dataStore.get(HideVideoKey, false),
                         )
+                if (!isActive || requestGeneration != queueGeneration || currentQueue !== requestedQueue) return@launch
                 if (player.playbackState != STATE_IDLE) {
-                    player.addMediaItems(mediaItems.drop(1))
+                    val knownIds = player.mediaItems.mapTo(hashSetOf()) { it.mediaId }
+                    player.addMediaItems(mediaItems.filter { knownIds.add(it.mediaId) })
                 } else {
                     requestDiscordSync(
                         reason = "player_idle_after_queue_extension",
@@ -6798,6 +6852,14 @@ class MusicService :
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         super.onIsPlayingChanged(isPlaying)
+        periodicQueueSaveJob?.cancel()
+        if (isPlaying) {
+            periodicQueueSaveJob = scope.launch(queueFailureHandler) {
+                while (isActive) { delay(15_000L); saveQueueToDisk() }
+            }
+        } else if (::player.isInitialized) {
+            scope.launch(queueFailureHandler) { saveQueueToDisk() }
+        }
         secondaryCrossfadePlayer?.let { secondaryPlayer ->
             if (isCrossfading && !crossfadeHandoffInProgress) {
                 if (isPlaying) {
@@ -8234,16 +8296,22 @@ class MusicService :
                 val afterSilence = ImmersiveStageMeterAudioProcessor(b1Meter)
                 val afterSonic = ImmersiveStageMeterAudioProcessor(b2Meter)
                 val beforeNativeDsp = ImmersiveStageMeterAudioProcessor(b3Meter)
-                // The immersive processor is intentionally absent while the engine is disabled.
-                // This keeps the JNI library completely out of normal playback startup.
-                val chain = DefaultAudioSink.DefaultAudioProcessorChain(
-                    silenceSkipping,
-                    afterSilence,
-                    sonic,
-                    afterSonic,
-                    beforeNativeDsp,
-                    ImmersiveStageMeterAudioProcessor(b5Meter),
+                // Strict OFF bypass: no native processor, conversion or native library startup.
+                val processors = mutableListOf<AudioProcessor>(
+                    silenceSkipping, afterSilence, sonic, afterSonic, beforeNativeDsp,
                 )
+                if (ImmersiveAudioRuntime.isEnabled()) {
+                    processors += ImmersiveAudioProcessor().also(ImmersiveAudioRuntime::attach)
+                }
+                processors += ImmersiveStageMeterAudioProcessor(b5Meter)
+                // Give Media3 the SAME silence/Sonic instances observed by B1/B2.
+                // The vararg default constructor would append a second, unmetered pair.
+                val orderedProcessors = processors.toTypedArray()
+                val chain = object : DefaultAudioSink.DefaultAudioProcessorChain(
+                    emptyArray<AudioProcessor>(), silenceSkipping, sonic,
+                ) {
+                    override fun getAudioProcessors(): Array<AudioProcessor> = orderedProcessors
+                }
                 return DefaultAudioSink
                     .Builder(context)
                     .setEnableFloatOutput(false)
@@ -8446,7 +8514,18 @@ class MusicService :
         )
     }
 
+    private fun readPlaybackSnapshot(): PersistentPlaybackSnapshot? =
+        readPersistentObject<PersistentPlaybackSnapshot>(PERSISTENT_PLAYBACK_SNAPSHOT_FILE)
+
     private inline fun <reified T> readPersistentObject(fileName: String): T? {
+        if (fileName == PERSISTENT_QUEUE_FILE || fileName == PERSISTENT_PLAYER_STATE_FILE) {
+            readPlaybackSnapshot()?.let { snapshot ->
+                if (snapshot.version == 1) {
+                    val value: Any = if (fileName == PERSISTENT_QUEUE_FILE) snapshot.queue else snapshot.playerState
+                    return value as? T
+                }
+            }
+        }
         val persistentFile = filesDir.resolve(fileName)
         if (!persistentFile.exists() || !persistentFile.isFile) return null
 
@@ -8467,23 +8546,29 @@ class MusicService :
 
     private fun clearPersistedQueueFiles() {
         persistentSaveGeneration.incrementAndGet()
-        synchronized(persistentStateLock) {
-            listOf(
-                PERSISTENT_QUEUE_FILE,
-                PERSISTENT_PLAYER_STATE_FILE,
-                PERSISTENT_AUTOMIX_FILE,
-            ).forEach { fileName ->
-                val persistentFile = filesDir.resolve(fileName)
-                val tempFile = filesDir.resolve("$fileName.tmp")
-                runCatching {
-                    if (persistentFile.exists() && !persistentFile.delete()) {
-                        Timber.tag(TAG).w("Failed to delete persistent file: $fileName")
+        // Queue deletion must not wait on an in-progress storage write on the main thread.
+        QUEUE_PERSISTENCE_SCOPE.launch {
+            QUEUE_PERSISTENCE_MUTEX.withLock {
+                synchronized(persistentStateLock) {
+                    listOf(
+                        PERSISTENT_PLAYBACK_SNAPSHOT_FILE,
+                        PERSISTENT_QUEUE_FILE,
+                        PERSISTENT_PLAYER_STATE_FILE,
+                        PERSISTENT_AUTOMIX_FILE,
+                    ).forEach { fileName ->
+                        val persistentFile = filesDir.resolve(fileName)
+                        val tempFile = filesDir.resolve("$fileName.tmp")
+                        runCatching {
+                            if (persistentFile.exists() && !persistentFile.delete()) {
+                                Timber.tag(TAG).w("Failed to delete persistent file: $fileName")
+                            }
+                            if (tempFile.exists() && !tempFile.delete()) {
+                                Timber.tag(TAG).w("Failed to delete temporary persistent file: $fileName")
+                            }
+                        }.onFailure {
+                            Timber.tag(TAG).w(it, "Failed to clear persistent file: $fileName")
+                        }
                     }
-                    if (tempFile.exists() && !tempFile.delete()) {
-                        Timber.tag(TAG).w("Failed to delete temporary persistent file: $fileName")
-                    }
-                }.onFailure {
-                    Timber.tag(TAG).w(it, "Failed to clear persistent file: $fileName")
                 }
             }
         }
@@ -8502,16 +8587,12 @@ class MusicService :
                     ObjectOutputStream(fos).use { output ->
                         output.writeObject(payload)
                         output.flush()
+                        fos.fd.sync()
                     }
                 }
 
                 if (!tempFile.renameTo(persistentFile)) {
-                    if (persistentFile.exists() && !persistentFile.delete()) {
-                        error("Could not replace $fileName")
-                    }
-                    if (!tempFile.renameTo(persistentFile)) {
-                        error("Could not atomically move $fileName")
-                    }
+                    error("Could not atomically replace $fileName; previous snapshot retained")
                 }
             }.onFailure {
                 runCatching { tempFile.delete() }
@@ -8587,51 +8668,72 @@ class MusicService :
         )
     }
 
-    private suspend fun saveQueueToDisk() {
+    private data class PersistentPlaybackSnapshot(
+        val queue: PersistQueue,
+        val playerState: PersistPlayerState,
+        val version: Int = 1,
+    ) : Serializable {
+        companion object { private const val serialVersionUID = 1L }
+    }
+
+    private var queueSaveJob: Job? = null
+    private var periodicQueueSaveJob: Job? = null
+
+    private suspend fun saveQueueToDisk() = withContext(Dispatchers.Main.immediate) {
+        queueSaveJob?.cancel()
+        queueSaveJob = scope.launch(queueFailureHandler) {
+            delay(300L)
+            persistQueueSnapshot()
+        }
+    }
+
+    private fun persistQueueSnapshot() {
         val saveGeneration = persistentSaveGeneration.get()
-        val snapshot =
-            withContext(Dispatchers.Main.immediate) {
-                if (
-                    saveGeneration != persistentSaveGeneration.get() ||
-                    isRestoringPersistentState ||
-                    isHydratingRestoredQueue
-                ) {
-                    return@withContext null
-                }
+        if (!dataStore.get(PersistentQueueKey, true)) return
+        val snapshot = run {
+            if (
+                saveGeneration != persistentSaveGeneration.get() ||
+                isRestoringPersistentState ||
+                isHydratingRestoredQueue
+            ) {
+                return@run null
+            }
 
-                val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
-                if (mediaItemsSnapshot.isEmpty()) return@withContext null
+            val mediaItemsSnapshot = player.mediaItems.mapNotNull { it.toPersistableMetadata() }
+            if (mediaItemsSnapshot.isEmpty()) return@run null
 
-                val currentMediaItemIndex = player.currentMediaItemIndex
-                val currentPosition = player.currentPosition
-                val persistQueue =
-                    currentQueue.toPersistQueue(
-                        title = queueTitle,
-                        items = mediaItemsSnapshot,
-                        mediaItemIndex = currentMediaItemIndex,
-                        position = currentPosition,
-                    )
-                val persistPlayerState =
-                    PersistPlayerState(
-                        playWhenReady = player.playWhenReady,
-                        repeatMode = player.repeatMode,
-                        shuffleModeEnabled = player.shuffleModeEnabled,
-                        volume = playerVolume.value,
-                        currentPosition = currentPosition,
-                        currentMediaItemIndex = currentMediaItemIndex,
-                        playbackState = player.playbackState,
-                        playbackSpeed = player.playbackParameters.speed,
-                        playbackPitch = player.playbackParameters.pitch,
-                    )
+            val currentMediaItemIndex = player.currentMediaItemIndex
+            val currentPosition = player.currentPosition
+            val persistQueue =
+                currentQueue.toPersistQueue(
+                    title = queueTitle,
+                    items = mediaItemsSnapshot,
+                    mediaItemIndex = currentMediaItemIndex,
+                    position = currentPosition,
+                )
+            val persistPlayerState =
+                PersistPlayerState(
+                    playWhenReady = player.playWhenReady,
+                    repeatMode = player.repeatMode,
+                    shuffleModeEnabled = player.shuffleModeEnabled,
+                    volume = playerVolume.value,
+                    currentPosition = currentPosition,
+                    currentMediaItemIndex = currentMediaItemIndex,
+                    playbackState = player.playbackState,
+                    playbackSpeed = player.playbackParameters.speed,
+                    playbackPitch = player.playbackParameters.pitch,
+                )
 
-                persistQueue to persistPlayerState
-            } ?: return
+            persistQueue to persistPlayerState
+        } ?: return
 
-        withContext(Dispatchers.IO) {
-            if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.first)
-            if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, snapshot.second)
+        QUEUE_PERSISTENCE_SCOPE.launch {
+            QUEUE_PERSISTENCE_MUTEX.withLock {
+                if (saveGeneration != persistentSaveGeneration.get()) return@withLock
+                // One atomic file keeps queue and transport state at the same snapshot version.
+                writePersistentObject(PERSISTENT_PLAYBACK_SNAPSHOT_FILE,
+                    PersistentPlaybackSnapshot(snapshot.first, snapshot.second))
+            }
         }
     }
 
@@ -8746,9 +8848,8 @@ class MusicService :
         }
         try {
             if (dataStore.get(PersistentQueueKey, true) && player.mediaItemCount > 0) {
-                runBlocking {
-                    saveQueueToDisk()
-                }
+                queueSaveJob?.cancel()
+                persistQueueSnapshot()
             }
         } catch (_: Exception) {
         }
@@ -8842,7 +8943,8 @@ class MusicService :
             }
 
             if (dataStore.get(PersistentQueueKey, true) && player.mediaItemCount > 0) {
-                runBlocking { saveQueueToDisk() }
+                queueSaveJob?.cancel()
+                persistQueueSnapshot()
             }
         } catch (_: Exception) {
         }
@@ -8993,6 +9095,10 @@ class MusicService :
         const val ERROR_CODE_NO_STREAM = 1000001
         const val CHUNK_LENGTH = 8 * 1024 * 1024L
         val RETRYABLE_STREAM_RESPONSE_CODES = setOf(403, 404, 410, 416)
+        private val QUEUE_PERSISTENCE_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1) +
+            kotlinx.coroutines.CoroutineExceptionHandler { _, error -> reportException(error) })
+        private val QUEUE_PERSISTENCE_MUTEX = Mutex()
+        private const val PERSISTENT_PLAYBACK_SNAPSHOT_FILE = "persistent_playback_v1.data"
         const val PERSISTENT_QUEUE_FILE = "persistent_queue.data"
         const val PERSISTENT_AUTOMIX_FILE = "persistent_automix.data"
         const val PERSISTENT_PLAYER_STATE_FILE = "persistent_player_state.data"

@@ -45,6 +45,7 @@ class YouTubeAlbumRadio(
     override suspend fun getInitialStatus(): Queue.Status =
         withContext(IO) {
             val albumSongs = YouTube.albumSongs(playlistId).getOrThrow()
+            check(albumSongs.isNotEmpty()) { "Album is empty or unavailable" }
             albumSongCount = albumSongs.size
             Queue.Status(
                 title =
@@ -66,7 +67,7 @@ class YouTubeAlbumRadio(
             continuation = nextResult.continuation
             if (!firstTimeLoaded) {
                 firstTimeLoaded = true
-                nextResult.items.subList(albumSongCount, nextResult.items.size).map { it.toMediaItem() }
+                nextResult.items.drop(albumSongCount.coerceAtLeast(0)).map { it.toMediaItem() }
             } else {
                 nextResult.items.map { it.toMediaItem() }
             }

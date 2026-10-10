@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.Preferences
 import androidx.glance.ColorFilter
 import androidx.glance.GlanceModifier
-import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.action.Action
@@ -33,6 +32,7 @@ import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.background
+import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.ContentScale
@@ -98,51 +98,50 @@ internal fun Preferences.toWidgetPlaybackState(context: Context): WidgetPlayback
 
 @Composable
 internal fun rememberWidgetPalette(dominantColor: Int?): WidgetPalette {
-    if (dominantColor == null) {
-        return WidgetPalette(
-            surface = GlanceTheme.colors.surface,
-            onSurface = GlanceTheme.colors.onSurface,
-            onSurfaceVariant = GlanceTheme.colors.onSurfaceVariant,
-            primaryContainer = GlanceTheme.colors.primaryContainer,
-            onPrimaryContainer = GlanceTheme.colors.onPrimaryContainer,
-            secondaryContainer = GlanceTheme.colors.secondaryContainer,
-            onSecondaryContainer = GlanceTheme.colors.onSecondaryContainer,
-            progress = GlanceTheme.colors.primary,
-            progressTrack = GlanceTheme.colors.surfaceVariant,
-            artworkFallback = GlanceTheme.colors.surfaceVariant,
-        )
-    }
+    if (dominantColor == null) return FrostSoulNeutralPalette
+    return remember(dominantColor) { frostSoulArtworkPalette(Color(dominantColor)) }
+}
 
-    return remember(dominantColor) {
-        val dominant = Color(dominantColor)
-        val dark = dominant.isDark()
-        val surface =
-            if (dark) {
-                dominant.blendWith(Color.Black, 0.24f)
-            } else {
-                dominant.blendWith(Color.White, 0.76f)
-            }
-        val onSurface = if (dark) Color.White else Color.Black
-        val progress =
-            if (dark) {
-                Color.White
-            } else {
-                dominant.blendWith(Color.Black, 0.28f)
-            }
+/**
+ * Idle / no-artwork look. Mirrors the app's calm monochrome language:
+ * near-black surface, white accent, quiet translucent chips. Follows system day/night.
+ */
+private val FrostSoulNeutralPalette =
+    WidgetPalette(
+        surface = ColorProvider(Color(0xF2F7F8FA), Color(0xF20B0B0B)),
+        onSurface = ColorProvider(Color(0xFF111111), Color(0xFFF5F5F5)),
+        onSurfaceVariant = ColorProvider(Color(0xFF666666), Color(0xFFA8A8A8)),
+        primaryContainer = ColorProvider(Color(0xFF111111), Color(0xFFF5F5F5)),
+        onPrimaryContainer = ColorProvider(Color(0xFFFFFFFF), Color(0xFF0B0B0B)),
+        secondaryContainer = ColorProvider(Color(0x0F000000), Color(0x14FFFFFF)),
+        onSecondaryContainer = ColorProvider(Color(0xFF111111), Color(0xFFF5F5F5)),
+        progress = ColorProvider(Color(0xFF111111), Color(0xFFF5F5F5)),
+        progressTrack = ColorProvider(Color(0x1F000000), Color(0x29FFFFFF)),
+        artworkFallback = ColorProvider(Color(0xFFECEFF3), Color(0xFF151515)),
+    )
 
-        WidgetPalette(
-            surface = ColorProvider(surface),
-            onSurface = ColorProvider(onSurface),
-            onSurfaceVariant = ColorProvider(onSurface.copy(alpha = 0.72f)),
-            primaryContainer = ColorProvider(onSurface.copy(alpha = if (dark) 0.2f else 0.12f)),
-            onPrimaryContainer = ColorProvider(onSurface),
-            secondaryContainer = ColorProvider(onSurface.copy(alpha = if (dark) 0.13f else 0.08f)),
-            onSecondaryContainer = ColorProvider(onSurface),
-            progress = ColorProvider(progress),
-            progressTrack = ColorProvider(onSurface.copy(alpha = if (dark) 0.22f else 0.14f)),
-            artworkFallback = ColorProvider(onSurface.copy(alpha = if (dark) 0.11f else 0.08f)),
-        )
-    }
+/**
+ * Artwork look: always dark (matches the app's player pages), with the artwork's
+ * dominant color only deeply tinting the surface. Glass is kept subtle: a slightly
+ * see-through surface and faint white chips, no heavy frosted layers.
+ */
+private fun frostSoulArtworkPalette(dominant: Color): WidgetPalette {
+    val surface = dominant.blendWith(Color(0xFF0B0B0B), 0.76f).copy(alpha = 0.95f)
+    val ink = Color(0xFFF5F5F5)
+    val onAccent = dominant.blendWith(Color.Black, 0.84f).copy(alpha = 1f)
+
+    return WidgetPalette(
+        surface = ColorProvider(surface),
+        onSurface = ColorProvider(ink),
+        onSurfaceVariant = ColorProvider(ink.copy(alpha = 0.66f)),
+        primaryContainer = ColorProvider(ink),
+        onPrimaryContainer = ColorProvider(onAccent),
+        secondaryContainer = ColorProvider(Color.White.copy(alpha = 0.09f)),
+        onSecondaryContainer = ColorProvider(ink),
+        progress = ColorProvider(ink),
+        progressTrack = ColorProvider(Color.White.copy(alpha = 0.18f)),
+        artworkFallback = ColorProvider(Color.White.copy(alpha = 0.08f)),
+    )
 }
 
 @Composable
@@ -240,33 +239,33 @@ internal object ArchiveTuneWidgetColors {
         ColorProviders(
             light =
                 lightColorScheme(
-                    primary = Color(0xFFB3181C),
+                    primary = Color(0xFF111111),
                     onPrimary = Color(0xFFFFFFFF),
-                    primaryContainer = Color(0xFFFFDAD6),
-                    onPrimaryContainer = Color(0xFF410003),
-                    secondary = Color(0xFF775651),
+                    primaryContainer = Color(0xFFECEFF3),
+                    onPrimaryContainer = Color(0xFF111111),
+                    secondary = Color(0xFF555555),
                     onSecondary = Color(0xFFFFFFFF),
-                    secondaryContainer = Color(0xFFFFDAD6),
-                    onSecondaryContainer = Color(0xFF2C1512),
-                    surface = Color(0xFFFFF8F7),
-                    onSurface = Color(0xFF231919),
-                    onSurfaceVariant = Color(0xFF534342),
-                    surfaceVariant = Color(0xFFF5DDDB),
+                    secondaryContainer = Color(0xFFECEFF3),
+                    onSecondaryContainer = Color(0xFF111111),
+                    surface = Color(0xFFF7F8FA),
+                    onSurface = Color(0xFF111111),
+                    onSurfaceVariant = Color(0xFF666666),
+                    surfaceVariant = Color(0xFFECEFF3),
                 ),
             dark =
                 darkColorScheme(
-                    primary = Color(0xFFFFB3AD),
-                    onPrimary = Color(0xFF680007),
-                    primaryContainer = Color(0xFF93000D),
-                    onPrimaryContainer = Color(0xFFFFDAD6),
-                    secondary = Color(0xFFE7BDB8),
-                    onSecondary = Color(0xFF442926),
-                    secondaryContainer = Color(0xFF5D3F3C),
-                    onSecondaryContainer = Color(0xFFFFDAD6),
-                    surface = Color(0xFF1A1111),
-                    onSurface = Color(0xFFEEDEDD),
-                    onSurfaceVariant = Color(0xFFD8C2C0),
-                    surfaceVariant = Color(0xFF534342),
+                    primary = Color(0xFFF5F5F5),
+                    onPrimary = Color(0xFF0B0B0B),
+                    primaryContainer = Color(0xFF292929),
+                    onPrimaryContainer = Color(0xFFF5F5F5),
+                    secondary = Color(0xFFB6B6B6),
+                    onSecondary = Color(0xFF0B0B0B),
+                    secondaryContainer = Color(0xFF151515),
+                    onSecondaryContainer = Color(0xFFF5F5F5),
+                    surface = Color(0xFF0B0B0B),
+                    onSurface = Color(0xFFF5F5F5),
+                    onSurfaceVariant = Color(0xFF9A9A9A),
+                    surfaceVariant = Color(0xFF151515),
                 ),
         )
 }
@@ -390,8 +389,6 @@ private fun calculateInSampleSize(
 
     return sampleSize.coerceAtLeast(1)
 }
-
-private fun Color.isDark(): Boolean = red * 0.299f + green * 0.587f + blue * 0.114f < 0.52f
 
 private fun Color.blendWith(
     other: Color,

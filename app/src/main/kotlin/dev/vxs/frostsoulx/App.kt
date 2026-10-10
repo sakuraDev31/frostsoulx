@@ -96,7 +96,7 @@ class App :
         super.onCreate()
         instance = this
         if (currentProcessName()?.endsWith(":crash") == true) {
-            Timber.plant(Timber.DebugTree())
+            if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
             return
         }
         BotGuardTokenGenerator.initialize(this)
