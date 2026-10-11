@@ -14,34 +14,21 @@
   <a href="https://github.com/sakuraDev31/frostsoulx/issues">Report an issue</a>
 </p>
 
-## Home screen
-
-<p align="center">
-  <img src="docs/screenshots/frostsoulx-home-screen.jpg" alt="FrostSoulX home screen showing mood-based tabs, featured music, quick picks, and the mini-player" width="320" />
-</p>
-
-FrostSoulX puts the music first: a dark, artwork-led interface, mood-based discovery, quick picks, and playback controls close at hand.
-
 ## App screenshots
 
-The screenshots below show distinct parts of the app. Repeated home-screen exports and website/error-page captures are intentionally omitted.
+Each image below represents a separate app screen. The home screen is shown once above; duplicate home-screen exports, the overview collage, and website/error-page captures are omitted.
 
 <p align="center">
-  <img src="docs/screenshots/191696.jpg" alt="FrostSoulX recommendations screen" width="220" />
   <img src="docs/screenshots/191698.jpg" alt="FrostSoulX music library screen" width="220" />
   <img src="docs/screenshots/191700.jpg" alt="FrostSoulX player screen" width="220" />
+  <img src="docs/screenshots/191701.jpg" alt="FrostSoulX synchronized lyrics screen" width="220" />
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/191701.jpg" alt="FrostSoulX synchronized lyrics screen" width="220" />
   <img src="docs/screenshots/191702.jpg" alt="FrostSoulX playback actions screen" width="220" />
   <img src="docs/screenshots/191705.jpg" alt="FrostSoulX spatial audio settings" width="220" />
-</p>
-
-<p align="center">
   <img src="docs/screenshots/191706.jpg" alt="FrostSoulX full player screen" width="220" />
   <img src="docs/screenshots/191707.jpg" alt="FrostSoulX queue screen" width="220" />
-  <img src="docs/screenshots/frostsoulx-screenshots.jpg" alt="Overview collage of FrostSoulX app screens" width="360" />
 </p>
 
 ## What it focuses on
