@@ -1,7 +1,7 @@
 # FrostSoulX
 
 <p align="center">
-  <img src="docs/screenshots/home-screen.jpg" alt="FrostSoulX home screen" width="270" />
+  <img src="docs/screenshots/frostsoulx-home-screen.jpg" alt="FrostSoulX home screen" width="270" />
 </p>
 
 <h3 align="center">Your music. Your own atmosphere.</h3>
@@ -17,10 +17,40 @@
 ## The home screen
 
 <p align="center">
-  <img src="docs/screenshots/home-screen.jpg" alt="FrostSoulX home screen showing mood-based tabs, featured music, quick picks, and the mini-player" width="320" />
+  <img src="docs/screenshots/frostsoulx-home-screen.jpg" alt="FrostSoulX home screen showing mood-based tabs, featured music, quick picks, and the mini-player" width="320" />
 </p>
 
 FrostSoulX puts the music first: a dark, artwork-led interface, mood-based discovery, quick picks, and playback controls close at hand.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/frostsoulx-home-screen.jpg" alt="FrostSoulX home screen" width="220" />
+  <img src="docs/screenshots/frostsoulx-home-screen-optimized.jpg" alt="FrostSoulX optimized home screen" width="220" />
+  <img src="docs/screenshots/home-screen-upload.jpg" alt="FrostSoulX compact home screen" width="220" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/191696.jpg" alt="FrostSoulX recommendations home screen" width="220" />
+  <img src="docs/screenshots/191698.jpg" alt="FrostSoulX library screen" width="220" />
+  <img src="docs/screenshots/191700.jpg" alt="FrostSoulX player screen" width="220" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/191701.jpg" alt="FrostSoulX lyrics screen" width="220" />
+  <img src="docs/screenshots/191702.jpg" alt="FrostSoulX playback actions screen" width="220" />
+  <img src="docs/screenshots/191705.jpg" alt="FrostSoulX spatial audio settings" width="220" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/191706.jpg" alt="FrostSoulX full player screen" width="220" />
+  <img src="docs/screenshots/191707.jpg" alt="FrostSoulX queue screen" width="220" />
+  <img src="docs/screenshots/Screenshot_2026-10-12-01-26-42-62_201274ae27c9cc3529a1d07fc38dfc3b.jpg" alt="FrostSoulX updated home screen" width="220" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/frostsoulx-screenshots.jpg" alt="FrostSoulX screenshot overview collage" width="440" />
+</p>
 
 ## What it focuses on
 
