@@ -7,6 +7,10 @@
 
 package dev.vxs.frostsoulx.widget
 
+import androidx.glance.currentState
+import androidx.glance.LocalContext
+import androidx.glance.GlanceTheme
+import android.os.Build
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -98,17 +102,65 @@ internal fun Preferences.toWidgetPlaybackState(context: Context): WidgetPlayback
 
 @Composable
 internal fun rememberWidgetPalette(dominantColor: Int?): WidgetPalette {
-    if (dominantColor == null) return FrostSoulNeutralPalette
-    return remember(dominantColor) { frostSoulArtworkPalette(Color(dominantColor)) }
+    val settings = currentState<Preferences>().toWidgetSettings()
+    val context = LocalContext.current
+    val colors = GlanceTheme.colors
+    val opacity = settings.opacity
+
+    return when (settings.theme) {
+        WidgetSettings.THEME_CALM -> remember(opacity) { frostSoulNeutralPalette(opacity) }
+
+        WidgetSettings.THEME_CUSTOM ->
+            remember(opacity, settings.customBackground, settings.customForeground) {
+                frostSoulCustomPalette(
+                    background = Color(settings.customBackground),
+                    foreground = Color(settings.customForeground),
+                    opacity = opacity,
+                )
+            }
+
+        WidgetSettings.THEME_MATERIAL_YOU ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val surface = colors.surface.getColor(context)
+                val onSurface = colors.onSurface.getColor(context)
+                val primary = colors.primary.getColor(context)
+                val onPrimary = colors.onPrimary.getColor(context)
+                val chip = colors.secondaryContainer.getColor(context)
+                val onChip = colors.onSecondaryContainer.getColor(context)
+                val fallback = colors.surfaceVariant.getColor(context)
+                WidgetPalette(
+                    surface = ColorProvider(surface.copy(alpha = opacity / 100f)),
+                    onSurface = ColorProvider(onSurface),
+                    onSurfaceVariant = ColorProvider(onSurface.copy(alpha = 0.7f)),
+                    primaryContainer = ColorProvider(primary),
+                    onPrimaryContainer = ColorProvider(onPrimary),
+                    secondaryContainer = ColorProvider(chip),
+                    onSecondaryContainer = ColorProvider(onChip),
+                    progress = ColorProvider(primary),
+                    progressTrack = ColorProvider(onSurface.copy(alpha = 0.16f)),
+                    artworkFallback = ColorProvider(fallback),
+                )
+            } else {
+                remember(opacity) { frostSoulNeutralPalette(opacity) }
+            }
+
+        else ->
+            if (dominantColor == null) {
+                remember(opacity) { frostSoulNeutralPalette(opacity) }
+            } else {
+                remember(dominantColor, opacity) { frostSoulArtworkPalette(Color(dominantColor), opacity) }
+            }
+    }
 }
 
 /**
- * Idle / no-artwork look. Mirrors the app's calm monochrome language:
- * near-black surface, white accent, quiet translucent chips. Follows system day/night.
+ * Calm / idle look. Mirrors the app's monochrome language: near-black surface,
+ * white accent, quiet translucent chips. Follows system day/night.
  */
-private val FrostSoulNeutralPalette =
-    WidgetPalette(
-        surface = ColorProvider(Color(0xF2F7F8FA), Color(0xF20B0B0B)),
+private fun frostSoulNeutralPalette(opacity: Int): WidgetPalette {
+    val alpha = opacity / 100f
+    return WidgetPalette(
+        surface = ColorProvider(Color(0xFFF7F8FA).copy(alpha = alpha), Color(0xFF0B0B0B).copy(alpha = alpha)),
         onSurface = ColorProvider(Color(0xFF111111), Color(0xFFF5F5F5)),
         onSurfaceVariant = ColorProvider(Color(0xFF666666), Color(0xFFA8A8A8)),
         primaryContainer = ColorProvider(Color(0xFF111111), Color(0xFFF5F5F5)),
@@ -119,14 +171,17 @@ private val FrostSoulNeutralPalette =
         progressTrack = ColorProvider(Color(0x1F000000), Color(0x29FFFFFF)),
         artworkFallback = ColorProvider(Color(0xFFECEFF3), Color(0xFF151515)),
     )
+}
 
 /**
- * Artwork look: always dark (matches the app's player pages), with the artwork's
- * dominant color only deeply tinting the surface. Glass is kept subtle: a slightly
- * see-through surface and faint white chips, no heavy frosted layers.
+ * Artwork look: always dark, the cover's dominant color only deeply tints the surface.
+ * Glass stays subtle: a slightly see-through surface and faint white chips.
  */
-private fun frostSoulArtworkPalette(dominant: Color): WidgetPalette {
-    val surface = dominant.blendWith(Color(0xFF0B0B0B), 0.76f).copy(alpha = 0.95f)
+private fun frostSoulArtworkPalette(
+    dominant: Color,
+    opacity: Int,
+): WidgetPalette {
+    val surface = dominant.blendWith(Color(0xFF0B0B0B), 0.76f).copy(alpha = opacity / 100f)
     val ink = Color(0xFFF5F5F5)
     val onAccent = dominant.blendWith(Color.Black, 0.84f).copy(alpha = 1f)
 
@@ -143,6 +198,25 @@ private fun frostSoulArtworkPalette(dominant: Color): WidgetPalette {
         artworkFallback = ColorProvider(Color.White.copy(alpha = 0.08f)),
     )
 }
+
+/** User-picked background / foreground, like VLC's "Custom" widget theme. */
+private fun frostSoulCustomPalette(
+    background: Color,
+    foreground: Color,
+    opacity: Int,
+): WidgetPalette =
+    WidgetPalette(
+        surface = ColorProvider(background.copy(alpha = opacity / 100f)),
+        onSurface = ColorProvider(foreground),
+        onSurfaceVariant = ColorProvider(foreground.copy(alpha = 0.66f)),
+        primaryContainer = ColorProvider(foreground),
+        onPrimaryContainer = ColorProvider(background.copy(alpha = 1f)),
+        secondaryContainer = ColorProvider(foreground.copy(alpha = 0.10f)),
+        onSecondaryContainer = ColorProvider(foreground),
+        progress = ColorProvider(foreground),
+        progressTrack = ColorProvider(foreground.copy(alpha = 0.20f)),
+        artworkFallback = ColorProvider(foreground.copy(alpha = 0.08f)),
+    )
 
 @Composable
 internal fun WidgetArtwork(
@@ -352,7 +426,7 @@ private object WidgetArtworkCache {
         val targetPx =
             (targetSize.value * context.resources.displayMetrics.density)
                 .toInt()
-                .coerceAtLeast(64)
+                .coerceIn(64, 720)
         val cacheKey = "${file.absolutePath}:${file.lastModified()}:$targetPx"
         cache.get(cacheKey)?.let { return it }
 

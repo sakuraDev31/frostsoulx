@@ -173,6 +173,12 @@ internal class MusicServiceWidgetUpdater(
             this[MusicWidgetKeys.GENRES]?.let { mutable[MusicWidgetKeys.GENRES] = it }
             this[MusicWidgetKeys.RECOMMENDATIONS]?.let { mutable[MusicWidgetKeys.RECOMMENDATIONS] = it }
             this[MusicWidgetKeys.TOP_SONG_SUMMARY]?.let { mutable[MusicWidgetKeys.TOP_SONG_SUMMARY] = it }
+            this[MusicWidgetKeys.WIDGET_THEME]?.let { mutable[MusicWidgetKeys.WIDGET_THEME] = it }
+            this[MusicWidgetKeys.WIDGET_OPACITY]?.let { mutable[MusicWidgetKeys.WIDGET_OPACITY] = it }
+            this[MusicWidgetKeys.WIDGET_CUSTOM_BG]?.let { mutable[MusicWidgetKeys.WIDGET_CUSTOM_BG] = it }
+            this[MusicWidgetKeys.WIDGET_CUSTOM_FG]?.let { mutable[MusicWidgetKeys.WIDGET_CUSTOM_FG] = it }
+            this[MusicWidgetKeys.WIDGET_ART_CIRCLE]?.let { mutable[MusicWidgetKeys.WIDGET_ART_CIRCLE] = it }
+            this[MusicWidgetKeys.WIDGET_SHOW_PROGRESS]?.let { mutable[MusicWidgetKeys.WIDGET_SHOW_PROGRESS] = it }
         }
 
     private fun MutablePreferences.writeSnapshot(snapshot: WidgetSnapshot) {
