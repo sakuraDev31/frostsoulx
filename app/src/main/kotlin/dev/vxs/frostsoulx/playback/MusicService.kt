@@ -6211,7 +6211,13 @@ class MusicService :
         // signal ever reaches LoudnessEnhancer. A downstream negative LoudnessEnhancer target
         // gain cannot undo clipping that already happened earlier in the chain - see
         // docs_audio_clipping_findings.md.
-        val eqBoostMb = levels.maxOrNull()?.coerceAtLeast(0) ?: 0
+        // Factor in both individual band levels and treble boost across high frequency bands (>= 2000 Hz)
+        // so that cumulative boost never exceeds unity gain when safeHeadroomEnabled is true.
+        val maxBandBoostMb = (0 until bandCount).maxOfOrNull { band ->
+            val trebleBoostMb = if ((caps?.centerFreqHz?.getOrNull(band) ?: 0) >= 2000) settings.trebleGainMb else 0
+            ((levels.getOrNull(band) ?: 0) + trebleBoostMb).coerceAtLeast(0)
+        } ?: (levels.maxOrNull()?.coerceAtLeast(0) ?: 0)
+        val eqBoostMb = maxBandBoostMb
         val bassBoostHeadroomMb = if (settings.enabled && settings.bassBoostEnabled) (settings.bassBoostStrength * 400 / 1000).coerceIn(0, 400) else 0
         val virtualizerHeadroomMb = if (settings.enabled && settings.virtualizerEnabled) (settings.virtualizerStrength * 300 / 1000).coerceIn(0, 300) else 0
         val safeHeadroomEnabled = settings.autoHeadroomEnabled || settings.enabled
