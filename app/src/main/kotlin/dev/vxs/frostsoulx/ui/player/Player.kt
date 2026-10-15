@@ -132,6 +132,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.Player.STATE_BUFFERING
@@ -749,52 +752,55 @@ fun BottomSheetPlayer(
         mutableStateOf(false)
     }
 
-    LaunchedEffect(mediaMetadata?.id, playbackState, aodModeEnabled) {
-        val startTime = SystemClock.elapsedRealtime()
-        if (playbackState == STATE_READY) {
-            while (isActive) {
-                delay(if (aodModeEnabled) 500L else 100L)
-                val isTransitioning = playerConnection.player.currentMediaItem?.mediaId != mediaMetadata?.id
-                val currentPlayerPosition = playerConnection.player.currentPosition
-                val currentPlayerDuration = playerConnection.player.duration
+    val playerLifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(mediaMetadata?.id, playbackState, aodModeEnabled, isPlaying, isUserSeeking, sliderPosition, playerLifecycle) {
+        playerLifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            val startTime = SystemClock.elapsedRealtime()
+            if (playbackState == STATE_READY && (isPlaying || isUserSeeking || sliderPosition != null)) {
+                while (isActive) {
+                    delay(if (aodModeEnabled) 500L else 100L)
+                    val isTransitioning = playerConnection.player.currentMediaItem?.mediaId != mediaMetadata?.id
+                    val currentPlayerPosition = playerConnection.player.currentPosition
+                    val currentPlayerDuration = playerConnection.player.duration
 
-                if (isTransitioning) {
-                    val elapsedSinceStart = SystemClock.elapsedRealtime() - startTime
-                    position = elapsedSinceStart
-                    mediaMetadata?.let {
-                        val metaDuration = it.duration.toLong() * 1000
-                        duration = if (metaDuration > 0) metaDuration else 0L
-                    }
-                } else {
-                    position = currentPlayerPosition
-                    duration = currentPlayerDuration
-                    if (!isUserSeeking) {
-                        sliderPosition?.let { targetPosition ->
-                            val clampedTargetPosition =
-                                when {
-                                    currentPlayerDuration > 0L && currentPlayerDuration != C.TIME_UNSET -> {
-                                        targetPosition.coerceIn(0L, currentPlayerDuration)
-                                    }
+                    if (isTransitioning) {
+                        val elapsedSinceStart = SystemClock.elapsedRealtime() - startTime
+                        position = elapsedSinceStart
+                        mediaMetadata?.let {
+                            val metaDuration = it.duration.toLong() * 1000
+                            duration = if (metaDuration > 0) metaDuration else 0L
+                        }
+                    } else {
+                        position = currentPlayerPosition
+                        duration = currentPlayerDuration
+                        if (!isUserSeeking) {
+                            sliderPosition?.let { targetPosition ->
+                                val clampedTargetPosition =
+                                    when {
+                                        currentPlayerDuration > 0L && currentPlayerDuration != C.TIME_UNSET -> {
+                                            targetPosition.coerceIn(0L, currentPlayerDuration)
+                                        }
 
-                                    else -> {
-                                        targetPosition.coerceAtLeast(0L)
+                                        else -> {
+                                            targetPosition.coerceAtLeast(0L)
+                                        }
                                     }
+                                if (abs(currentPlayerPosition - clampedTargetPosition) <= SeekbarSettleToleranceMs) {
+                                    sliderPosition = null
                                 }
-                            if (abs(currentPlayerPosition - clampedTargetPosition) <= SeekbarSettleToleranceMs) {
-                                sliderPosition = null
                             }
                         }
                     }
                 }
-            }
-        } else {
-            mediaMetadata?.let {
-                val metaDuration = it.duration.toLong() * 1000
-                duration = if (metaDuration > 0) metaDuration else 0L
-            }
-            val currentPlayerPosition = playerConnection.player.currentPosition
-            if (sliderPosition == null && currentPlayerPosition > 0L) {
-                position = currentPlayerPosition
+            } else {
+                mediaMetadata?.let {
+                    val metaDuration = it.duration.toLong() * 1000
+                    duration = if (metaDuration > 0) metaDuration else 0L
+                }
+                val currentPlayerPosition = playerConnection.player.currentPosition
+                if (sliderPosition == null && currentPlayerPosition > 0L) {
+                    position = currentPlayerPosition
+                }
             }
         }
     }

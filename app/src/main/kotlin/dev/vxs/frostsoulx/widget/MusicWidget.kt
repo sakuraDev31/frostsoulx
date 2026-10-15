@@ -7,6 +7,9 @@
 
 package dev.vxs.frostsoulx.widget
 
+import androidx.glance.text.TextAlign
+import androidx.glance.layout.fillMaxHeight
+import androidx.compose.ui.unit.Dp
 import android.content.Context
 import android.os.Build
 import androidx.compose.runtime.Composable
@@ -61,6 +64,7 @@ class MusicWidget : GlanceAppWidget() {
 private fun MusicWidgetContent(context: Context) {
     val prefs = currentState<Preferences>()
     val state = prefs.toWidgetPlaybackState(context)
+    val settings = prefs.toWidgetSettings()
 
     GlanceTheme(
         colors =
@@ -76,8 +80,10 @@ private fun MusicWidgetContent(context: Context) {
             MusicWidgetLayout.Compact -> {
                 MusicWidgetBar(
                     state = state,
+                    settings = settings,
                     palette = palette,
                     context = context,
+                    size = size,
                     showFullControls = false,
                     showProgress = false,
                 )
@@ -86,65 +92,148 @@ private fun MusicWidgetContent(context: Context) {
             MusicWidgetLayout.Bar -> {
                 MusicWidgetBar(
                     state = state,
+                    settings = settings,
                     palette = palette,
                     context = context,
+                    size = size,
                     showFullControls = true,
-                    showProgress = state.isAvailable && state.playbackPosition > 0f && size.height >= 78.dp,
+                    showProgress =
+                        settings.showProgress &&
+                            state.isAvailable &&
+                            state.playbackPosition > 0f &&
+                            size.height >= 78.dp,
                 )
             }
 
-            MusicWidgetLayout.Panel -> {
-                MusicWidgetPanel(
-                    state = state,
-                    palette = palette,
-                    context = context,
-                )
+            MusicWidgetLayout.Tile -> {
+                MusicWidgetTile(state, settings, palette, context, size)
+            }
+
+            MusicWidgetLayout.Split -> {
+                MusicWidgetSplit(state, settings, palette, context, size)
+            }
+
+            MusicWidgetLayout.Hero -> {
+                MusicWidgetHero(state, settings, palette, context, size)
             }
         }
     }
 }
 
+private val WidgetCornerRadius = 28.dp
+
+private fun minDp(
+    a: Dp,
+    b: Dp,
+): Dp = if (a < b) a else b
+
+private fun maxDp(
+    a: Dp,
+    b: Dp,
+): Dp = if (a > b) a else b
+
+private fun artCorner(
+    size: Dp,
+    circle: Boolean,
+): Dp = if (circle) size / 2 else size * 0.22f
+
 @Composable
-private fun MusicWidgetBar(
-    state: WidgetPlaybackState,
+private fun MusicWidgetRoot(
     palette: WidgetPalette,
     context: Context,
-    showFullControls: Boolean,
-    showProgress: Boolean,
+    padding: Dp,
+    content: @Composable () -> Unit,
 ) {
     Box(
         modifier =
             GlanceModifier
                 .fillMaxSize()
                 .background(palette.surface)
-                .cornerRadius(28.dp)
-                .padding(6.dp)
+                .cornerRadius(WidgetCornerRadius)
+                .padding(padding)
                 .clickable(openArchiveTuneAction(context)),
     ) {
+        content()
+    }
+}
+
+@Composable
+private fun MusicWidgetArt(
+    state: WidgetPlaybackState,
+    settings: WidgetSettings,
+    palette: WidgetPalette,
+    context: Context,
+    size: Dp,
+) {
+    WidgetArtwork(
+        artPath = state.artPath,
+        context = context,
+        contentDescription = context.getString(R.string.album_cover_desc),
+        targetSize = size,
+        cornerRadius = artCorner(size, settings.circleArtwork),
+        palette = palette,
+        modifier = GlanceModifier.size(size),
+    )
+}
+
+@Composable
+private fun MusicWidgetIdlePill(
+    palette: WidgetPalette,
+    context: Context,
+) {
+    Box(
+        modifier =
+            GlanceModifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .background(palette.secondaryContainer)
+                .cornerRadius(25.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = context.getString(R.string.widget_tap_to_open),
+            style =
+                TextStyle(
+                    color = palette.onSecondaryContainer,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+            maxLines = 1,
+        )
+    }
+}
+
+/** Short widgets: art scales with the height, controls on the right. */
+@Composable
+private fun MusicWidgetBar(
+    state: WidgetPlaybackState,
+    settings: WidgetSettings,
+    palette: WidgetPalette,
+    context: Context,
+    size: DpSize,
+    showFullControls: Boolean,
+    showProgress: Boolean,
+) {
+    val progressBlock = if (showProgress) 12.dp else 0.dp
+    val artSize = minDp(maxDp(size.height - 12.dp - progressBlock, 48.dp), 88.dp)
+
+    MusicWidgetRoot(palette = palette, context = context, padding = 6.dp) {
         Column(modifier = GlanceModifier.fillMaxSize()) {
             Row(
                 modifier =
                     GlanceModifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(artSize),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                WidgetArtwork(
-                    artPath = state.artPath,
-                    context = context,
-                    contentDescription = context.getString(R.string.album_cover_desc),
-                    targetSize = 48.dp,
-                    cornerRadius = 16.dp,
-                    palette = palette,
-                    modifier = GlanceModifier.size(48.dp),
-                )
+                MusicWidgetArt(state, settings, palette, context, artSize)
 
                 Spacer(GlanceModifier.width(10.dp))
 
                 MusicWidgetTrackText(
                     state = state,
                     palette = palette,
-                    titleSize = 14,
+                    titleSize = if (artSize >= 64.dp) 15 else 14,
                     artistSize = 12,
                     modifier = GlanceModifier.defaultWeight(),
                 )
@@ -173,48 +262,182 @@ private fun MusicWidgetBar(
     }
 }
 
+/** Small squares (about 2x2): cover on top, title and a play button underneath. */
 @Composable
-private fun MusicWidgetPanel(
+private fun MusicWidgetTile(
     state: WidgetPlaybackState,
+    settings: WidgetSettings,
     palette: WidgetPalette,
     context: Context,
+    size: DpSize,
 ) {
-    Box(
-        modifier =
-            GlanceModifier
-                .fillMaxSize()
-                .background(palette.surface)
-                .cornerRadius(28.dp)
-                .padding(16.dp)
-                .clickable(openArchiveTuneAction(context)),
-    ) {
+    val pad = 10.dp
+    val artSize = maxDp(minDp(size.width - pad * 2, size.height - pad * 2 - 52.dp), 48.dp)
+
+    MusicWidgetRoot(palette = palette, context = context, padding = pad) {
         Column(modifier = GlanceModifier.fillMaxSize()) {
+            Box(
+                modifier =
+                    GlanceModifier
+                        .fillMaxWidth()
+                        .defaultWeight(),
+                contentAlignment = Alignment.Center,
+            ) {
+                MusicWidgetArt(state, settings, palette, context, artSize)
+            }
+
+            Spacer(GlanceModifier.height(8.dp))
+
             Row(
-                modifier = GlanceModifier.fillMaxWidth(),
+                modifier =
+                    GlanceModifier
+                        .fillMaxWidth()
+                        .height(44.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                WidgetArtwork(
-                    artPath = state.artPath,
-                    context = context,
-                    contentDescription = context.getString(R.string.album_cover_desc),
-                    targetSize = 72.dp,
-                    cornerRadius = 18.dp,
-                    palette = palette,
-                    modifier = GlanceModifier.size(72.dp),
-                )
-
-                Spacer(GlanceModifier.width(14.dp))
-
                 MusicWidgetTrackText(
                     state = state,
                     palette = palette,
-                    titleSize = 16,
-                    artistSize = 13,
+                    titleSize = 13,
+                    artistSize = 11,
                     modifier = GlanceModifier.defaultWeight(),
                 )
+
+                if (state.isAvailable) {
+                    Spacer(GlanceModifier.width(6.dp))
+                    MusicWidgetControls(
+                        state = state,
+                        palette = palette,
+                        context = context,
+                        showPreviousNext = false,
+                        modifier = GlanceModifier,
+                        buttonModifier = GlanceModifier.size(44.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Wide and medium height (about 4x2): big cover on the left, info and controls on the right. */
+@Composable
+private fun MusicWidgetSplit(
+    state: WidgetPlaybackState,
+    settings: WidgetSettings,
+    palette: WidgetPalette,
+    context: Context,
+    size: DpSize,
+) {
+    val pad = 12.dp
+    val gap = 14.dp
+    val artSize = minDp(minDp(size.height - pad * 2, size.width * 0.42f), 220.dp)
+    val rightWidth = size.width - pad * 2 - artSize - gap
+    val showProgress = settings.showProgress && state.isAvailable
+
+    MusicWidgetRoot(palette = palette, context = context, padding = pad) {
+        Row(
+            modifier = GlanceModifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MusicWidgetArt(state, settings, palette, context, artSize)
+
+            Spacer(GlanceModifier.width(gap))
+
+            Column(
+                modifier =
+                    GlanceModifier
+                        .defaultWeight()
+                        .fillMaxHeight(),
+            ) {
+                MusicWidgetTrackText(
+                    state = state,
+                    palette = palette,
+                    titleSize = if (artSize >= 96.dp) 17 else 15,
+                    artistSize = 13,
+                    modifier = GlanceModifier.fillMaxWidth(),
+                )
+
+                Spacer(GlanceModifier.defaultWeight())
+
+                if (!state.isAvailable) {
+                    MusicWidgetIdlePill(palette, context)
+                } else if (rightWidth >= 190.dp) {
+                    WidgetExpressiveControlPill(
+                        state = state,
+                        palette = palette,
+                        context = context,
+                    )
+                } else {
+                    MusicWidgetControls(
+                        state = state,
+                        palette = palette,
+                        context = context,
+                        showPreviousNext = rightWidth >= 150.dp,
+                        modifier = GlanceModifier,
+                        buttonModifier = GlanceModifier.size(44.dp),
+                    )
+                }
+
+                if (showProgress) {
+                    Spacer(GlanceModifier.height(8.dp))
+                    MusicWidgetProgress(
+                        progress = state.playbackPosition,
+                        palette = palette,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Tall widgets: the cover grows to fill the free space, with centered text and full controls below. */
+@Composable
+private fun MusicWidgetHero(
+    state: WidgetPlaybackState,
+    settings: WidgetSettings,
+    palette: WidgetPalette,
+    context: Context,
+    size: DpSize,
+) {
+    val pad = 14.dp
+    val showProgress = settings.showProgress && state.isAvailable
+    val controlsBlock = if (showProgress) 76.dp else 60.dp
+    val textBlock = 52.dp
+    val artSize =
+        maxDp(
+            minDp(size.width - pad * 2, size.height - pad * 2 - controlsBlock - textBlock),
+            56.dp,
+        )
+
+    MusicWidgetRoot(palette = palette, context = context, padding = pad) {
+        Column(modifier = GlanceModifier.fillMaxSize()) {
+            Box(
+                modifier =
+                    GlanceModifier
+                        .fillMaxWidth()
+                        .defaultWeight(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    modifier = GlanceModifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
+                ) {
+                    MusicWidgetArt(state, settings, palette, context, artSize)
+
+                    Spacer(GlanceModifier.height(12.dp))
+
+                    MusicWidgetTrackText(
+                        state = state,
+                        palette = palette,
+                        titleSize = 17,
+                        artistSize = 13,
+                        modifier = GlanceModifier.fillMaxWidth(),
+                        centered = true,
+                    )
+                }
             }
 
-            Spacer(GlanceModifier.defaultWeight())
+            Spacer(GlanceModifier.height(10.dp))
 
             if (state.isAvailable) {
                 WidgetExpressiveControlPill(
@@ -223,29 +446,10 @@ private fun MusicWidgetPanel(
                     context = context,
                 )
             } else {
-                Box(
-                    modifier =
-                        GlanceModifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .background(palette.secondaryContainer)
-                            .cornerRadius(25.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = context.getString(R.string.widget_tap_to_open),
-                        style =
-                            TextStyle(
-                                color = palette.onSecondaryContainer,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                            ),
-                        maxLines = 1,
-                    )
-                }
+                MusicWidgetIdlePill(palette, context)
             }
 
-            if (state.isAvailable && state.playbackPosition > 0f) {
+            if (showProgress) {
                 Spacer(GlanceModifier.height(10.dp))
                 MusicWidgetProgress(
                     progress = state.playbackPosition,
@@ -263,28 +467,34 @@ private fun MusicWidgetTrackText(
     titleSize: Int,
     artistSize: Int,
     modifier: GlanceModifier,
+    centered: Boolean = false,
 ) {
     Column(
         modifier = modifier,
         verticalAlignment = Alignment.Vertical.CenterVertically,
+        horizontalAlignment = if (centered) Alignment.Horizontal.CenterHorizontally else Alignment.Horizontal.Start,
     ) {
         Text(
             text = state.title,
+            modifier = if (centered) GlanceModifier.fillMaxWidth() else GlanceModifier,
             style =
                 TextStyle(
                     color = palette.onSurface,
                     fontSize = titleSize.sp,
                     fontWeight = FontWeight.Bold,
+                    textAlign = if (centered) TextAlign.Center else null,
                 ),
             maxLines = 1,
         )
         Spacer(GlanceModifier.height(2.dp))
         Text(
             text = state.artist,
+            modifier = if (centered) GlanceModifier.fillMaxWidth() else GlanceModifier,
             style =
                 TextStyle(
                     color = palette.onSurfaceVariant,
                     fontSize = artistSize.sp,
+                    textAlign = if (centered) TextAlign.Center else null,
                 ),
             maxLines = 1,
         )
@@ -366,12 +576,16 @@ private fun MusicWidgetProgress(
 private enum class MusicWidgetLayout {
     Compact,
     Bar,
-    Panel,
+    Tile,
+    Split,
+    Hero,
 }
 
 private fun DpSize.toMusicWidgetLayout(): MusicWidgetLayout =
     when {
-        height >= 128.dp -> MusicWidgetLayout.Panel
+        width < height * 1.3f && height >= 210.dp -> MusicWidgetLayout.Hero
+        width < height * 1.3f && height >= 110.dp -> MusicWidgetLayout.Tile
+        height >= 104.dp -> MusicWidgetLayout.Split
         width < 300.dp -> MusicWidgetLayout.Compact
         else -> MusicWidgetLayout.Bar
     }

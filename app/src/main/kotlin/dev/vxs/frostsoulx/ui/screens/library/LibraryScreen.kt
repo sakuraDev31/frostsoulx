@@ -9,6 +9,7 @@ package dev.vxs.frostsoulx.ui.screens.library
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -31,11 +32,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,8 +47,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +60,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -78,7 +84,6 @@ import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
 import dev.vxs.frostsoulx.utils.rememberEnumPreference
 import dev.vxs.frostsoulx.utils.rememberPreference
-import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
 
 internal val LibraryHeaderContentPadding = 12.dp
 internal val LibraryPullToRefreshIndicatorOffset = 0.dp
@@ -151,23 +156,26 @@ fun LibraryScreen(navController: NavController) {
                 }
             }
 
-            PremiumSegmentedTabs(
-                    labels = libraryFilters.map { filter ->
-                        when (filter) {
-                            LibraryFilter.LIBRARY -> stringResource(R.string.filter_library)
-                            LibraryFilter.PLAYLISTS -> stringResource(R.string.playlists)
-                            LibraryFilter.SPOTIFY -> stringResource(R.string.spotify_playlists)
-                            LibraryFilter.SONGS -> stringResource(R.string.songs)
-                            LibraryFilter.ARTISTS -> stringResource(R.string.artists)
-                            LibraryFilter.ALBUMS -> stringResource(R.string.albums)
-                        }
-                    },
-                    selectedIndex = pagerState.currentPage,
-                    onSelected = { page ->
-                        coroutineScope.launch { pagerState.animateScrollToPage(page) }
-                    },
-                    modifier = Modifier.padding(top = FrostSoulTheme.spacing.micro, bottom = FrostSoulTheme.spacing.small),
-                )
+            LibraryTextTabs(
+                labels = libraryFilters.map { filter ->
+                    when (filter) {
+                        LibraryFilter.LIBRARY -> stringResource(R.string.filter_library)
+                        LibraryFilter.PLAYLISTS -> stringResource(R.string.playlists)
+                        LibraryFilter.SPOTIFY -> stringResource(R.string.spotify_playlists)
+                        LibraryFilter.SONGS -> stringResource(R.string.songs)
+                        LibraryFilter.ARTISTS -> stringResource(R.string.artists)
+                        LibraryFilter.ALBUMS -> stringResource(R.string.albums)
+                    }
+                },
+                selectedIndex = pagerState.currentPage,
+                onSelected = { page ->
+                    coroutineScope.launch { pagerState.animateScrollToPage(page) }
+                },
+                modifier = Modifier.padding(
+                    top = FrostSoulTheme.spacing.micro,
+                    bottom = FrostSoulTheme.spacing.small,
+                ),
+            )
 
             Box(
                 modifier =
@@ -270,6 +278,72 @@ fun LibraryScreen(navController: NavController) {
         }
     }
 }
+}
+
+@Composable
+private fun LibraryTextTabs(
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (labels.isEmpty()) return
+
+    val labelWidths = remember { mutableStateMapOf<Int, Int>() }
+    val density = LocalDensity.current
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        verticalAlignment = Alignment.Bottom,
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = FrostSoulTheme.spacing.page)
+            .heightIn(min = 52.dp),
+    ) {
+        labels.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
+            val labelWidth = labelWidths[index]?.let { with(density) { it.toDp() } } ?: 0.dp
+            val underlineWidth by animateDpAsState(
+                targetValue = if (selected) labelWidth else 0.dp,
+                animationSpec = spring(
+                    dampingRatio = 0.72f,
+                    stiffness = Spring.StiffnessMedium,
+                ),
+                label = "library_tab_underline",
+            )
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clickable { onSelected(index) }
+                    .padding(top = 8.dp),
+            ) {
+                Text(
+                    text = label,
+                    color = if (selected) {
+                        FrostSoulTheme.colors.onSurface
+                    } else {
+                        FrostSoulTheme.colors.onSurfaceMuted
+                    },
+                    style = FrostSoulTheme.typography.body.copy(
+                        fontSize = 16.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
+                    maxLines = 1,
+                    onTextLayout = { result -> labelWidths[index] = result.size.width },
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .width(underlineWidth)
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(FrostSoulTheme.colors.onSurface),
+                )
+            }
+        }
+    }
 }
 
 @Composable

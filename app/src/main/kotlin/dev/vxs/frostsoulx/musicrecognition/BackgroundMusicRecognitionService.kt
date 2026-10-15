@@ -7,6 +7,9 @@
 
 package dev.vxs.frostsoulx.musicrecognition
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.app.Activity
 import android.app.Service
 import android.content.ComponentName
@@ -59,11 +62,30 @@ class BackgroundMusicRecognitionService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
-        when (intent?.action) {
-            ActionCancel -> cancelRecognition()
-            ActionRecognizePlayback -> startPlaybackRecognition(intent)
-            ActionRecognizeMicrophone -> startMicrophoneRecognition()
-            else -> stopSelf(startId)
+        try {
+            if (intent?.action in setOf(ActionRecognizePlayback, ActionRecognizeMicrophone)) {
+                check(ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    "Microphone permission was revoked"
+                }
+            }
+            when (intent?.action) {
+                ActionCancel -> cancelRecognition()
+                ActionRecognizePlayback -> startPlaybackRecognition(intent)
+                ActionRecognizeMicrophone -> startMicrophoneRecognition()
+                else -> stopSelf(startId)
+            }
+        } catch (error: RuntimeException) {
+            if (error !is SecurityException && error !is IllegalStateException && error !is IllegalArgumentException) throw error
+            Timber.w(error, "Recognition start was denied")
+            recognitionJob?.cancel()
+            recognitionJob = null
+            runCatching { releaseProjection() }.onFailure { Timber.w(it, "Projection cleanup failed") }
+            MusicRecognitionRuntimeState.update(BackgroundRecognitionState.Idle)
+            requestTileRefresh()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            runCatching { notificationManager.notify(notificationManager.failure(MusicRecognitionFailure.RecordingFailed)) }
+                .onFailure { Timber.w(it, "Unable to publish recognition failure") }
+            stopSelf(startId)
         }
         return START_NOT_STICKY
     }

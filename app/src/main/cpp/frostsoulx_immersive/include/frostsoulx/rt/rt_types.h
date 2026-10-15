@@ -231,6 +231,25 @@ inline float vecPeak(const float* FSX_RESTRICT src, std::size_t n) noexcept {
     return peak;
 }
 
+/// Contiguous SIMD dot product; used by the lookahead reconstruction detector.
+inline float dotProduct(const float* a, const float* b, std::size_t n) noexcept {
+    std::size_t i = 0;
+    float sum = 0.0f;
+#if defined(FSX_SIMD_NEON)
+    float32x4_t acc = vdupq_n_f32(0.0f);
+    for (; i + 4 <= n; i += 4) acc = vmlaq_f32(acc, vld1q_f32(a+i), vld1q_f32(b+i));
+    float lanes[4]; vst1q_f32(lanes, acc);
+    sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+#elif defined(FSX_SIMD_SSE)
+    __m128 acc = _mm_setzero_ps();
+    for (; i + 4 <= n; i += 4) acc = _mm_add_ps(acc, _mm_mul_ps(_mm_loadu_ps(a+i), _mm_loadu_ps(b+i)));
+    float lanes[4]; _mm_storeu_ps(lanes, acc);
+    sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+#endif
+    for (; i < n; ++i) sum += a[i] * b[i];
+    return sum;
+}
+
 /// Sum of squares (energy) over the buffer.
 inline double vecEnergy(const float* FSX_RESTRICT src, std::size_t n) noexcept {
     double acc = 0.0;

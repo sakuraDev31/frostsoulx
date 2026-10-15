@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -117,6 +118,12 @@ internal fun PlayerArtworkBottomSheet(
     immersive: Boolean = false,
 ) {
     val transition = remember(state, artworkKey, immersive) { PlayerArtworkTransition(state, immersive) }
+    LaunchedEffect(state.progress, transition.source, transition.target) {
+        if (!transition.active) {
+            transition.source?.layer?.alpha = 1f
+            transition.target?.layer?.alpha = 1f
+        }
+    }
     if (state.isExpandedOrExpanding) BackHandler(onBack = state::collapseSoft)
     CompositionLocalProvider(LocalPlayerArtworkTransition provides transition) {
         Box(modifier.fillMaxSize().onGloballyPositioned { transition.root = it }) {

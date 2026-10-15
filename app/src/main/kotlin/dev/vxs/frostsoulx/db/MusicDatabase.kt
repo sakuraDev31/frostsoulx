@@ -8,6 +8,8 @@
 package dev.vxs.frostsoulx.db
 
 import android.annotation.SuppressLint
+import android.content.ContentValues
+import android.database.Cursor
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.util.Log
@@ -56,6 +58,7 @@ import dev.vxs.frostsoulx.db.entities.SortedSongAlbumMap
 import dev.vxs.frostsoulx.db.entities.SortedSongArtistMap
 import dev.vxs.frostsoulx.db.entities.TagEntity
 import dev.vxs.frostsoulx.extensions.toSQLiteQuery
+import dev.vxs.frostsoulx.utils.reportException
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -72,18 +75,24 @@ class MusicDatabase(
     val openHelper: SupportSQLiteOpenHelper
         get() = delegate.openHelper
 
-    fun query(block: MusicDatabase.() -> Unit) =
+    fun query(onError: (Exception) -> Unit = ::reportException, block: MusicDatabase.() -> Unit) =
         with(delegate) {
             queryExecutor.execute {
-                block(this@MusicDatabase)
+                try {
+                    block(this@MusicDatabase)
+                } catch (error: Exception) {
+                    onError(error)
+                }
             }
         }
 
-    fun transaction(block: MusicDatabase.() -> Unit) =
+    fun transaction(onError: (Exception) -> Unit = ::reportException, block: MusicDatabase.() -> Unit) =
         with(delegate) {
             transactionExecutor.execute {
-                runInTransaction {
-                    block(this@MusicDatabase)
+                try {
+                    runInTransaction { block(this@MusicDatabase) }
+                } catch (error: Exception) {
+                    onError(error)
                 }
             }
         }
@@ -92,6 +101,65 @@ class MusicDatabase(
         delegate.withTransaction {
             block(this@MusicDatabase)
         }
+
+    /** Import a fully migrated staging database without closing the shared Room instance.
+     * SQLite rolls back every library table on failure; playback/download readers keep using Room.
+     */
+    suspend fun restoreFrom(staged: MusicDatabase) {
+        val source = staged.openHelper.writableDatabase
+        source.query("PRAGMA integrity_check").use { cursor ->
+            check(cursor.moveToFirst() && cursor.getString(0) == "ok") { "Invalid backup database" }
+        }
+        source.query("PRAGMA foreign_key_check").use { cursor ->
+            check(!cursor.moveToFirst()) { "Backup contains broken library references" }
+        }
+        val tables = mutableListOf<String>()
+        source.query("SELECT name FROM sqlite_master WHERE type = 'table'").use { cursor ->
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(0)
+                if (!name.startsWith("sqlite_") && name !in setOf("room_master_table", "android_metadata")) {
+                    tables += name
+                }
+            }
+        }
+        check("song" in tables) { "Backup is not a music library" }
+        fun quoted(name: String) = "\"${name.replace("\"", "\"\"")}\""
+        delegate.withTransaction {
+            val destination = delegate.openHelper.writableDatabase
+            val destinationTables = mutableSetOf<String>()
+            destination.query("SELECT name FROM sqlite_master WHERE type = 'table'").use { cursor ->
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(0)
+                    if (!name.startsWith("sqlite_") && name !in setOf("room_master_table", "android_metadata")) {
+                        destinationTables += name
+                    }
+                }
+            }
+            check(tables.toSet() == destinationTables) { "Backup library schema does not match this app" }
+            destination.execSQL("PRAGMA defer_foreign_keys = ON")
+            tables.forEach { destination.execSQL("DELETE FROM ${quoted(it)}") }
+            tables.forEach { table ->
+                source.query("SELECT * FROM ${quoted(table)}").use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val values = ContentValues(cursor.columnCount)
+                        cursor.columnNames.forEachIndexed { index, name ->
+                            when (cursor.getType(index)) {
+                                Cursor.FIELD_TYPE_NULL -> values.putNull(name)
+                                Cursor.FIELD_TYPE_INTEGER -> values.put(name, cursor.getLong(index))
+                                Cursor.FIELD_TYPE_FLOAT -> values.put(name, cursor.getDouble(index))
+                                Cursor.FIELD_TYPE_BLOB -> values.put(name, cursor.getBlob(index))
+                                else -> values.put(name, cursor.getString(index))
+                            }
+                        }
+                        destination.insert(table, SQLiteDatabase.CONFLICT_ABORT, values)
+                    }
+                }
+            }
+            destination.query("PRAGMA foreign_key_check").use { cursor ->
+                check(!cursor.moveToFirst()) { "Restored library contains broken references" }
+            }
+        }
+    }
 
     suspend fun awaitIdle(timeoutMs: Long = 5_000L) {
         withTimeout(timeoutMs) {
@@ -175,7 +243,7 @@ abstract class InternalDatabase : RoomDatabase() {
     companion object {
         const val DB_NAME = "song.db"
 
-        fun newInstance(context: Context): MusicDatabase {
+        fun newInstance(context: Context, name: String = DB_NAME, allowRepair: Boolean = true): MusicDatabase {
             val universalMigrations: Array<Migration> =
                 (2 until CURRENT_VERSION)
                     .map { from ->
@@ -184,21 +252,13 @@ abstract class InternalDatabase : RoomDatabase() {
 
             fun build(): InternalDatabase =
                 Room
-                    .databaseBuilder(context, InternalDatabase::class.java, DB_NAME)
+                    .databaseBuilder(context, InternalDatabase::class.java, name)
                     .addMigrations(
                         MIGRATION_1_2,
                         *universalMigrations,
-                    ).addCallback(DatabaseCallback())
-                    .fallbackToDestructiveMigration()
-                    .fallbackToDestructiveMigrationOnDowngrade()
+                    ).apply { if (name == DB_NAME) addCallback(DatabaseCallback()) }
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                    .setTransactionExecutor(
-                        java.util.concurrent.Executors
-                            .newFixedThreadPool(4),
-                    ).setQueryExecutor(
-                        java.util.concurrent.Executors
-                            .newFixedThreadPool(4),
-                    ).build()
+                    .build()
 
             fun shouldResetDb(t: Throwable): Boolean {
                 val msg = (t.message ?: "").lowercase()
@@ -212,22 +272,30 @@ abstract class InternalDatabase : RoomDatabase() {
             try {
                 db.openHelper.writableDatabase
             } catch (t: Throwable) {
-                if (!shouldResetDb(t)) throw t
+                if (!allowRepair || !shouldResetDb(t)) {
+                    db.close()
+                    throw t
+                }
+                // Preserve the original DB and sidecars before any repair changes it.
+                val quarantine = java.io.File(context.filesDir, "database_recovery/${System.currentTimeMillis()}")
+                check(quarantine.mkdirs()) { "Cannot preserve database before repair" }
+                listOf(name, "$name-wal", "$name-shm", "$name-journal").forEach { fileName ->
+                    val file = context.getDatabasePath(fileName)
+                    if (file.exists()) file.copyTo(java.io.File(quarantine, fileName))
+                }
                 Log.e(TAG, "Database open failed, attempting schema repair", t)
                 runCatching { db.close() }
 
                 val repaired =
-                    runCatching { SchemaTools.repairDatabaseFile(context = context, name = DB_NAME) }
-                        .onFailure { Log.e(TAG, "Schema repair failed, recreating database", it) }
+                    runCatching { SchemaTools.repairDatabaseFile(context = context, name = name) }
+                        .onFailure { Log.e(TAG, "Schema repair failed; original database preserved", it) }
                         .isSuccess
 
                 db = build()
                 runCatching { db.openHelper.writableDatabase }.getOrElse { openError ->
-                    Log.e(TAG, "Database still failed to open after schema repair=$repaired, recreating database", openError)
+                    Log.e(TAG, "Database still failed to open after schema repair=$repaired; original database preserved", openError)
                     runCatching { db.close() }
-                    runCatching { context.deleteDatabase(DB_NAME) }
-                    db = build()
-                    db.openHelper.writableDatabase
+                    throw openError
                 }
             }
 
@@ -237,9 +305,16 @@ abstract class InternalDatabase : RoomDatabase() {
 }
 
 private class DatabaseCallback : RoomDatabase.Callback() {
+    companion object {
+        private val OPEN_MAINTENANCE_EXECUTOR = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+            Thread(task, "Library-maintenance").apply { isDaemon = true }
+        }
+    }
     override fun onOpen(db: SupportSQLiteDatabase) {
         super.onOpen(db)
-        java.util.concurrent.Executors.newSingleThreadExecutor().execute {
+        // Opening Room can originate on main. Reuse one process-owned maintenance worker
+        // instead of leaking a new executor on every open or blocking startup with cleanup.
+        OPEN_MAINTENANCE_EXECUTOR.execute {
             try {
                 db.query("PRAGMA busy_timeout = 60000").close()
                 db.query("PRAGMA cache_size = -16000").close()

@@ -14,15 +14,24 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -41,6 +50,10 @@ import kotlin.properties.ReadOnlyProperty
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     name = "settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { error ->
+        reportException(error)
+        emptyPreferences() // Deliberate recovery of an unreadable protobuf; never treat IO errors as corruption.
+    },
     produceMigrations = { _ ->
         listOf(
             object : DataMigration<Preferences> {
@@ -80,7 +93,21 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     },
 )
 
+/** Retry transient storage failures without converting a failed load into missing preferences. */
+fun DataStore<Preferences>.observablePreferences(): Flow<Preferences> = data.retryWhen { error, attempt ->
+    if (error is IOException) {
+        reportException(error)
+        delay((250L * (attempt + 1).coerceAtMost(20)).coerceAtMost(5_000L))
+        true
+    } else {
+        false
+    }
+}
+
 object PreferenceStore {
+    enum class LoadState { NOT_LOADED, LOADED, FAILED }
+    private val _loadState = MutableStateFlow(LoadState.NOT_LOADED)
+    val loadState = _loadState.asStateFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _prefs = MutableStateFlow<Preferences?>(null)
 
@@ -92,8 +119,25 @@ object PreferenceStore {
             if (started) return
             started = true
             scope.launch {
-                context.dataStore.data.collect { preferences ->
-                    _prefs.value = preferences
+                try {
+                    context.applicationContext.dataStore.data.retryWhen { error, attempt ->
+                        _loadState.value = LoadState.FAILED
+                        if (error is IOException) {
+                            reportException(error)
+                            delay((250L * (attempt + 1).coerceAtMost(20)).coerceAtMost(5_000L))
+                            true
+                        } else false
+                    }.collect { preferences ->
+                        _prefs.value = preferences
+                        _loadState.value = LoadState.LOADED
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Exception) {
+                    _loadState.value = LoadState.FAILED
+                    reportException(error)
+                } finally {
+                    synchronized(this@PreferenceStore) { started = false }
                 }
             }
         }
@@ -106,8 +150,12 @@ object PreferenceStore {
         block: MutablePreferences.() -> Unit,
     ) {
         scope.launch {
-            dataStore.edit { prefs ->
-                prefs.block()
+            try {
+                dataStore.edit { prefs -> prefs.block() }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                reportException(error)
             }
         }
     }
@@ -120,7 +168,10 @@ operator fun <T> DataStore<Preferences>.get(key: Preferences.Key<T>): T? =
         } else {
             runBlocking(Dispatchers.IO) {
                 withTimeoutOrNull(1500) {
-                    data.first()[key]
+                    try { data.first()[key] } catch (error: IOException) {
+                        reportException(error)
+                        null
+                    }
                 }
             }
         }
@@ -135,7 +186,10 @@ fun <T> DataStore<Preferences>.get(
         } else {
             runBlocking(Dispatchers.IO) {
                 withTimeoutOrNull(1500) {
-                    data.first()[key]
+                    try { data.first()[key] } catch (error: IOException) {
+                        reportException(error)
+                        null
+                    }
                 } ?: defaultValue
             }
         }
@@ -168,7 +222,8 @@ fun <T> rememberPreference(
 
     val state =
         remember {
-            context.dataStore.data
+            context.dataStore.observablePreferences()
+                .catch { reportException(it) }
                 .map { it[key] ?: defaultValue }
                 .distinctUntilChanged()
         }.collectAsState(defaultValue)
@@ -199,7 +254,8 @@ inline fun <reified T : Enum<T>> rememberEnumPreference(
 
     val state =
         remember {
-            context.dataStore.data
+            context.dataStore.observablePreferences()
+                .catch { reportException(it) }
                 .map { it[key].toEnum(defaultValue = defaultValue) }
                 .distinctUntilChanged()
         }.collectAsState(defaultValue)

@@ -110,6 +110,7 @@
 # Keep queue-related classes to prevent serialization issues in release builds
 -keep class dev.vxs.frostsoulx.models.PersistQueue { *; }
 -keep class dev.vxs.frostsoulx.models.PersistPlayerState { *; }
+-keep class dev.vxs.frostsoulx.playback.MusicService$PersistentPlaybackSnapshot { *; }
 -keep class dev.vxs.frostsoulx.models.QueueData { *; }
 -keep class dev.vxs.frostsoulx.models.QueueType { *; }
 -keep class dev.vxs.frostsoulx.playback.queues.** { *; }

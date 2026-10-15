@@ -7,6 +7,7 @@
 
 package dev.vxs.frostsoulx.lyrics.overlay
 
+import dev.vxs.frostsoulx.utils.reportException
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -97,7 +98,7 @@ class LyricsOverlayService : Service() {
     override fun onDestroy() {
         stateJob?.cancel()
         mainHandler.removeCallbacks(hideOverlayRunnable)
-        if (overlayAttached) windowManager.removeViewImmediate(root)
+        hideOverlay()
         overlayScope.cancel()
         super.onDestroy()
     }
@@ -208,7 +209,7 @@ class LyricsOverlayService : Service() {
         layoutParams.x = appearance.xPx
         layoutParams.y = appearance.yPx
         nextLineView.visibility = if (appearance.dualLine && latestState.nextLine != null) View.VISIBLE else View.GONE
-        if (overlayAttached) windowManager.updateViewLayout(root, layoutParams)
+        if (overlayAttached) updateOverlayLayout()
     }
 
     private fun createTouchListener(): View.OnTouchListener {
@@ -247,7 +248,7 @@ class LyricsOverlayService : Service() {
                     if (!appearance.locked && !scaleDetector.isInProgress) {
                         layoutParams.x = initialWindowX + (event.rawX - interactionX).roundToInt()
                         layoutParams.y = initialWindowY + (event.rawY - interactionY).roundToInt()
-                        windowManager.updateViewLayout(root, layoutParams)
+                        updateOverlayLayout()
                     }
                     true
                 }
@@ -272,17 +273,38 @@ class LyricsOverlayService : Service() {
     }
 
     private fun showOverlay() {
-        if (!Settings.canDrawOverlays(this) || overlayAttached) return
-        windowManager.addView(root, layoutParams)
+        if (!Settings.canDrawOverlays(this)) { hideOverlay(); stopSelf(); return }
+        if (overlayAttached) return
+        if (!windowOperation { windowManager.addView(root, layoutParams) }) return
         overlayAttached = true
         render(latestState)
         resetAutoHideTimer()
     }
 
     private fun hideOverlay() {
-        if (!overlayAttached) return
-        windowManager.removeView(root)
-        overlayAttached = false
+        mainHandler.removeCallbacks(hideOverlayRunnable)
+        try {
+            if (overlayAttached || root.isAttachedToWindow) {
+                windowOperation { windowManager.removeViewImmediate(root) }
+            }
+        } finally { overlayAttached = false }
+    }
+
+    private fun updateOverlayLayout() {
+        if (!Settings.canDrawOverlays(this)) { hideOverlay(); stopSelf(); return }
+        if (overlayAttached) windowOperation { windowManager.updateViewLayout(root, layoutParams) }
+    }
+
+    private inline fun windowOperation(block: () -> Unit): Boolean = try {
+        block()
+        true
+    } catch (error: RuntimeException) {
+        if (error !is WindowManager.BadTokenException && error !is WindowManager.InvalidDisplayException &&
+            error !is SecurityException && error !is IllegalArgumentException && error !is IllegalStateException) throw error
+        reportException(error)
+        overlayAttached = root.isAttachedToWindow
+        stopSelf()
+        false
     }
 
     private fun resetAutoHideTimer() {
@@ -317,8 +339,14 @@ class LyricsOverlayService : Service() {
 
         fun start(context: Context): Boolean {
             if (!Settings.canDrawOverlays(context)) return false
-            context.startService(Intent(context, LyricsOverlayService::class.java).setAction(ActionShow))
-            return true
+            return try {
+                context.startService(Intent(context, LyricsOverlayService::class.java).setAction(ActionShow))
+                true
+            } catch (error: RuntimeException) {
+                if (error !is SecurityException && error !is IllegalStateException) throw error
+                reportException(error)
+                false
+            }
         }
 
         fun stop(context: Context) {

@@ -41,7 +41,7 @@
 // -----------------------
 // Every tier holds two IR spectrum sets. On swap the engine keeps convolving
 // with both (the input FDL is shared, so only the complex MAC is duplicated)
-// and equal-power crossfades between them over a fixed number of blocks. There
+// and unity-sum crossfades between them over a fixed number of blocks. There
 // is no click, no gap, and no reallocation on the audio thread.
 //
 // Real-time contract: `process()` performs no allocation, no locking and no
@@ -52,6 +52,8 @@
 #include "frostsoulx/rt/rt_types.h"
 
 #include <cstddef>
+#include <array>
+#include <atomic>
 #include <vector>
 
 namespace frostsoulx::dsp {
@@ -67,7 +69,7 @@ public:
 
     /// Replace the IR segment. Real-time safe as long as `taps <= maxTaps`
     /// given to `prepare`; performs FFTs, so call from the control thread
-    /// (the engine double-buffers and hands over via an atomic flag).
+    /// callers must serialize this legacy single-channel API with processing.
     void loadIr(const float* ir, std::size_t taps);
 
     /// Begin crossfading from the active IR set to the freshly loaded one.
@@ -194,17 +196,32 @@ public:
     std::size_t numOutputs() const noexcept { return numOutputs_; }
     bool ready() const noexcept { return ready_; }
 
-private:
-    NonUniformConvolver& path(std::size_t in, std::size_t out) noexcept {
-        return paths_[in * numOutputs_ + out];
-    }
+    /// Publish a complete [input][output] matrix atomically. Single control
+    /// producer; concurrent processBlock is supported. FFT work stays off RT.
+    bool loadMatrix(const float* const* ir, std::size_t taps);
 
+private:
+    struct Tier {
+        std::size_t block = 0, offset = 0, length = 0, parts = 0;
+        std::size_t bins = 0, write = 0, fill = 0, emit = 0;
+        RealFft fft, controlFft;
+        std::vector<float> window, fdl, accum, time, pad;
+        std::array<std::vector<float>, 4> spectra;
+        std::array<std::vector<std::size_t>, 4> irParts;
+        std::array<std::vector<float>, 2> pending;
+    };
+    void renderTier(Tier& tier, int bank, int slot) noexcept;
+    void adoptPending() noexcept;
     NonUniformConvolver::Config cfg_{};
-    std::size_t numInputs_ = 0;
-    std::size_t numOutputs_ = 0;
+    std::size_t numInputs_ = 0, numOutputs_ = 0;
     bool ready_ = false;
-    std::vector<NonUniformConvolver> paths_;
-    std::vector<float> scratch_;
+    std::vector<Tier> tiers_;
+    std::vector<float> staging_, mixA_, mixB_;
+    // Bank ownership: 0 free, 1 producer, 2 mailbox, 3 audio thread.
+    std::array<std::atomic<int>, 4> state_{};
+    std::atomic<int> mailbox_{-1};
+    int active_ = -1, incoming_ = -1;
+    std::size_t fade_ = 0, fadeLength_ = 1;
 };
 
 } // namespace frostsoulx::dsp
