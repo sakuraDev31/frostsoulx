@@ -829,7 +829,8 @@ class MainActivity : ComponentActivity() {
                     var homeOverflowMenuExpanded by rememberSaveable { mutableStateOf(false) }
                     val showHomeOverflowFab =
                         shouldShowHomeShuffleButton &&
-                            (currentRoute == Screens.Home.route || currentRoute == Screens.Library.route) &&
+                            // Detached More circle: Library only. Home/Search get the expanded pill.
+                            currentRoute == Screens.Library.route &&
                             !useRail &&
                             !playerBottomSheetState.isExpandedOrExpanding &&
                             (playerBottomSheetState.isDismissed || playerBottomSheetState.isCollapsed)
@@ -1959,38 +1960,11 @@ class MainActivity : ComponentActivity() {
                                                     searchSource = SearchSource.ONLINE
                                                     openSearch()
                                                 },
+                                                showMore = showHomeOverflowFab,
                                                 onMoreClick = {
-                                                    if (showHomeOverflowFab) homeOverflowMenuExpanded = !homeOverflowMenuExpanded
+                                                    homeOverflowMenuExpanded = !homeOverflowMenuExpanded
                                                 },
-                                            )
-                                        }
-
-                                        // The existing BottomSheetPlayer is intentionally rendered after
-                                        // navigation, making its collapsed row the independent front layer.
-        BottomSheetPlayer(
-            state = playerBottomSheetState,
-            navController = navController,
-            pureBlack = pureBlack,
-            isMiniPlayerPairedWithNavigation = areBottomBarsPaired,
-            // Smart-peek is intentionally disabled: the compact height is always reserved.
-            onMiniPlayerPeekChanged = {},
-            modifier = Modifier.zIndex(1f),
-        )
-
-                                        val homeOverflowFabBottomPadding =
-                                            (bottomInset + floatingBarsBottomPadding +
-                                                (navVisibleHeight / 2f).coerceAtLeast(0.dp)).coerceAtLeast(0.dp)
-                                        HomeOverflowFabVisibility(
-                                            visible = showHomeOverflowFab,
-                                            modifier =
-                                                Modifier
-                                                    .align(Alignment.BottomEnd)
-                                                    .zIndex(12f)
-                                                    .padding(
-                                                        end = NavigationBarHorizontalPadding + 4.dp,
-                                                        bottom = homeOverflowFabBottomPadding,
-                                                    ),
-                                        ) {
+                                                moreMenuContent = {
                                             HomeOverflowFab(
                                                 expanded = homeOverflowMenuExpanded,
                                                 pureBlack = pureBlack,
@@ -2079,7 +2053,22 @@ class MainActivity : ComponentActivity() {
                                                     navController.navigate("settings/music_together")
                                                 },
                                             )
+                                                },
+                                            )
                                         }
+
+                                        // The existing BottomSheetPlayer is intentionally rendered after
+                                        // navigation, making its collapsed row the independent front layer.
+        BottomSheetPlayer(
+            state = playerBottomSheetState,
+            navController = navController,
+            pureBlack = pureBlack,
+            isMiniPlayerPairedWithNavigation = areBottomBarsPaired,
+            // Smart-peek is intentionally disabled: the compact height is always reserved.
+            onMiniPlayerPeekChanged = {},
+            modifier = Modifier.zIndex(1f),
+        )
+
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize(),
@@ -2777,35 +2766,6 @@ val LocalDownloadUtil = staticCompositionLocalOf<DownloadUtil> { error("No Downl
 val LocalSyncUtils = staticCompositionLocalOf<SyncUtils> { error("No SyncUtils provided") }
 
 private val HomeOverflowMenuIconSize = 40.dp
-
-@Composable
-private fun HomeOverflowFabVisibility(
-    visible: Boolean,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val motionScheme = MaterialTheme.motionScheme
-
-    AnimatedVisibility(
-        visible = visible,
-        modifier = modifier,
-        enter =
-            fadeIn(animationSpec = motionScheme.fastEffectsSpec()) +
-                scaleIn(
-                    initialScale = 0.8f,
-                    animationSpec = motionScheme.defaultSpatialSpec(),
-                ),
-        exit =
-            fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                scaleOut(
-                    targetScale = 0.8f,
-                    animationSpec = motionScheme.fastSpatialSpec(),
-                ),
-        label = "homeOverflowFabVisibility",
-    ) {
-        content()
-    }
-}
 
 @Composable
 private fun HomeOverflowFab(

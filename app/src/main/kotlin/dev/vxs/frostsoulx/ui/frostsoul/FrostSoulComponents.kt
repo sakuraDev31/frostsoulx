@@ -611,7 +611,6 @@ fun FSNavigationBar(
     onItemClick: (FSNavigationItem, Boolean) -> Unit,
     modifier: Modifier = Modifier,
     pairedWithMiniPlayer: Boolean = false,
-    onMoreClick: (() -> Unit)? = null,
 ) {
     val colors = FrostSoulTheme.colors
     val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
@@ -629,17 +628,7 @@ fun FSNavigationBar(
             spotColor = Color.Black.copy(alpha = if (isLight) 0.11f else 0.32f),
             ambientColor = Color.Black.copy(alpha = if (isLight) 0.06f else 0.16f),
         )
-    val displayItems =
-        if (onMoreClick != null) {
-            items + FSNavigationItem(
-                route = "__frostsoul_more__",
-                label = "More",
-                activeIcon = R.drawable.more_vert,
-                inactiveIcon = R.drawable.more_vert,
-            )
-        } else {
-            items
-        }
+    val displayItems = items
     FrostSoulBackdropSurface(
         modifier = modifier.then(shadowModifier).height(56.dp).frostSoulBackdropBorder(shape),
         shape = shape,
@@ -653,8 +642,7 @@ fun FSNavigationBar(
             modifier = Modifier.fillMaxSize().padding(vertical = 3.dp),
         ) {
         displayItems.forEachIndexed { index, item ->
-            val isMore = item.route == "__frostsoul_more__"
-            val selected = !isMore && selectedRoute == item.route
+            val selected = selectedRoute == item.route
             // The selected surface is inset inside the 56dp outer capsule;
             // use the same radius so it follows the nav bar instead of forming
             // a mismatched rectangular overlay at either edge.
@@ -675,7 +663,7 @@ fun FSNavigationBar(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
                         ) {
-                            if (isMore) onMoreClick?.invoke() else onItemClick(item, selected)
+                            onItemClick(item, selected)
                         }
                         .padding(vertical = 4.dp),
             ) {
@@ -694,6 +682,57 @@ fun FSNavigationBar(
                 )
             }
             }
+        }
+    }
+}
+
+@Composable
+fun FSNavigationMoreButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    pureBlack: Boolean = false,
+    contentDescription: String? = "More",
+) {
+    val colors = FrostSoulTheme.colors
+    val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
+    val (glassBlurRadius) = rememberPreference(BlurRadiusKey, defaultValue = 32f)
+    val iconTint = if (pureBlack) Color.White else Color.Black
+    val shape = CircleShape
+    val isLight = !pureBlack && colors.background.luminance() > 0.5f
+    val navSurface = if (pureBlack) Color.Black else if (isLight) Color(0xFFF2F4F7) else Color.White
+    val shadowModifier =
+        Modifier.shadow(
+            elevation = if (isLight) 8.dp else 10.dp,
+            shape = shape,
+            clip = false,
+            spotColor = Color.Black.copy(alpha = if (isLight) 0.11f else 0.32f),
+            ambientColor = Color.Black.copy(alpha = if (isLight) 0.06f else 0.16f),
+        )
+    FrostSoulBackdropSurface(
+        modifier = modifier.then(shadowModifier).size(56.dp).frostSoulBackdropBorder(shape),
+        shape = shape,
+        grain = glassGrain,
+        blurRadius = glassBlurRadius.coerceIn(0f, 64f),
+        tint = if (pureBlack) Color.White else navSurface,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .clip(shape)
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = onClick,
+                    ),
+        ) {
+            FSIcon(
+                painter = painterResource(R.drawable.more_vert),
+                contentDescription = contentDescription,
+                tint = iconTint,
+                modifier = Modifier.size(24.dp),
+            )
         }
     }
 }
