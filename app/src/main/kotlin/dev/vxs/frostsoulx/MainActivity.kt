@@ -1580,59 +1580,96 @@ class MainActivity : ComponentActivity() {
                                                     ),
                                                 title = {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        // app icon
                                                         Image(
                                                             painter = painterResource(R.mipmap.ic_launcher_foreground),
                                                             contentDescription = null,
                                                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                                             modifier =
                                                                 Modifier
-                                                                    .size(35.dp)
+                                                                    .size(36.dp)
                                                                     .clip(CircleShape)
-                                                                    .padding(end = 3.dp),
+                                                                    .background(Color(0xFF1E1E1E)),
                                                         )
+                                                        Spacer(Modifier.width(10.dp))
                                                         Text(
-                                                            text = stringResource(R.string.app_name),
-                                                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                                            text = "FROSTSOULX",
+                                                            style =
+                                                                MaterialTheme.typography.titleMedium.copy(
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontSize = 17.sp,
+                                                                    letterSpacing = 2.sp,
+                                                                    color = Color.White,
+                                                                ),
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis,
                                                         )
                                                     }
                                                 },
                                                 actions = {
-                                                    TranslucentTopAppBarIconButton(
-                                                        onClick = { navController.navigate("history") },
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        modifier = Modifier.padding(end = 12.dp),
                                                     ) {
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.history),
-                                                            contentDescription = stringResource(R.string.history),
-                                                        )
-                                                    }
-                                                    TranslucentTopAppBarIconButton(
-                                                        onClick = { navController.navigate("new_release") },
-                                                    ) {
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.new_release),
-                                                            contentDescription = stringResource(R.string.new_release_albums),
-                                                        )
-                                                    }
-                                                    TranslucentTopAppBarIconButton(
-                                                        onClick = { navController.navigate("settings") },
-                                                    ) {
-                                                        BadgedBox(badge = {
-                                                            if (
-                                                                BuildConfig.UPDATER_AVAILABLE &&
-                                                                latestUpdateChannel == updateChannel &&
-                                                                Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
-                                                            ) {
-                                                                Badge()
-                                                            }
-                                                        }) {
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier =
+                                                                Modifier
+                                                                    .size(36.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(Color(0xFF1E1E1E))
+                                                                    .clickable { navController.navigate("history") },
+                                                        ) {
                                                             Icon(
-                                                                painter = painterResource(R.drawable.settings),
-                                                                contentDescription = stringResource(R.string.settings),
-                                                                modifier = Modifier.size(24.dp),
+                                                                painter = painterResource(R.drawable.history),
+                                                                contentDescription = stringResource(R.string.history),
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(18.dp),
                                                             )
+                                                        }
+
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier =
+                                                                Modifier
+                                                                    .size(36.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(Color(0xFF1E1E1E))
+                                                                    .clickable { navController.navigate("new_release") },
+                                                        ) {
+                                                            Icon(
+                                                                painter = painterResource(R.drawable.new_release),
+                                                                contentDescription = stringResource(R.string.new_release_albums),
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(18.dp),
+                                                            )
+                                                        }
+
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier =
+                                                                Modifier
+                                                                    .size(36.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(Color(0xFF1E1E1E))
+                                                                    .clickable { navController.navigate("settings") },
+                                                        ) {
+                                                            BadgedBox(badge = {
+                                                                if (
+                                                                    BuildConfig.UPDATER_AVAILABLE &&
+                                                                    latestUpdateChannel == updateChannel &&
+                                                                    Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
+                                                                ) {
+                                                                    Badge()
+                                                                }
+                                                            }) {
+                                                                Icon(
+                                                                    painter = painterResource(R.drawable.settings),
+                                                                    contentDescription = stringResource(R.string.settings),
+                                                                    tint = Color.White,
+                                                                    modifier = Modifier.size(18.dp),
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 },
