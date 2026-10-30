@@ -48,6 +48,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -73,6 +74,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.rememberScrollState
@@ -148,6 +151,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastFirstOrNull
 import androidx.compose.ui.util.fastForEach
@@ -213,6 +217,9 @@ import dev.vxs.frostsoulx.constants.PlayerDesignStyle
 import dev.vxs.frostsoulx.constants.PlayerDesignStyleKey
 import dev.vxs.frostsoulx.constants.RemindAfterKey
 import dev.vxs.frostsoulx.constants.SYSTEM_DEFAULT
+import dev.vxs.frostsoulx.constants.ScreenCurvatureRadiusKey
+import dev.vxs.frostsoulx.constants.ScreenCurvatureStyle
+import dev.vxs.frostsoulx.constants.ScreenCurvatureStyleKey
 import dev.vxs.frostsoulx.constants.SearchSource
 import dev.vxs.frostsoulx.constants.SearchSourceKey
 import dev.vxs.frostsoulx.constants.StopMusicOnTaskClearKey
@@ -262,6 +269,7 @@ import dev.vxs.frostsoulx.ui.component.StarDialog
 import dev.vxs.frostsoulx.ui.component.TopSearch
 import dev.vxs.frostsoulx.ui.component.TvNavigationRail
 import dev.vxs.frostsoulx.ui.component.rememberBottomSheetState
+import dev.vxs.frostsoulx.ui.component.screenLensEffect
 import dev.vxs.frostsoulx.ui.component.shimmer.ShimmerTheme
 import dev.vxs.frostsoulx.ui.menu.YouTubeSongMenu
 import dev.vxs.frostsoulx.ui.player.BottomSheetPlayer
@@ -709,6 +717,14 @@ class MainActivity : ComponentActivity() {
                             defaultValue = COLLAPSED_ANCHOR,
                         )
                     val defaultOpenTab by rememberEnumPreference(DefaultOpenTabKey, NavigationTab.HOME)
+                    val screenCurvatureStyle by rememberEnumPreference(
+                        ScreenCurvatureStyleKey,
+                        defaultValue = ScreenCurvatureStyle.CONVEX,
+                    )
+                    val screenCurvatureRadius by rememberPreference(
+                        ScreenCurvatureRadiusKey,
+                        defaultValue = 16f,
+                    )
                     val pauseSearchHistory by rememberPreference(PauseSearchHistoryKey, defaultValue = false)
                     val tabOpenedFromShortcut =
                         remember {
@@ -1581,59 +1597,96 @@ class MainActivity : ComponentActivity() {
                                                     ),
                                                 title = {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        // app icon
                                                         Image(
                                                             painter = painterResource(R.mipmap.ic_launcher_foreground),
                                                             contentDescription = null,
-                                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                            contentScale = ContentScale.Crop,
                                                             modifier =
                                                                 Modifier
-                                                                    .size(35.dp)
+                                                                    .size(36.dp)
                                                                     .clip(CircleShape)
-                                                                    .padding(end = 3.dp),
+                                                                    .background(Color(0xFF1E1E1E)),
                                                         )
+                                                        Spacer(Modifier.width(10.dp))
                                                         Text(
-                                                            text = stringResource(R.string.app_name),
-                                                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                                            text = "FROSTSOULX",
+                                                            style =
+                                                                MaterialTheme.typography.titleMedium.copy(
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontSize = 17.sp,
+                                                                    letterSpacing = 2.sp,
+                                                                    color = Color.White,
+                                                                ),
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis,
                                                         )
                                                     }
                                                 },
                                                 actions = {
-                                                    TranslucentTopAppBarIconButton(
-                                                        onClick = { navController.navigate("history") },
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        modifier = Modifier.padding(end = 12.dp),
                                                     ) {
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.history),
-                                                            contentDescription = stringResource(R.string.history),
-                                                        )
-                                                    }
-                                                    TranslucentTopAppBarIconButton(
-                                                        onClick = { navController.navigate("new_release") },
-                                                    ) {
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.new_release),
-                                                            contentDescription = stringResource(R.string.new_release_albums),
-                                                        )
-                                                    }
-                                                    TranslucentTopAppBarIconButton(
-                                                        onClick = { navController.navigate("settings") },
-                                                    ) {
-                                                        BadgedBox(badge = {
-                                                            if (
-                                                                BuildConfig.UPDATER_AVAILABLE &&
-                                                                latestUpdateChannel == updateChannel &&
-                                                                Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
-                                                            ) {
-                                                                Badge()
-                                                            }
-                                                        }) {
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier =
+                                                                Modifier
+                                                                    .size(36.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(Color(0xFF1E1E1E))
+                                                                    .clickable { navController.navigate("history") },
+                                                        ) {
                                                             Icon(
-                                                                painter = painterResource(R.drawable.settings),
-                                                                contentDescription = stringResource(R.string.settings),
-                                                                modifier = Modifier.size(24.dp),
+                                                                painter = painterResource(R.drawable.history),
+                                                                contentDescription = stringResource(R.string.history),
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(18.dp),
                                                             )
+                                                        }
+
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier =
+                                                                Modifier
+                                                                    .size(36.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(Color(0xFF1E1E1E))
+                                                                    .clickable { navController.navigate("new_release") },
+                                                        ) {
+                                                            Icon(
+                                                                painter = painterResource(R.drawable.new_release),
+                                                                contentDescription = stringResource(R.string.new_release_albums),
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(18.dp),
+                                                            )
+                                                        }
+
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier =
+                                                                Modifier
+                                                                    .size(36.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(Color(0xFF1E1E1E))
+                                                                    .clickable { navController.navigate("settings") },
+                                                        ) {
+                                                            BadgedBox(badge = {
+                                                                if (
+                                                                    BuildConfig.UPDATER_AVAILABLE &&
+                                                                    latestUpdateChannel == updateChannel &&
+                                                                    Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
+                                                                ) {
+                                                                    Badge()
+                                                                }
+                                                            }) {
+                                                                Icon(
+                                                                    painter = painterResource(R.drawable.settings),
+                                                                    contentDescription = stringResource(R.string.settings),
+                                                                    tint = Color.White,
+                                                                    modifier = Modifier.size(18.dp),
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 },
@@ -1772,24 +1825,8 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             },
                                             trailingIcon = {
-                                                Row {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
                                                     if (active) {
-                                                        if (query.text.isNotEmpty()) {
-                                                            IconButton(
-                                                                onClick = {
-                                                                    onQueryChange(
-                                                                        TextFieldValue(
-                                                                            "",
-                                                                        ),
-                                                                    )
-                                                                },
-                                                            ) {
-                                                                Icon(
-                                                                    painter = painterResource(R.drawable.close),
-                                                                    contentDescription = null,
-                                                                )
-                                                            }
-                                                        }
                                                         IconButton(
                                                             onClick = {
                                                                 searchSource =
@@ -2100,8 +2137,14 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
 
-                                NavHost(
-                                    navController = navController,
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxSize()
+                                            .screenLensEffect(screenCurvatureStyle, screenCurvatureRadius),
+                                ) {
+                                    NavHost(
+                                        navController = navController,
                                     startDestination =
                                         if (launchMusicRecognitionFromShortcut) {
                                             MusicRecognitionRoute
@@ -2245,6 +2288,7 @@ class MainActivity : ComponentActivity() {
                                         onlineSearchSort = onlineSearchSort,
                                         homeViewModel = homeViewModel,
                                     )
+                                }
                                 }
                             }
                         }

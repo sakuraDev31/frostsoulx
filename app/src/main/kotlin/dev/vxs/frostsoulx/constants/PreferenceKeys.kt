@@ -33,6 +33,8 @@ val ShowPlayerVolumeBarKey = booleanPreferencesKey("showPlayerVolumeBar")
 val HidePlayerThumbnailKey = booleanPreferencesKey("hidePlayerThumbnail")
 val ArchiveTuneCanvasKey = booleanPreferencesKey("archiveTuneCanvas")
 val ThumbnailCornerRadiusKey = floatPreferencesKey("thumbnailCornerRadius")
+val ScreenCurvatureStyleKey = stringPreferencesKey("screenCurvatureStyle")
+val ScreenCurvatureRadiusKey = floatPreferencesKey("screenCurvatureRadius")
 val CropThumbnailToSquareKey = booleanPreferencesKey("cropThumbnailToSquare")
 
 val AodThumbnailShapeKey = stringPreferencesKey("aodThumbnailShape")
@@ -160,6 +162,12 @@ enum class SliderStyle {
     Thick,
     Circular,
     Simple,
+}
+
+enum class ScreenCurvatureStyle {
+    OFF,
+    CONVEX,
+    CONCAVE,
 }
 
 const val SYSTEM_DEFAULT = "SYSTEM_DEFAULT"

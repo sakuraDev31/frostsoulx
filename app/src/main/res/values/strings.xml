@@ -1179,4 +1179,15 @@
     <string name="taste_profile_error_message">We could not build your taste profile. Try again.</string>
     <string name="taste_profile_retry">Try again</string>
     <string name="taste_profile_footer">Your taste profile is computed on this device from your listening history and drives your Home recommendations.</string>
+
+    <!-- Screen Curvature & Lens Effect -->
+    <string name="screen_curvature_lens">Screen Lens &amp; Curvature</string>
+    <string name="screen_curvature_lens_desc">Slightly bend screen UI from center outward or inward with optical corner lens</string>
+    <string name="screen_curvature_style">Curvature style</string>
+    <string name="screen_curvature_style_off">Off (Flat)</string>
+    <string name="screen_curvature_style_convex">Convex (Curved outward)</string>
+    <string name="screen_curvature_style_concave">Concave (Curved inward)</string>
+    <string name="screen_curvature_radius">Screen lens radius</string>
+    <string name="screen_curvature_radius_desc">Corner and lens depth: %1$d dp</string>
+    <string name="adjust_screen_curvature_radius">Adjust screen lens radius</string>
 </resources>

@@ -94,12 +94,16 @@ import dev.vxs.frostsoulx.constants.SwipeSensitivityKey
 import dev.vxs.frostsoulx.constants.SwipeThumbnailKey
 import dev.vxs.frostsoulx.constants.SwipeToSongKey
 import dev.vxs.frostsoulx.constants.ThumbnailCornerRadiusKey
+import dev.vxs.frostsoulx.constants.ScreenCurvatureRadiusKey
+import dev.vxs.frostsoulx.constants.ScreenCurvatureStyle
+import dev.vxs.frostsoulx.constants.ScreenCurvatureStyleKey
 import dev.vxs.frostsoulx.ui.component.DefaultDialog
 import dev.vxs.frostsoulx.ui.component.EnumListPreference
 import dev.vxs.frostsoulx.ui.component.IconButton
 import dev.vxs.frostsoulx.ui.component.ListPreference
 import dev.vxs.frostsoulx.ui.component.PreferenceEntry
 import dev.vxs.frostsoulx.ui.component.PreferenceGroup
+import dev.vxs.frostsoulx.ui.component.ScreenCurvatureRadiusSelectorButton
 import dev.vxs.frostsoulx.ui.component.SwitchPreference
 import dev.vxs.frostsoulx.ui.component.ThumbnailCornerRadiusSelectorButton
 import dev.vxs.frostsoulx.ui.theme.CustomFontLoader
@@ -150,6 +154,16 @@ fun AppearanceSettings(navController: NavController) {
         rememberPreference(
             key = ThumbnailCornerRadiusKey,
             defaultValue = 16f, // default dp
+        )
+    val (screenCurvatureStyle, onScreenCurvatureStyleChange) =
+        rememberEnumPreference(
+            ScreenCurvatureStyleKey,
+            defaultValue = ScreenCurvatureStyle.CONVEX,
+        )
+    val (screenCurvatureRadius, onScreenCurvatureRadiusChange) =
+        rememberPreference(
+            ScreenCurvatureRadiusKey,
+            defaultValue = 16f,
         )
     val (cropThumbnailToSquare, onCropThumbnailToSquareChange) =
         rememberPreference(
@@ -491,6 +505,30 @@ fun AppearanceSettings(navController: NavController) {
                         description = customFontDescription,
                         icon = { Icon(painterResource(R.drawable.text_fields), null) },
                         onClick = pickCustomFont,
+                    )
+                }
+            }
+
+            PreferenceGroup(title = stringResource(R.string.screen_curvature_lens)) {
+                item {
+                    EnumListPreference(
+                        title = { Text(stringResource(R.string.screen_curvature_style)) },
+                        icon = { Icon(painterResource(R.drawable.auto_awesome), null) },
+                        selectedValue = screenCurvatureStyle,
+                        onValueSelected = onScreenCurvatureStyleChange,
+                        valueText = {
+                            when (it) {
+                                ScreenCurvatureStyle.OFF -> stringResource(R.string.screen_curvature_style_off)
+                                ScreenCurvatureStyle.CONVEX -> stringResource(R.string.screen_curvature_style_convex)
+                                ScreenCurvatureStyle.CONCAVE -> stringResource(R.string.screen_curvature_style_concave)
+                            }
+                        },
+                    )
+                }
+
+                item(visible = screenCurvatureStyle != ScreenCurvatureStyle.OFF) {
+                    ScreenCurvatureRadiusSelectorButton(
+                        onRadiusSelected = onScreenCurvatureRadiusChange,
                     )
                 }
             }

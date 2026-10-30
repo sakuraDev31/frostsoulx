@@ -29,8 +29,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -43,7 +41,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,7 +51,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -84,6 +80,7 @@ import dev.vxs.frostsoulx.innertube.pages.HomePage
 import dev.vxs.frostsoulx.library.LibraryTopMix
 import dev.vxs.frostsoulx.models.MediaMetadata
 import dev.vxs.frostsoulx.models.toMediaMetadata
+import dev.vxs.frostsoulx.musicrecognition.MusicRecognitionRoute
 import dev.vxs.frostsoulx.playback.PlayerConnection
 import dev.vxs.frostsoulx.playback.queues.ListQueue
 import dev.vxs.frostsoulx.playback.queues.YouTubeQueue
@@ -94,6 +91,7 @@ import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
 import dev.vxs.frostsoulx.ui.frostsoul.FSSectionHeader
 import dev.vxs.frostsoulx.ui.frostsoul.FSText
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
+import dev.vxs.frostsoulx.ui.premium.PremiumSegmentedTabs
 import kotlinx.coroutines.CoroutineScope
 import java.util.Calendar
 
@@ -141,19 +139,11 @@ internal fun FrostSoulHomeFeed(
     val communityPlaylists = remember(uiState.homePage, uiState.accountPlaylists) {
         val fromOnline = uiState.homePage?.sections.orEmpty()
             .filter { section ->
-                val title = section.title
-                val isFeatured = title.contains("featured", ignoreCase = true) ||
-                    title.contains("for you", ignoreCase = true) ||
-                    title.contains("recommend", ignoreCase = true) ||
-                    title.contains("made for you", ignoreCase = true)
-                !isFeatured && (
-                    title.contains("playlist", ignoreCase = true) ||
-                        title.contains("community", ignoreCase = true) ||
-                        title.contains("mix", ignoreCase = true) ||
-                        title.contains("chart", ignoreCase = true) ||
-                        title.contains("trending", ignoreCase = true) ||
-                        section.items.any { it is PlaylistItem }
-                )
+                section.title.contains("playlist", ignoreCase = true) ||
+                    section.title.contains("community", ignoreCase = true) ||
+                    section.title.contains("mix", ignoreCase = true) ||
+                    section.title.contains("chart", ignoreCase = true) ||
+                    section.items.any { it is PlaylistItem }
             }
             .flatMap { it.items }
             .filterIsInstance<PlaylistItem>()
@@ -276,20 +266,25 @@ internal fun FrostSoulHomeFeed(
                 top = topPadding,
                 bottom = bottomPadding,
             ),
-        verticalArrangement = Arrangement.spacedBy(FrostSoulTheme.spacing.section),
-        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+        modifier = modifier.fillMaxSize().background(Color.Black),
     ) {
+        // 0. HOME SEARCH BAR
+        item(key = "frostsoul_home_search_bar", contentType = "search") {
+            FrostSoulHomeSearchBar(
+                onSearchClick = { navController.navigate(Screens.Search.route) },
+                onRecognitionClick = { navController.navigate(MusicRecognitionRoute) },
+            )
+        }
+
         // Mood / Category Chips
-        if (uiState.showCategoryChips) {
-            uiState.homePage?.chips.orEmpty().takeIf { it.isNotEmpty() }?.let { chips ->
-                item(key = "frostsoul_home_tabs", contentType = "chips") {
-                    FrostSoulHomeTabs(
-                        chips = chips,
-                        selectedChip = uiState.selectedChip,
-                        onChipSelected = { onAction(HomeAction.SelectChip(it)) },
-                    )
-                }
-            }
+        val chips = uiState.homePage?.chips.orEmpty()
+        item(key = "frostsoul_home_tabs", contentType = "chips") {
+            FrostSoulHomeTabs(
+                chips = chips,
+                selectedChip = uiState.selectedChip,
+                onChipSelected = { onAction(HomeAction.SelectChip(it)) },
+            )
         }
 
         if (uiState.isChipLoading) {
@@ -312,7 +307,7 @@ internal fun FrostSoulHomeFeed(
 
         if (!isMoodSelected) {
 
-            // 2. HERO CAROUSEL (3 to 5 items with pagination dots)
+            // 1. HERO CAROUSEL (3 to 5 items with pagination dots)
             if (heroSongs.isNotEmpty()) {
                 item(key = "frostsoul_hero_carousel") {
                     FrostSoulHeroCarousel(
@@ -324,7 +319,7 @@ internal fun FrostSoulHomeFeed(
                 }
             }
 
-            // 3. QUICK PICKS
+            // 2. QUICK PICKS
             if (quickPicks.isNotEmpty()) {
                 item(key = "frostsoul_quick_picks_header") {
                     FSSectionHeader(
@@ -343,17 +338,17 @@ internal fun FrostSoulHomeFeed(
                 }
             }
 
-            // 4. KEEP LISTENING
+            // 3. RECENTLY PLAYED
             if (keepListeningItems.isNotEmpty()) {
-                item(key = "frostsoul_keep_listening_header") {
+                item(key = "frostsoul_recently_played_header") {
                     FSSectionHeader(
-                        title = "Keep listening",
+                        title = "Recently played",
                         actionLabel = "See all ›",
                         onAction = { navController.navigate("home_collection/continue") },
                     )
                 }
-                item(key = "frostsoul_keep_listening_shelf") {
-                    FrostSoulKeepListeningShelf(
+                item(key = "frostsoul_recently_played_shelf") {
+                    FrostSoulRecentlyPlayedShelf(
                         items = keepListeningItems,
                         mediaMetadata = mediaMetadata,
                         isPlaying = isPlaying,
@@ -363,17 +358,36 @@ internal fun FrostSoulHomeFeed(
                 }
             }
 
-            // 5. MADE FOR YOU
-            item(key = "frostsoul_made_for_you_header") {
+            // 4. MADE FOR YOUR MOOD
+            item(key = "frostsoul_made_for_mood_header") {
                 FSSectionHeader(
-                    title = "Made for you",
+                    title = "Made for your mood",
                 )
             }
-            item(key = "frostsoul_made_for_you_shelf") {
-                FrostSoulMadeForYouShelf(
+            item(key = "frostsoul_made_for_mood_shelf") {
+                FrostSoulMoodShelf(
+                    chips = uiState.homePage?.chips.orEmpty(),
                     offlineMixes = uiState.offlineMixes,
                     playerConnection = playerConnection,
+                    onMoodSelected = { chip ->
+                        onAction(HomeAction.SelectChip(chip))
+                    },
                 )
+            }
+
+            // 5. MADE FOR YOU (Offline Top Mixes)
+            if (uiState.offlineMixes.isNotEmpty()) {
+                item(key = "frostsoul_made_for_you_header") {
+                    FSSectionHeader(
+                        title = "Made for you",
+                    )
+                }
+                item(key = "frostsoul_made_for_you_shelf") {
+                    FrostSoulMadeForYouShelf(
+                        offlineMixes = uiState.offlineMixes,
+                        playerConnection = playerConnection,
+                    )
+                }
             }
 
             // 6. NEW RELEASES
@@ -568,7 +582,234 @@ internal fun FrostSoulHomeFeed(
 }
 
 // =======================================================================
-// 1. HERO CAROUSEL
+// 0. HOME SEARCH BAR
+// =======================================================================
+
+@Composable
+private fun FrostSoulHomeSearchBar(
+    onSearchClick: () -> Unit,
+    onRecognitionClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 2.dp, bottom = 2.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF1E1E1E))
+                .clickable(onClick = onSearchClick)
+                .padding(horizontal = 14.dp),
+        ) {
+            FSIcon(
+                painter = painterResource(R.drawable.search),
+                contentDescription = null,
+                tint = Color(0xFF8E8E93),
+                modifier = Modifier.size(19.dp),
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "Search songs, artists, albums...",
+                color = Color(0xFF8E8E93),
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onRecognitionClick),
+            ) {
+                FSIcon(
+                    painter = painterResource(R.drawable.shortcut_music_recognition),
+                    contentDescription = stringResource(R.string.music_recognition),
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
+}
+
+// =======================================================================
+// 1. TOP HEADER / GREETING
+// =======================================================================
+
+@Composable
+private fun FrostSoulGreetingHeader(
+    accountName: String,
+    selectedChip: HomePage.Chip?,
+    mediaMetadata: MediaMetadata?,
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    val (greetingTitle, symbol, defaultOverline) = remember(currentHour) {
+        when (currentHour) {
+            in 0..4 -> Triple("Good Night", "🌙", "LATE NIGHT")
+            in 5..11 -> Triple("Good Morning", "☀️", "MORNING FLOW")
+            in 12..16 -> Triple("Good Afternoon", "⛅", "AFTERNOON FLOW")
+            in 17..20 -> Triple("Good Evening", "🌅", "EVENING UNWIND")
+            else -> Triple("Good Night", "🌙", "NIGHT VIBES")
+        }
+    }
+
+    val resolvedName = remember(accountName) {
+        val raw = accountName.trim()
+        if (raw.isNotBlank() && !raw.equals("Shivam", ignoreCase = true)) {
+            raw.split("\\s+".toRegex()).firstOrNull()?.replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase() else it.toString()
+            }.orEmpty()
+        } else {
+            ""
+        }
+    }
+
+    val displayTitle = remember(greetingTitle, resolvedName) {
+        if (resolvedName.isNotBlank()) {
+            "$greetingTitle, $resolvedName"
+        } else {
+            greetingTitle
+        }
+    }
+
+    val overline = remember(selectedChip, isPlaying, defaultOverline) {
+        when {
+            selectedChip != null -> "${selectedChip.title.uppercase()} SESSION"
+            isPlaying -> "NOW LISTENING"
+            else -> defaultOverline
+        }
+    }
+
+    val subtitle = remember(currentHour, selectedChip, isPlaying, mediaMetadata) {
+        if (selectedChip != null) {
+            val chipName = selectedChip.title
+            when {
+                chipName.contains("relax", ignoreCase = true) ->
+                    if (currentHour in 21..23 || currentHour in 0..4) {
+                        "Relaxation session • Calming ambient tones for winding down"
+                    } else {
+                        "Relaxation session • Peaceful melodies to clear your mind"
+                    }
+                chipName.contains("workout", ignoreCase = true) ->
+                    if (currentHour in 5..11) {
+                        "Morning workout • High-energy beats to power your day"
+                    } else {
+                        "Workout session • Heavy bass & high-tempo momentum"
+                    }
+                chipName.contains("focus", ignoreCase = true) ->
+                    if (currentHour in 0..4) {
+                        "Midnight focus • Deep instrumental concentration"
+                    } else {
+                        "Focus session • Ambient flow & distraction-free listening"
+                    }
+                chipName.contains("energ", ignoreCase = true) ->
+                    "Energy session • Uplifting tracks & fast-paced rhythms"
+                chipName.contains("commute", ignoreCase = true) ->
+                    if (currentHour in 5..11) {
+                        "Morning commute • Fresh soundtracks for your journey"
+                    } else if (currentHour in 17..21) {
+                        "Evening commute • Unwind on your way home"
+                    } else {
+                        "On the move • Handpicked tracks for the road"
+                    }
+                chipName.contains("party", ignoreCase = true) ->
+                    "Party session • Crowd favorites & high-voltage jams"
+                chipName.contains("sleep", ignoreCase = true) ->
+                    "Sleep session • Soothing soundscapes for deep rest"
+                chipName.contains("romance", ignoreCase = true) ->
+                    "Romance session • Intimate acoustics & soulful ballads"
+                chipName.contains("feel good", ignoreCase = true) ->
+                    "Feel good session • Bright melodies & mood-lifting vibes"
+                else ->
+                    "$chipName session • Curated music for your current flow"
+            }
+        } else if (isPlaying && mediaMetadata != null) {
+            val trackTitle = mediaMetadata.title.take(30)
+            val artist = mediaMetadata.artists.joinToString(", ") { it.name }.takeIf { it.isNotBlank() }
+            val trackInfo = if (!artist.isNullOrBlank()) "$trackTitle • $artist" else trackTitle
+            when (currentHour) {
+                in 0..4 -> "Late night session • Listening to $trackInfo"
+                in 5..11 -> "Morning session • Listening to $trackInfo"
+                in 12..16 -> "Afternoon flow • Listening to $trackInfo"
+                in 17..20 -> "Evening session • Listening to $trackInfo"
+                else -> "Night session • Listening to $trackInfo"
+            }
+        } else {
+            when (currentHour) {
+                in 0..4 -> "Late night vibes • Ambient tones & deep listening"
+                in 5..8 -> "Early morning vibes • Gentle acoustics & sunrise melodies"
+                in 9..11 -> "Morning vibes • Uplifting rhythms tuned for your day"
+                in 12..16 -> "Afternoon flow • Soundtracks for focus & daytime momentum"
+                in 17..20 -> "Evening vibes • Wind down with smooth melodies & favorites"
+                else -> "Night vibes • Chill beats, mellow acoustic & calm listening"
+            }
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = FrostSoulTheme.spacing.page)
+            .padding(top = 2.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        FSText(
+            text = overline,
+            color = FrostSoulTheme.colors.onSurfaceMuted.copy(alpha = 0.85f),
+            style = FrostSoulTheme.typography.overline.copy(
+                fontSize = 11.5.sp,
+                letterSpacing = 1.4.sp,
+                fontWeight = FontWeight.SemiBold,
+            ),
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            FSText(
+                text = displayTitle,
+                color = FrostSoulTheme.colors.onSurface,
+                style = FrostSoulTheme.typography.title.copy(
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.5).sp,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            FSText(
+                text = symbol,
+                style = FrostSoulTheme.typography.title.copy(
+                    fontSize = 24.sp,
+                ),
+            )
+        }
+        FSText(
+            text = subtitle,
+            color = FrostSoulTheme.colors.onSurfaceMuted,
+            style = FrostSoulTheme.typography.bodyMuted.copy(
+                fontSize = 13.5.sp,
+                lineHeight = 18.sp,
+            ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+// =======================================================================
+// 2. HERO CAROUSEL
 // =======================================================================
 
 @Composable
@@ -583,200 +824,190 @@ private fun FrostSoulHeroCarousel(
     val pagerState = rememberPagerState { songs.size }
     val currentHour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val cardHeight = (maxWidth * 0.58f).coerceIn(210.dp, 260.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            pageSize = PageSize.Fill,
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            pageSpacing = 12.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(195.dp),
+        ) { pageIndex ->
+            val song = songs[pageIndex]
+            val active = song.id == mediaMetadata?.id
+            val playing = active && isPlaying
 
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            HorizontalPager(
-                state = pagerState,
-                pageSize = PageSize.Fill,
-                contentPadding = PaddingValues(horizontal = 14.dp),
-                pageSpacing = 12.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(cardHeight),
-            ) { pageIndex ->
-                val song = songs[pageIndex]
-                val active = song.id == mediaMetadata?.id
-                val playing = active && isPlaying
-
-                val playSong = {
-                    if (active) {
-                        playerConnection.player.togglePlayPause()
-                    } else {
-                        playerConnection.playQueue(
-                            ListQueue(
-                                title = "Featured for you",
-                                items = songs.map { it.toMediaItem() },
-                                startIndex = pageIndex,
-                            ),
-                        )
-                    }
-                }
-
-                val badgeText = when {
-                    active && playing -> "NOW PLAYING"
-                    active -> "PAUSED"
-                    pageIndex == 0 -> "MADE FOR YOU"
-                    pageIndex == 1 -> when (currentHour) {
-                        in 5..11 -> "YOUR MORNING FLOW"
-                        in 12..16 -> "YOUR AFTERNOON BEATS"
-                        in 17..21 -> "YOUR EVENING MIX"
-                        else -> "YOUR NIGHT MIX"
-                    }
-                    pageIndex == 2 -> "BECAUSE YOU PLAYED..."
-                    pageIndex == 3 -> "TRENDING FOR YOU"
-                    else -> "NEW DISCOVERY"
-                }
-
-                val cardShape = RoundedCornerShape(24.dp)
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(cardShape)
-                        .clickable(onClick = playSong),
-                ) {
-                    // High resolution artwork
-                    AsyncImage(
-                        model = song.song.thumbnailUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+            val playSong = {
+                if (active) {
+                    playerConnection.player.togglePlayPause()
+                } else {
+                    playerConnection.playQueue(
+                        ListQueue(
+                            title = "Featured for you",
+                            items = songs.map { it.toMediaItem() },
+                            startIndex = pageIndex,
+                        ),
                     )
-
-                    // Cinematic gradient wash
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    0f to Color.Black.copy(alpha = 0.38f),
-                                    0.28f to Color.Transparent,
-                                    0.52f to Color.Black.copy(alpha = 0.38f),
-                                    1f to Color.Black.copy(alpha = 0.94f),
-                                ),
-                            ),
-                    )
-
-                    // Top-left Frosted Badge
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(14.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.54f))
-                            .border(1.dp, Color.White.copy(alpha = 0.20f), CircleShape)
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                    ) {
-                        if (active) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (playing) FrostSoulTheme.colors.accentBright else Color.White),
-                            )
-                        }
-                        Text(
-                            text = badgeText,
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.1.sp,
-                        )
-                    }
-
-                    // Bottom-right Floating White Play FAB
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(14.dp)
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(Color.White)
-                            .clickable(onClick = playSong),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        FSIcon(
-                            painter = painterResource(if (playing) R.drawable.pause else R.drawable.play),
-                            contentDescription = if (playing) "Pause ${song.title}" else "Play ${song.title}",
-                            tint = Color.Black,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-
-                    // Bottom metadata column
-                    Column(
-                        verticalArrangement = Arrangement.Bottom,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(start = 16.dp, end = 68.dp, bottom = 14.dp),
-                    ) {
-                        Text(
-                            text = song.title,
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = song.artists.joinToString(" • ") { it.name }.ifBlank { "Featured Artist" },
-                            color = Color.White.copy(alpha = 0.88f),
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                        Text(
-                            text = song.album?.title?.takeIf { it.isNotBlank() }?.let { "$it • " }.orEmpty() + "Recommended for you",
-                            color = Color.White.copy(alpha = 0.65f),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
                 }
             }
 
-            // Centered pagination dots (● ○ ○ ○)
-            if (songs.size > 1) {
-                Row(
+            val badgeText = when {
+                active && playing -> "NOW PLAYING"
+                active -> "PAUSED"
+                pageIndex == 0 -> "MADE FOR YOU"
+                pageIndex == 1 -> when (currentHour) {
+                    in 5..11 -> "YOUR MORNING FLOW"
+                    in 12..16 -> "YOUR AFTERNOON BEATS"
+                    in 17..21 -> "YOUR EVENING MIX"
+                    else -> "YOUR NIGHT MIX"
+                }
+                pageIndex == 2 -> "BECAUSE YOU PLAYED..."
+                pageIndex == 3 -> "TRENDING FOR YOU"
+                else -> "NEW DISCOVERY"
+            }
+
+            val cardShape = RoundedCornerShape(20.dp)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(cardShape)
+                    .clickable(onClick = playSong),
+            ) {
+                // High resolution artwork
+                AsyncImage(
+                    model = song.song.thumbnailUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                // Cinematic gradient wash
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.Center,
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Black.copy(alpha = 0.25f),
+                                0.35f to Color.Transparent,
+                                0.55f to Color.Black.copy(alpha = 0.45f),
+                                1f to Color.Black.copy(alpha = 0.95f),
+                            ),
+                        ),
+                )
+
+                // Top-left Frosted Badge
+                Row(
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(14.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.50f))
+                        .border(1.dp, Color.White.copy(alpha = 0.20f), CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
-                    repeat(songs.size) { dotIndex ->
-                        val isSelected = pagerState.currentPage == dotIndex
-                        val dotWidth by animateDpAsState(
-                            targetValue = if (isSelected) 16.dp else 6.dp,
-                            animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow),
-                            label = "HeroDotWidth",
-                        )
-                        val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
-                        val dotColor = when {
-                            isSelected && isLight -> Color.Black
-                            isSelected -> Color.White
-                            isLight -> Color.Black.copy(alpha = 0.20f)
-                            else -> Color.White.copy(alpha = 0.25f)
-                        }
+                    if (active) {
                         Box(
                             modifier = Modifier
-                                .padding(horizontal = 3.dp)
-                                .height(5.dp)
-                                .width(dotWidth)
+                                .size(6.dp)
                                 .clip(CircleShape)
-                                .background(dotColor),
+                                .background(if (playing) FrostSoulTheme.colors.accentBright else Color.White),
                         )
                     }
+                    Text(
+                        text = "✦ $badgeText",
+                        color = Color.White,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.1.sp,
+                    )
+                }
+
+                // Bottom-right Floating White Play FAB
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(14.dp)
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .clickable(onClick = playSong),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FSIcon(
+                        painter = painterResource(if (playing) R.drawable.pause else R.drawable.play),
+                        contentDescription = if (playing) "Pause ${song.title}" else "Play ${song.title}",
+                        tint = Color.Black,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+
+                // Bottom metadata column
+                Column(
+                    verticalArrangement = Arrangement.Bottom,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(start = 14.dp, end = 68.dp, bottom = 14.dp),
+                ) {
+                    Text(
+                        text = song.title,
+                        color = Color.White,
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = song.artists.joinToString(" • ") { it.name }.ifBlank { "Featured Artist" },
+                        color = Color(0xFFDDDDDD),
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                    Text(
+                        text = song.album?.title?.takeIf { it.isNotBlank() }?.let { "$it • " }.orEmpty() + "Recommended for you",
+                        color = Color(0xFFAAAAAA),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
+        }
+
+        // Centered pagination dots (● ○ ○ ○)
+        if (songs.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                repeat(songs.size) { dotIndex ->
+                    val isSelected = pagerState.currentPage == dotIndex
+                    val dotWidth by animateDpAsState(
+                        targetValue = if (isSelected) 16.dp else 4.dp,
+                        animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+                        label = "HeroDotWidth",
+                    )
+                    val dotColor = if (isSelected) Color.White else Color.White.copy(alpha = 0.30f)
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 2.5.dp)
+                            .height(4.dp)
+                            .width(dotWidth)
+                            .clip(CircleShape)
+                            .background(dotColor),
+                    )
                 }
             }
         }
@@ -795,7 +1026,8 @@ private fun FrostSoulQuickPicksShelf(
     playerConnection: PlayerConnection,
 ) {
     val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
-    val cardWidth = 148.dp
+    val cardWidth = 124.dp
+    val cardShape = RoundedCornerShape(14.dp)
 
     LazyRow(
         contentPadding = ShelfPadding,
@@ -804,7 +1036,6 @@ private fun FrostSoulQuickPicksShelf(
         items(songs, key = { "quick_${it.id}" }, contentType = { "quick_pick" }) { song ->
             val isCurrent = song.id == mediaMetadata?.id
             val activePlaying = isCurrent && isPlaying
-            val cardShape = RoundedCornerShape(16.dp)
 
             Column(
                 modifier = Modifier
@@ -834,7 +1065,7 @@ private fun FrostSoulQuickPicksShelf(
                             ambientColor = Color(0x0C000000),
                         )
                         .clip(cardShape)
-                        .background(FrostSoulTheme.colors.surfaceRaised),
+                        .background(Color(0xFF1E1E1E)),
                 ) {
                     AsyncImage(
                         model = song.song.thumbnailUrl,
@@ -847,12 +1078,12 @@ private fun FrostSoulQuickPicksShelf(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.35f)),
+                                .background(Color.Black.copy(alpha = 0.40f)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(32.dp)
                                     .clip(CircleShape)
                                     .background(Color.White),
                                 contentAlignment = Alignment.Center,
@@ -861,7 +1092,7 @@ private fun FrostSoulQuickPicksShelf(
                                     painter = painterResource(if (activePlaying) R.drawable.pause else R.drawable.play),
                                     contentDescription = null,
                                     tint = Color.Black,
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(16.dp),
                                 )
                             }
                         }
@@ -870,17 +1101,17 @@ private fun FrostSoulQuickPicksShelf(
 
                 Text(
                     text = song.title,
-                    color = FrostSoulTheme.colors.onSurface,
-                    fontSize = 13.5.sp,
+                    color = Color.White,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 8.dp),
+                    modifier = Modifier.padding(top = 6.dp),
                 )
                 Text(
                     text = song.artists.joinToString(", ") { it.name }.ifBlank { "Various" },
-                    color = FrostSoulTheme.colors.onSurfaceMuted,
-                    fontSize = 12.sp,
+                    color = Color(0xFFAAAAAA),
+                    fontSize = 11.5.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
@@ -891,11 +1122,11 @@ private fun FrostSoulQuickPicksShelf(
 }
 
 // =======================================================================
-// 4. KEEP LISTENING SHELF
+// 4. RECENTLY PLAYED SHELF
 // =======================================================================
 
 @Composable
-private fun FrostSoulKeepListeningShelf(
+private fun FrostSoulRecentlyPlayedShelf(
     items: List<LocalItem>,
     mediaMetadata: MediaMetadata?,
     isPlaying: Boolean,
@@ -903,13 +1134,14 @@ private fun FrostSoulKeepListeningShelf(
     navController: NavController,
 ) {
     val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
-    val cardShape = RoundedCornerShape(16.dp)
+    val cardWidth = 120.dp
+    val cardShape = RoundedCornerShape(14.dp)
 
     LazyRow(
         contentPadding = ShelfPadding,
         horizontalArrangement = Arrangement.spacedBy(ShelfSpacing),
     ) {
-        items(items, key = { "keep_${it.id}" }, contentType = { "keep_listening" }) { item ->
+        items(items, key = { "recent_${it.id}" }, contentType = { "recently_played" }) { item ->
             val isCurrent = (item is Song && item.id == mediaMetadata?.id) ||
                 (mediaMetadata != null && item.title == mediaMetadata.title)
             val activePlaying = isCurrent && isPlaying
@@ -922,130 +1154,192 @@ private fun FrostSoulKeepListeningShelf(
                 }
             }
 
-            val durationSec = (item as? Song)?.song?.duration ?: 0
-            val progress = if (durationSec > 0) 0.42f else 0.35f
-            val elapsedSec = (durationSec * progress).toInt()
-            val elapsedStr = "%d:%02d".format(elapsedSec / 60, elapsedSec % 60)
-            val totalStr = if (durationSec > 0) "%d:%02d".format(durationSec / 60, durationSec % 60) else "3:45"
-
-            Box(
+            Column(
                 modifier = Modifier
-                    .width(270.dp)
-                    .height(80.dp)
-                    .shadow(
-                        elevation = if (isLight) 3.dp else 0.dp,
-                        shape = cardShape,
-                        clip = false,
-                        spotColor = Color(0x18000000),
-                        ambientColor = Color(0x0C000000),
-                    )
-                    .clip(cardShape)
-                    .background(FrostSoulTheme.colors.surfaceRaised)
-                    .border(
-                        1.dp,
-                        if (isCurrent) FrostSoulTheme.colors.accent.copy(alpha = 0.40f)
-                        else if (isLight) FrostSoulTheme.colors.outline.copy(alpha = 0.12f)
-                        else FrostSoulTheme.colors.outline.copy(alpha = 0.08f),
-                        cardShape,
-                    )
-                    .clickable(onClick = playItem)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .width(cardWidth)
+                    .clickable(onClick = playItem),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxSize(),
+                Box(
+                    modifier = Modifier
+                        .size(cardWidth)
+                        .shadow(
+                            elevation = if (isLight) 3.dp else 0.dp,
+                            shape = cardShape,
+                            clip = false,
+                            spotColor = Color(0x18000000),
+                            ambientColor = Color(0x0C000000),
+                        )
+                        .clip(cardShape)
+                        .background(Color(0xFF1E1E1E)),
                 ) {
-                    // Artwork
                     val artwork = item.frostSoulArtwork()
                     if (!artwork.isNullOrBlank()) {
                         AsyncImage(
                             model = artwork,
-                            contentDescription = null,
+                            contentDescription = item.title,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(10.dp)),
+                            modifier = Modifier.fillMaxSize(),
                         )
                     } else {
                         Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(FrostSoulTheme.colors.accent.copy(alpha = 0.12f)),
+                            modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center,
                         ) {
                             FSIcon(
                                 painter = painterResource(R.drawable.music_note),
                                 contentDescription = null,
-                                tint = FrostSoulTheme.colors.accent,
-                                modifier = Modifier.size(24.dp),
+                                tint = Color.White.copy(alpha = 0.5f),
+                                modifier = Modifier.size(32.dp),
                             )
                         }
                     }
 
-                    // Title, artist, progress bar & time
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
-                        Text(
-                            text = item.title,
-                            color = FrostSoulTheme.colors.onSurface,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = item.frostSoulSubtitle(),
-                            color = FrostSoulTheme.colors.onSurfaceMuted,
-                            fontSize = 11.5.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-
-                        // Progress Bar
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 2.dp)
-                                .height(3.dp)
-                                .clip(CircleShape)
-                                .background(FrostSoulTheme.colors.onSurface.copy(alpha = 0.14f)),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(progress)
-                                    .fillMaxHeight()
-                                    .background(FrostSoulTheme.colors.accent),
-                            )
-                        }
-
-                        // Elapsed / Total
-                        Text(
-                            text = "$elapsedStr / $totalStr",
-                            color = FrostSoulTheme.colors.onSurfaceMuted,
-                            fontSize = 10.5.sp,
-                        )
-                    }
-
-                    // Circular Play/Pause Button
+                    // Bottom-right Circular Dark Play Button Overlay
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .align(Alignment.BottomEnd)
+                            .padding(6.dp)
+                            .size(28.dp)
                             .clip(CircleShape)
-                            .background(FrostSoulTheme.colors.surfaceGlassStrong),
+                            .background(Color(0xCC000000))
+                            .clickable(onClick = playItem),
                         contentAlignment = Alignment.Center,
                     ) {
                         FSIcon(
                             painter = painterResource(if (activePlaying) R.drawable.pause else R.drawable.play),
                             contentDescription = null,
-                            tint = FrostSoulTheme.colors.onSurface,
-                            modifier = Modifier.size(16.dp),
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp),
                         )
                     }
                 }
+
+                Text(
+                    text = item.title,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                Text(
+                    text = item.frostSoulSubtitle(),
+                    color = Color(0xFFAAAAAA),
+                    fontSize = 11.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+    }
+}
+
+// =======================================================================
+// 5. MADE FOR YOUR MOOD SHELF
+// =======================================================================
+
+private data class FrostSoulMoodItem(
+    val title: String,
+    val emoji: String,
+    val gradient: List<Color>,
+    val queryKey: String,
+)
+
+@Composable
+private fun FrostSoulMoodShelf(
+    chips: List<HomePage.Chip>,
+    offlineMixes: List<LibraryTopMix>,
+    playerConnection: PlayerConnection,
+    onMoodSelected: (HomePage.Chip?) -> Unit,
+) {
+    val cardShape = RoundedCornerShape(14.dp)
+    val cardWidth = 132.dp
+    val cardHeight = 108.dp
+
+    val moodItems = remember {
+        listOf(
+            FrostSoulMoodItem(
+                title = "Chill Vibes",
+                emoji = "🌙",
+                gradient = listOf(Color(0xFF352365), Color(0xFF1B1A3F)),
+                queryKey = "chill",
+            ),
+            FrostSoulMoodItem(
+                title = "Deep Focus",
+                emoji = "🍃",
+                gradient = listOf(Color(0xFF0F383B), Color(0xFF0A2224)),
+                queryKey = "focus",
+            ),
+            FrostSoulMoodItem(
+                title = "Workout",
+                emoji = "⚡",
+                gradient = listOf(Color(0xFF8B1D2C), Color(0xFF4A0E17)),
+                queryKey = "workout",
+            ),
+            FrostSoulMoodItem(
+                title = "Feel Good",
+                emoji = "☀️",
+                gradient = listOf(Color(0xFFB86B14), Color(0xFF5E3406)),
+                queryKey = "feel good",
+            ),
+        )
+    }
+
+    LazyRow(
+        contentPadding = ShelfPadding,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(moodItems, key = { "mood_${it.title}" }) { mood ->
+            Box(
+                modifier = Modifier
+                    .width(cardWidth)
+                    .height(cardHeight)
+                    .clip(cardShape)
+                    .background(Brush.verticalGradient(mood.gradient))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), cardShape)
+                    .clickable {
+                        val matchingChip = chips.firstOrNull {
+                            it.title.contains(mood.queryKey, ignoreCase = true) ||
+                                (mood.queryKey == "chill" && it.title.contains("relax", ignoreCase = true)) ||
+                                (mood.queryKey == "workout" && it.title.contains("energ", ignoreCase = true))
+                        }
+                        if (matchingChip != null) {
+                            onMoodSelected(matchingChip)
+                        } else {
+                            val matchingMix = offlineMixes.firstOrNull {
+                                it.title.contains(mood.queryKey, ignoreCase = true)
+                            }
+                            if (matchingMix != null) {
+                                playerConnection.playQueue(
+                                    ListQueue(
+                                        title = matchingMix.title,
+                                        items = matchingMix.tracks.map { it.toMediaItem() },
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                    .padding(12.dp),
+            ) {
+                // Top-right emoji
+                Text(
+                    text = mood.emoji,
+                    fontSize = 18.sp,
+                    modifier = Modifier.align(Alignment.TopEnd),
+                )
+
+                // Bottom-left title
+                Text(
+                    text = mood.title,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.BottomStart),
+                )
             }
         }
     }
@@ -1723,65 +2017,90 @@ private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 // CATEGORY CHIPS / TABS
 // =======================================================================
 
+private data class MoodChipData(
+    val title: String,
+    val emoji: String,
+    val chip: HomePage.Chip?,
+)
+
 @Composable
 private fun FrostSoulHomeTabs(
     chips: List<HomePage.Chip>,
     selectedChip: HomePage.Chip?,
     onChipSelected: (HomePage.Chip?) -> Unit,
 ) {
-    if (chips.isEmpty()) return
-
-    val labels = listOf(stringResource(R.string.home_for_you)) + chips.map { it.title }
-    val selectedIndex = selectedChip?.endpoint?.let { endpoint ->
-        chips.indexOfFirst { it.endpoint == endpoint } + 1
-    } ?: 0
-    val labelWidths = remember { mutableStateMapOf<Int, Int>() }
-    val density = LocalDensity.current
-
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
-        verticalAlignment = Alignment.Bottom,
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = FrostSoulTheme.spacing.page)
-            .heightIn(min = 52.dp),
-    ) {
-        labels.forEachIndexed { index, label ->
-            val selected = index == selectedIndex
-            val underlineWidth = labelWidths[index]?.let { with(density) { it.toDp() } } ?: 0.dp
-            val animatedUnderlineWidth by animateDpAsState(
-                targetValue = if (selected) underlineWidth else 0.dp,
-                animationSpec = spring(
-                    dampingRatio = 0.72f,
-                    stiffness = Spring.StiffnessMedium,
-                ),
-                label = "home_mood_underline",
+    val displayedChips = remember(chips) {
+        val forYouChip = MoodChipData("For you", "🏠", null)
+        if (chips.isNotEmpty()) {
+            listOf(forYouChip) + chips.map { chip ->
+                val emoji = when {
+                    chip.title.contains("chill", ignoreCase = true) || chip.title.contains("relax", ignoreCase = true) || chip.title.contains("sleep", ignoreCase = true) -> "🌙"
+                    chip.title.contains("energ", ignoreCase = true) || chip.title.contains("workout", ignoreCase = true) || chip.title.contains("party", ignoreCase = true) -> "⚡"
+                    chip.title.contains("commute", ignoreCase = true) || chip.title.contains("drive", ignoreCase = true) -> "🚗"
+                    chip.title.contains("focus", ignoreCase = true) || chip.title.contains("study", ignoreCase = true) -> "🍃"
+                    chip.title.contains("feel good", ignoreCase = true) || chip.title.contains("happy", ignoreCase = true) -> "☀️"
+                    chip.title.contains("romance", ignoreCase = true) || chip.title.contains("love", ignoreCase = true) -> "💖"
+                    else -> "✦"
+                }
+                MoodChipData(chip.title, emoji, chip)
+            }
+        } else {
+            listOf(
+                forYouChip,
+                MoodChipData("Chill", "🌙", null),
+                MoodChipData("Energize", "⚡", null),
+                MoodChipData("Commute", "🚗", null),
+                MoodChipData("Focus", "🍃", null),
             )
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
+        }
+    }
+
+    LazyRow(
+        contentPadding = ShelfPadding,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        items(displayedChips, key = { it.title }) { item ->
+            val isSelected = if (item.chip == null) {
+                selectedChip == null
+            } else {
+                selectedChip?.endpoint == item.chip.endpoint
+            }
+
+            val backgroundColor = if (isSelected) Color.White else Color(0xFF1E1E1E)
+            val textColor = if (isSelected) Color.Black else Color.White
+            val fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
-                    .clickable { onChipSelected(chips.getOrNull(index - 1)) }
-                    .padding(top = 8.dp),
+                    .height(34.dp)
+                    .clip(CircleShape)
+                    .background(backgroundColor)
+                    .border(
+                        width = 1.dp,
+                        color = if (isSelected) Color.Transparent else Color.White.copy(alpha = 0.08f),
+                        shape = CircleShape,
+                    )
+                    .clickable {
+                        if (isSelected && item.chip != null) {
+                            onChipSelected(null)
+                        } else {
+                            onChipSelected(item.chip)
+                        }
+                    }
+                    .padding(horizontal = 14.dp),
             ) {
                 Text(
-                    text = label,
-                    color = if (selected) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
-                    style = FrostSoulTheme.typography.body.copy(
-                        fontSize = 16.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    onTextLayout = { result -> labelWidths[index] = result.size.width },
+                    text = item.emoji,
+                    fontSize = 13.sp,
                 )
-                Box(
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .width(animatedUnderlineWidth)
-                        .height(2.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(FrostSoulTheme.colors.onSurface),
+                Text(
+                    text = item.title,
+                    color = textColor,
+                    fontSize = 13.sp,
+                    fontWeight = fontWeight,
                 )
             }
         }
