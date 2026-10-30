@@ -74,6 +74,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.rememberScrollState
@@ -1585,7 +1587,7 @@ class MainActivity : ComponentActivity() {
                                                         Image(
                                                             painter = painterResource(R.mipmap.ic_launcher_foreground),
                                                             contentDescription = null,
-                                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                            contentScale = ContentScale.Crop,
                                                             modifier =
                                                                 Modifier
                                                                     .size(36.dp)
