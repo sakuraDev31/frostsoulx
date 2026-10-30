@@ -179,13 +179,14 @@ fun OnlineSearchResult(
         val list = mutableListOf<ArtistItem>()
         if (topResultItem is SongItem) {
             topResultItem.artists.forEach { art ->
+                val artId = art.id
                 val match = sortedArtists.find { it.title.equals(art.name, ignoreCase = true) }
                 if (match != null && list.none { it.id == match.id }) {
                     list.add(match)
-                } else if (art.id != null && list.none { it.id == art.id }) {
+                } else if (artId != null && list.none { it.id == artId }) {
                     list.add(
                         ArtistItem(
-                            id = art.id,
+                            id = artId,
                             title = art.name,
                             thumbnail = null,
                             shuffleEndpoint = null,
