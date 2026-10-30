@@ -1771,24 +1771,8 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             },
                                             trailingIcon = {
-                                                Row {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
                                                     if (active) {
-                                                        if (query.text.isNotEmpty()) {
-                                                            IconButton(
-                                                                onClick = {
-                                                                    onQueryChange(
-                                                                        TextFieldValue(
-                                                                            "",
-                                                                        ),
-                                                                    )
-                                                                },
-                                                            ) {
-                                                                Icon(
-                                                                    painter = painterResource(R.drawable.close),
-                                                                    contentDescription = null,
-                                                                )
-                                                            }
-                                                        }
                                                         IconButton(
                                                             onClick = {
                                                                 searchSource =

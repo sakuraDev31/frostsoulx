@@ -341,8 +341,8 @@ private fun SearchEntryField(
     pureBlack: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(12.dp)
-    val searchSurface = if (pureBlack) SearchTheme.SearchBarBackground else FrostSoulTheme.colors.surfaceRaised
+    val shape = CircleShape
+    val searchSurface = if (pureBlack) Color(0xFF212121) else FrostSoulTheme.colors.surfaceRaised
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier =
@@ -358,17 +358,17 @@ private fun SearchEntryField(
         FrostSoulIcon(
             painter = painterResource(R.drawable.search),
             contentDescription = "Search Icon",
-            tint = if (pureBlack) Color.White.copy(alpha = 0.62f) else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (pureBlack) Color.White.copy(alpha = 0.65f) else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
         )
         FrostSoulText(
             text = stringResource(R.string.search_yt_music),
             style =
                 SearchTheme.InputTextStyle.copy(
-                    color = if (pureBlack) Color.White.copy(alpha = 0.62f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp,
+                    color = if (pureBlack) Color.White.copy(alpha = 0.65f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 15.sp,
                 ),
-            modifier = Modifier.padding(start = 12.dp),
+            modifier = Modifier.padding(start = 10.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
