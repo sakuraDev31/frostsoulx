@@ -377,6 +377,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
     @Volatile private var roomSize = 0.5f
     @Volatile private var dampening = 0.5f
     @Volatile private var stereoWidth = 0.5f
+    @Volatile private var sourceAzimuth = 0f
+    @Volatile private var sourceElevation = 0f
+    @Volatile private var sourceDistance = 1f
     @Volatile private var carFader = 0f
     @Volatile private var quantumFrames = DEFAULT_QUANTUM_FRAMES
     @Volatile private var limiterEnabled = true
@@ -385,6 +388,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
     @Volatile private var outputGainDb = 0f
 
     override fun configure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        if (!nativeAvailable) { this.inputAudioFormat = inputAudioFormat; outputAudioFormat = AudioProcessor.AudioFormat.NOT_SET; return AudioProcessor.AudioFormat.NOT_SET }
         val supportedEncoding =
             inputAudioFormat.encoding == C.ENCODING_PCM_16BIT ||
                 inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
@@ -405,6 +409,8 @@ class ImmersiveAudioProcessor : AudioProcessor {
             setRoomSize(roomSize)
             setDampening(dampening)
             setStereoWidth(stereoWidth)
+            setSourcePosition(sourceAzimuth, sourceElevation)
+            setSourceDistance(sourceDistance)
             setCarFader(carFader)
             setQuantumFrames(quantumFrames)
             setLimiterEnabled(limiterEnabled)
@@ -417,7 +423,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         return outputAudioFormat
     }
 
-    override fun isActive(): Boolean = nativeHandle != 0L
+    override fun isActive(): Boolean = nativeAvailable && nativeHandle != 0L
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
@@ -509,6 +515,19 @@ class ImmersiveAudioProcessor : AudioProcessor {
         if (nativeHandle != 0L) nativeSetStereoWidth(nativeHandle, stereoWidth)
     }
 
+    fun setSourcePosition(azimuthDeg: Float, elevationDeg: Float) {
+        sourceAzimuth = azimuthDeg.takeIf(Float::isFinite)?.coerceIn(-180f, 180f) ?: 0f
+        sourceElevation = elevationDeg.takeIf(Float::isFinite)?.coerceIn(-45f, 90f) ?: 0f
+        if (nativeHandle != 0L) nativeSetSourcePosition(nativeHandle, sourceAzimuth, sourceElevation)
+    }
+
+    fun setSourceDistance(distanceMetres: Float) {
+        sourceDistance = distanceMetres.takeIf(Float::isFinite)?.coerceIn(1f, 10f) ?: 1f
+        if (nativeHandle != 0L) nativeSetSourceDistance(nativeHandle, sourceDistance)
+    }
+
+
+
     fun setCarFader(value: Float) {
         carFader = value.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
         if (nativeHandle != 0L) nativeSetCarFader(nativeHandle, carFader)
@@ -520,6 +539,11 @@ class ImmersiveAudioProcessor : AudioProcessor {
     }
 
     fun quantumFrames(): Int = quantumFrames
+
+    fun sourceAzimuth(): Float = sourceAzimuth
+    fun sourceElevation(): Float = sourceElevation
+    fun sourceDistance(): Float = sourceDistance
+
 
     fun setLimiterEnabled(value: Boolean) {
         limiterEnabled = value
@@ -561,9 +585,7 @@ class ImmersiveAudioProcessor : AudioProcessor {
         const val MAX_QUANTUM_FRAMES = 2048
         private val EMPTY_BUFFER = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
 
-        init {
-            System.loadLibrary("frostsoulx_immersive_jni")
-        }
+        private val nativeAvailable: Boolean = runCatching { System.loadLibrary("frostsoulx_immersive_jni") }.isSuccess
 
         @JvmStatic private external fun nativeCreate(sampleRate: Int, encoding: Int): Long
         @JvmStatic private external fun nativeRelease(handle: Long)
@@ -582,6 +604,8 @@ class ImmersiveAudioProcessor : AudioProcessor {
         @JvmStatic private external fun nativeSetRoomSize(handle: Long, size: Float)
         @JvmStatic private external fun nativeSetDampening(handle: Long, dampening: Float)
         @JvmStatic private external fun nativeSetStereoWidth(handle: Long, width: Float)
+        @JvmStatic private external fun nativeSetSourcePosition(handle: Long, azimuthDeg: Float, elevationDeg: Float)
+        @JvmStatic private external fun nativeSetSourceDistance(handle: Long, distanceMetres: Float)
         @JvmStatic private external fun nativeSetCarFader(handle: Long, fader: Float)
         @JvmStatic private external fun nativeSetQuantumFrames(handle: Long, quantumFrames: Int)
         @JvmStatic private external fun nativeReadDiagnostics(handle: Long): DoubleArray?
@@ -601,6 +625,9 @@ object ImmersiveAudioRuntime {
     @Volatile private var roomSize = 0.5f
     @Volatile private var dampening = 0.5f
     @Volatile private var stereoWidth = 0.5f
+    @Volatile private var sourceAzimuth = 0f
+    @Volatile private var sourceElevation = 0f
+    @Volatile private var sourceDistance = 1f
     @Volatile private var carFader = 0f
     @Volatile private var quantumFrames = ImmersiveAudioProcessor.DEFAULT_QUANTUM_FRAMES
     @Volatile private var limiterEnabled = true
@@ -634,6 +661,8 @@ object ImmersiveAudioRuntime {
         value.setRoomSize(roomSize)
         value.setDampening(dampening)
         value.setStereoWidth(stereoWidth)
+        value.setSourcePosition(sourceAzimuth, sourceElevation)
+        value.setSourceDistance(sourceDistance)
         value.setCarFader(carFader)
         value.setQuantumFrames(quantumFrames)
         value.setLimiterEnabled(limiterEnabled)
@@ -703,6 +732,17 @@ object ImmersiveAudioRuntime {
         processor?.setStereoWidth(stereoWidth)
     }
 
+    fun setSourcePosition(azimuthDeg: Float, elevationDeg: Float) {
+        sourceAzimuth = azimuthDeg.takeIf(Float::isFinite)?.coerceIn(-180f, 180f) ?: 0f
+        sourceElevation = elevationDeg.takeIf(Float::isFinite)?.coerceIn(-45f, 90f) ?: 0f
+        processor?.setSourcePosition(sourceAzimuth, sourceElevation)
+    }
+
+    fun setSourceDistance(distanceMetres: Float) {
+        sourceDistance = distanceMetres.takeIf(Float::isFinite)?.coerceIn(1f, 10f) ?: 1f
+        processor?.setSourceDistance(sourceDistance)
+    }
+
     fun setCarFader(value: Float) {
         carFader = value.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
         processor?.setCarFader(carFader)
@@ -740,6 +780,9 @@ object ImmersiveAudioRuntime {
     fun roomSize(): Float = roomSize
     fun dampening(): Float = dampening
     fun stereoWidth(): Float = stereoWidth
+    fun sourceAzimuth(): Float = sourceAzimuth
+    fun sourceElevation(): Float = sourceElevation
+    fun sourceDistance(): Float = sourceDistance
     fun quantumFrames(): Int = quantumFrames
 
     fun setLimiterEnabled(value: Boolean) {

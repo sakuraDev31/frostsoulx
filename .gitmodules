@@ -10,3 +10,7 @@
 [submodule "morideobfuscator"]
 	path = morideobfuscator
 	url = https://github.com/sakuraDev31/morideobfuscator.git
+
+[submodule "frostsoulx-audio-engine"]
+	path = app/src/main/cpp/frostsoulx_immersive
+	url = https://github.com/sakuraDev31/frostsoulx-audio-engine.git
