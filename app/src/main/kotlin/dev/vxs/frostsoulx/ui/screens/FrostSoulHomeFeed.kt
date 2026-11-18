@@ -1745,9 +1745,9 @@ private fun FrostSoulHomeTabs(
     val rawDynamicAccent = artworkPalette.artworkPrimary.takeIf { it != Color.White && it != Color.Transparent }
         ?: MaterialTheme.colorScheme.primary
 
-    val isDark = FrostSoulTheme.colors.background.luminance() < 0.5f
-    val guardedAccent = remember(rawDynamicAccent, isDark) {
-        ContrastGuard.ensureGraphicContrast(rawDynamicAccent, FrostSoulTheme.colors.background)
+    val backgroundColor = FrostSoulTheme.colors.background
+    val guardedAccent = remember(rawDynamicAccent, backgroundColor) {
+        ContrastGuard.ensureGraphicContrast(rawDynamicAccent, backgroundColor)
     }
 
     val dynamicAccent by animateColorAsState(
