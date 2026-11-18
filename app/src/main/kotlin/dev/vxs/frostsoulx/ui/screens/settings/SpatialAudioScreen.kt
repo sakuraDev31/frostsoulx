@@ -2,12 +2,14 @@ package dev.vxs.frostsoulx.ui.screens.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -333,7 +335,7 @@ fun SpatialAudioScreen(navController: NavController) {
                         ) {
                             Crossfade(
                                 targetState = selectedTab,
-                                animationSpec = SpatialAudioTokens.ColorCrossfadeSpec,
+                                animationSpec = tween(durationMillis = 300),
                                 label = "TabCrossfade",
                             ) { tab ->
                                 when (tab) {

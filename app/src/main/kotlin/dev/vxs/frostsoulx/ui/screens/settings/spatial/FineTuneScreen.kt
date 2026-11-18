@@ -3,6 +3,7 @@ package dev.vxs.frostsoulx.ui.screens.settings.spatial
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -86,6 +87,7 @@ import dev.vxs.frostsoulx.playback.ImmersiveAudioDiagnostics
 import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.playback.ImmersiveControls
 import dev.vxs.frostsoulx.playback.ImmersiveDiagnosticCapture
+import dev.vxs.frostsoulx.playback.ImmersiveDiagnosticSample
 import dev.vxs.frostsoulx.playback.ImmersiveRoomPreset
 import dev.vxs.frostsoulx.playback.WavImpulseResponse
 import dev.vxs.frostsoulx.playback.defaultAndroidDescription
@@ -211,14 +213,28 @@ fun FineTuneScreen(
         scope.launch {
             capturing = true
             captureProgress = 0f
-            val samples = mutableListOf<ImmersiveAudioDiagnostics>()
+            val samples = mutableListOf<ImmersiveDiagnosticSample>()
             val started = System.currentTimeMillis()
+            val clock = SystemClock.elapsedRealtime()
             val on = currentControls.enabled
             while (true) {
-                delay(100)
-                val elapsed = (System.currentTimeMillis() - started) / 1000f
+                delay(250)
+                val d = ImmersiveAudioRuntime.readDiagnostics()
+                val elapsed = (SystemClock.elapsedRealtime() - clock) / 1000f
                 if (elapsed >= 10f) break
-                samples.add(ImmersiveAudioRuntime.readDiagnostics())
+                samples.add(
+                    ImmersiveDiagnosticSample(
+                        elapsedSeconds = elapsed,
+                        inputPeakL = d.inputPeakL,
+                        inputPeakR = d.inputPeakR,
+                        outputPeakL = d.outputPeakL,
+                        outputPeakR = d.outputPeakR,
+                        inputRmsL = d.inputRmsL,
+                        inputRmsR = d.inputRmsR,
+                        outputRmsL = d.outputRmsL,
+                        outputRmsR = d.outputRmsR,
+                    ),
+                )
                 captureProgress = elapsed / 10f
             }
             capture = ImmersiveDiagnosticCapture(
@@ -1186,7 +1202,7 @@ private fun AccordionGroup(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .animateContentSize(SpatialAudioTokens.SlideSpringSpec),
+                .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Group Header: Title, Edited dot, Reset text button, Chevron

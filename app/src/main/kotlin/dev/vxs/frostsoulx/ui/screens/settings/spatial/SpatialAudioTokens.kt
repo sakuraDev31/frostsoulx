@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.scale
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
+import kotlinx.coroutines.launch
 
 /**
  * Design Tokens for Spatial Audio Effects Library.
@@ -62,7 +64,7 @@ object SpatialAudioTokens {
 
     // ── Strokes: 1dp or 1.5dp only ──
     val StrokeHairline: Dp = 1.dp
-    val StrokeOutline: Dp = 1.5dp
+    val StrokeOutline: Dp = 1.5.dp
 
     // ── Semantic Base Colors ──
     val NearBlackSurface = Color(0xFF0E0E10) // Tone ~6 near-black
@@ -73,6 +75,7 @@ object SpatialAudioTokens {
     val UnselectedTrackAlpha = 0.24f
     val ConcentricRingAlpha = 0.24f
     val MasterOffAlpha = 0.38f
+    val DisabledAlpha = 0.38f
 
     // ── Motion Specs (Springs Only) ──
     val BouncySpringSpec = spring<Float>(
@@ -143,6 +146,7 @@ fun Modifier.bouncyClick(
 ): Modifier = composed {
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val reduceMotion = remember(context) {
         runCatching {
             Settings.Global.getFloat(
@@ -176,7 +180,7 @@ fun Modifier.bouncyClick(
                 while (true) {
                     awaitFirstDown(requireUnconsumed = false)
                     if (!reduceMotion) {
-                        launch {
+                        coroutineScope.launch {
                             scaleAnim.animateTo(
                                 targetValue = 0.96f,
                                 animationSpec = SpatialAudioTokens.BouncySpringSpec,
@@ -189,7 +193,7 @@ fun Modifier.bouncyClick(
                         onClick()
                     }
                     if (!reduceMotion) {
-                        launch {
+                        coroutineScope.launch {
                             scaleAnim.animateTo(
                                 targetValue = 1.0f,
                                 animationSpec = SpatialAudioTokens.BouncySpringSpec,
