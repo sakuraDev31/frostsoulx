@@ -68,6 +68,14 @@ class UpdateMusicTogetherPreferencesUseCase
         suspend fun setWelcomeShown(value: Boolean) {
             repository.setWelcomeShown(value)
         }
+
+        suspend fun setServerUrl(value: String) {
+            repository.setServerUrl(value)
+        }
+
+        suspend fun setBearerToken(value: String) {
+            repository.setBearerToken(value)
+        }
     }
 
 class MusicTogetherSessionActionsUseCase

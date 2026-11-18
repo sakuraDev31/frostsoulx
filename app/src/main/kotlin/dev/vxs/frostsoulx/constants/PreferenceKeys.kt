@@ -226,6 +226,8 @@ val TogetherAllowGuestsToControlPlaybackKey = booleanPreferencesKey("together_al
 val TogetherRequireHostApprovalToJoinKey = booleanPreferencesKey("together_require_host_approval_to_join")
 val TogetherLastJoinLinkKey = stringPreferencesKey("together_last_join_link")
 val TogetherWelcomeShownKey = booleanPreferencesKey("together_welcome_shown")
+val TogetherCustomServerUrlKey = stringPreferencesKey("together_custom_server_url")
+val TogetherCustomBearerTokenKey = stringPreferencesKey("together_custom_bearer_token")
 
 // ListenBrainz scrobbling
 val ListenBrainzEnabledKey = booleanPreferencesKey("listenbrainz_enabled")

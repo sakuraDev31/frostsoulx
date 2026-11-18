@@ -130,6 +130,8 @@ import dev.vxs.frostsoulx.MainActivity
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.aod.ACTION_AOD_MODE
 import dev.vxs.frostsoulx.constants.AodAutoStartScreenOffKey
+import dev.vxs.frostsoulx.constants.TogetherCustomBearerTokenKey
+import dev.vxs.frostsoulx.constants.TogetherCustomServerUrlKey
 import dev.vxs.frostsoulx.cast.CastMediaItemResolver
 import dev.vxs.frostsoulx.cast.CastPlaybackRepository
 import dev.vxs.frostsoulx.cast.CastPlaybackRepositoryLocator
@@ -687,7 +689,7 @@ class MusicService :
         if (lastPrompt?.first == mediaId && now - lastPrompt.second < 10000L) return
         lastLoginRecoveryPrompt = mediaId to now
 
-        val deepLink = Uri.parse("archivetune://login?url=${Uri.encode(targetUrl)}")
+        val deepLink = Uri.parse("frostsoulx://login?url=${Uri.encode(targetUrl)}")
         val intent =
             Intent(Intent.ACTION_VIEW, deepLink, this, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -4598,11 +4600,20 @@ class MusicService :
                 return@launch
             }
 
-            val togetherToken =
-                dev.vxs.frostsoulx.BuildConfig.TOGETHER_BEARER_TOKEN
+            val customToken = runCatching {
+                dataStore.data.map { it[TogetherCustomBearerTokenKey] }.first()
+            }.getOrNull()?.trim()?.takeIf { it.isNotBlank() }
+
+            val togetherToken = customToken
+                ?: dev.vxs.frostsoulx.BuildConfig.TOGETHER_BEARER_TOKEN
                     .trim()
                     .takeIf { it.isNotBlank() }
-            if (togetherToken == null) {
+
+            val isCustomServer = runCatching {
+                dataStore.data.map { it[TogetherCustomServerUrlKey] }.first()
+            }.getOrNull()?.trim()?.isNotBlank() == true
+
+            if (togetherToken == null && !isCustomServer) {
                 scope.launch(SilentHandler) {
                     togetherSessionState.value =
                         dev.vxs.frostsoulx.together.TogetherSessionState.Error(
@@ -4984,11 +4995,20 @@ class MusicService :
                 return@launch
             }
 
-            val togetherToken =
-                dev.vxs.frostsoulx.BuildConfig.TOGETHER_BEARER_TOKEN
+            val customToken = runCatching {
+                dataStore.data.map { it[TogetherCustomBearerTokenKey] }.first()
+            }.getOrNull()?.trim()?.takeIf { it.isNotBlank() }
+
+            val togetherToken = customToken
+                ?: dev.vxs.frostsoulx.BuildConfig.TOGETHER_BEARER_TOKEN
                     .trim()
                     .takeIf { it.isNotBlank() }
-            if (togetherToken == null) {
+
+            val isCustomServer = runCatching {
+                dataStore.data.map { it[TogetherCustomServerUrlKey] }.first()
+            }.getOrNull()?.trim()?.isNotBlank() == true
+
+            if (togetherToken == null && !isCustomServer) {
                 scope.launch(SilentHandler) {
                     togetherSessionState.value =
                         dev.vxs.frostsoulx.together.TogetherSessionState.Error(

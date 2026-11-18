@@ -129,8 +129,8 @@ class TogetherOnlineApi(
         if (specific != null) return specific
         return when (status) {
             400 -> "Bad request"
-            401 -> "Unauthorized"
-            403 -> "Forbidden"
+            401 -> "Unauthorized: A Together token is required for this online server. Please configure it in Music Together settings."
+            403 -> "Forbidden: Token rejected by Together server"
             404 -> "Session not found"
             429 -> "Too many requests, please try again later"
             in 500..599 -> "Server error ($status)"
@@ -145,7 +145,7 @@ class TogetherOnlineApi(
         settings: TogetherRoomSettings,
     ): TogetherOnlineCreateSessionResponse =
         withRetry {
-            val token = normalizedBearerTokenOrNull() ?: throw TogetherOnlineApiException("Together token is missing")
+            val token = normalizedBearerTokenOrNull()
             val payload =
                 json.encodeToString(
                     TogetherOnlineCreateSessionRequest.serializer(),
@@ -156,7 +156,9 @@ class TogetherOnlineApi(
                 )
             val resp =
                 client.post("$v1BaseUrl/together/sessions") {
-                    header("Authorization", "Bearer $token")
+                    if (token != null) {
+                        header("Authorization", "Bearer $token")
+                    }
                     contentType(ContentType.Application.Json)
                     setBody(payload)
                 }
@@ -168,7 +170,7 @@ class TogetherOnlineApi(
 
     suspend fun resolveCode(code: String): TogetherOnlineResolveResponse =
         withRetry {
-            val token = normalizedBearerTokenOrNull() ?: throw TogetherOnlineApiException("Together token is missing")
+            val token = normalizedBearerTokenOrNull()
             val payload =
                 json.encodeToString(
                     TogetherOnlineResolveRequest.serializer(),
@@ -176,7 +178,9 @@ class TogetherOnlineApi(
                 )
             val resp =
                 client.post("$v1BaseUrl/together/sessions/resolve") {
-                    header("Authorization", "Bearer $token")
+                    if (token != null) {
+                        header("Authorization", "Bearer $token")
+                    }
                     contentType(ContentType.Application.Json)
                     setBody(payload)
                 }

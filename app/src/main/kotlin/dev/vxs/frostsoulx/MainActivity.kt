@@ -2612,14 +2612,15 @@ class MainActivity : ComponentActivity() {
         val coroutineScope = lifecycleScope
 
         val authority = uri.authority?.lowercase()
-        if (uri.scheme.equals("archivetune", ignoreCase = true) && authority == "together") {
+        val scheme = uri.scheme?.lowercase()
+        if ((scheme == "frostsoulx" || scheme == "archivetune") && authority == "together") {
             pendingTogetherJoinLink = uri.toString()
             startMusicServiceSafely()
             joinPendingTogetherIfReady()
             return
         }
 
-        if (uri.scheme.equals("archivetune", ignoreCase = true) && authority == "login") {
+        if ((scheme == "frostsoulx" || scheme == "archivetune") && authority == "login") {
             navController.navigate(buildLoginRoute(uri.getQueryParameter(LOGIN_URL_ARGUMENT)))
             return
         }

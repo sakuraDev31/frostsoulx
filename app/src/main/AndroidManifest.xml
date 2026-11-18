@@ -79,6 +79,15 @@
 
                 <data
                     android:host="together"
+                    android:scheme="frostsoulx" />
+                <data
+                    android:host="together"
+                    android:scheme="archivetune" />
+                <data
+                    android:host="login"
+                    android:scheme="frostsoulx" />
+                <data
+                    android:host="login"
                     android:scheme="archivetune" />
             </intent-filter>
 
