@@ -49,17 +49,17 @@ val PlayerHorizontalPadding = 16.dp
 val NavigationBarAnimationSpec =
     spring<Dp>(
         dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = Spring.StiffnessLow,
+        stiffness = 1800f,
     )
 
 val BottomSheetAnimationSpec =
     spring<Dp>(
-        dampingRatio = 0.82f,
-        stiffness = 900f,
+        dampingRatio = 0.80f,
+        stiffness = 1850f,
     )
 
 val BottomSheetSoftAnimationSpec =
     spring<Dp>(
-        dampingRatio = 0.84f,
-        stiffness = 850f,
+        dampingRatio = 0.80f,
+        stiffness = 1800f,
     )

@@ -37,13 +37,16 @@ import dev.vxs.frostsoulx.LocalPlayerAwareWindowInsets
 import dev.vxs.frostsoulx.LocalPlayerConnection
 import dev.vxs.frostsoulx.home.HomeAction
 import dev.vxs.frostsoulx.home.HomeScreenState
+import dev.vxs.frostsoulx.constants.HomeLibraryGlassBackgroundKey
 import dev.vxs.frostsoulx.ui.component.ExpressivePullToRefreshBox
 import dev.vxs.frostsoulx.ui.component.LocalMenuState
 import dev.vxs.frostsoulx.ui.frostsoul.FSEmptyState
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulMaterialGlassBackground
 import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
+import dev.vxs.frostsoulx.utils.rememberPreference
 import dev.vxs.frostsoulx.viewmodels.HomeViewModel
 
 @Composable
@@ -112,13 +115,14 @@ fun HomeScreen(
         }
     }
 
+    val (glassBackgroundEnabled) = rememberPreference(HomeLibraryGlassBackgroundKey, defaultValue = true)
+
     FrostSoulCalmTheme {
-        val isLight = FrostSoulTheme.colors.background.luminance() > 0.5f
         Box(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .background(if (isLight) Color.White else Color.Black)
+                    .frostSoulMaterialGlassBackground(enabled = glassBackgroundEnabled)
                     .then(
                         if (headerScrollConnection != null) Modifier.nestedScroll(headerScrollConnection) else Modifier,
                     ),

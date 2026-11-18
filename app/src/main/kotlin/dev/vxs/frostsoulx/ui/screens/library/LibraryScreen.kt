@@ -79,9 +79,11 @@ import dev.vxs.frostsoulx.constants.ShowTagsInLibraryKey
 import dev.vxs.frostsoulx.db.entities.TagEntity
 import dev.vxs.frostsoulx.ui.component.TagsManagementDialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.vxs.frostsoulx.constants.HomeLibraryGlassBackgroundKey
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
+import dev.vxs.frostsoulx.ui.frostsoul.frostSoulMaterialGlassBackground
 import dev.vxs.frostsoulx.utils.rememberEnumPreference
 import dev.vxs.frostsoulx.utils.rememberPreference
 
@@ -96,6 +98,7 @@ fun LibraryScreen(navController: NavController) {
     val allTags by database.allTags().collectAsStateWithLifecycle(initialValue = emptyList())
     val (showTagsInLibrary) = rememberPreference(ShowTagsInLibraryKey, defaultValue = true)
     val (showSpotifyPlaylists) = rememberPreference(ShowSpotifyPlaylistsKey, defaultValue = false)
+    val (glassBackgroundEnabled) = rememberPreference(HomeLibraryGlassBackgroundKey, defaultValue = true)
     var showTagsManagementDialog by rememberSaveable { mutableStateOf(false) }
     val activeSelectedTagIds = if (showTagsInLibrary) selectedTagIds else emptySet()
     val libraryFilters =
@@ -136,7 +139,7 @@ fun LibraryScreen(navController: NavController) {
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .frostSoulCalmScreenBackground(),
+                    .frostSoulMaterialGlassBackground(enabled = glassBackgroundEnabled),
         ) {
 
         Column(

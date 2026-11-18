@@ -75,6 +75,7 @@ import dev.vxs.frostsoulx.constants.DisableBlurKey
 import dev.vxs.frostsoulx.constants.FontPreferenceKey
 import dev.vxs.frostsoulx.constants.ForceHighRefreshRateKey
 import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
+import dev.vxs.frostsoulx.constants.HomeLibraryGlassBackgroundKey
 import dev.vxs.frostsoulx.constants.GridItemSize
 import dev.vxs.frostsoulx.constants.GridItemsSizeKey
 import dev.vxs.frostsoulx.constants.HidePlayerThumbnailKey
@@ -174,6 +175,8 @@ fun AppearanceSettings(navController: NavController) {
         )
     val (blurRadius, onBlurRadiusChange) = rememberPreference(BlurRadiusKey, defaultValue = 48f)
     val (glassGrainIntensity, onGlassGrainIntensityChange) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
+    val (homeLibraryGlassBackground, onHomeLibraryGlassBackgroundChange) =
+        rememberPreference(HomeLibraryGlassBackgroundKey, defaultValue = true)
     val (backdropEnabled, onBackdropEnabledChange) = rememberPreference(BackdropEnabledKey, defaultValue = true)
     val (backdropBlurAmount, onBackdropBlurAmountChange) = rememberPreference(BackdropBlurAmountKey, defaultValue = 60)
     val (fontPreference, onFontPreferenceChange) =
@@ -427,6 +430,16 @@ fun AppearanceSettings(navController: NavController) {
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         },
+                    )
+                }
+
+                item {
+                    SwitchPreference(
+                        title = { Text("Home & Library glass background") },
+                        description = "Material glassmorphism aura with album artwork tinting on Home and Library screens",
+                        icon = { Icon(painterResource(R.drawable.blur_on), null) },
+                        checked = homeLibraryGlassBackground,
+                        onCheckedChange = onHomeLibraryGlassBackgroundChange,
                     )
                 }
 

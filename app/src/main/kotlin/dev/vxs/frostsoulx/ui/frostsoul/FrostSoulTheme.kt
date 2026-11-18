@@ -524,6 +524,136 @@ fun Modifier.frostSoulCalmScreenBackground(): Modifier {
 }
 
 @Composable
+fun Modifier.frostSoulMaterialGlassBackground(enabled: Boolean = true): Modifier {
+    if (!enabled) {
+        return this.frostSoulCalmScreenBackground()
+    }
+    val base = FrostSoulTheme.colors.background
+    val isLight = base.luminance() > 0.5f
+    val materialPrimary = MaterialTheme.colorScheme.primary
+    val materialTertiary = MaterialTheme.colorScheme.tertiary
+
+    return background(base).drawWithCache {
+        val w = size.width
+        val h = size.height
+        val maxDim = size.maxDimension
+
+        // 1. Top-right ambient Material 3 primary radial aura
+        val primaryGlow = Brush.radialGradient(
+            colors = if (isLight) {
+                listOf(
+                    materialPrimary.copy(alpha = 0.16f),
+                    materialPrimary.copy(alpha = 0.05f),
+                    Color.Transparent,
+                )
+            } else {
+                listOf(
+                    materialPrimary.copy(alpha = 0.24f),
+                    materialPrimary.copy(alpha = 0.08f),
+                    Color.Transparent,
+                )
+            },
+            center = Offset(w * 0.82f, h * 0.12f),
+            radius = maxDim * 0.85f,
+        )
+
+        // 2. Mid-left ambient Material 3 tertiary radial aura
+        val tertiaryGlow = Brush.radialGradient(
+            colors = if (isLight) {
+                listOf(
+                    materialTertiary.copy(alpha = 0.12f),
+                    materialTertiary.copy(alpha = 0.04f),
+                    Color.Transparent,
+                )
+            } else {
+                listOf(
+                    materialTertiary.copy(alpha = 0.18f),
+                    materialTertiary.copy(alpha = 0.06f),
+                    Color.Transparent,
+                )
+            },
+            center = Offset(w * 0.12f, h * 0.52f),
+            radius = maxDim * 0.75f,
+        )
+
+        // 3. Lower ambient soft wash
+        val lowerGlow = Brush.radialGradient(
+            colors = if (isLight) {
+                listOf(
+                    materialPrimary.copy(alpha = 0.08f),
+                    Color.Transparent,
+                )
+            } else {
+                listOf(
+                    materialTertiary.copy(alpha = 0.12f),
+                    Color.Transparent,
+                )
+            },
+            center = Offset(w * 0.70f, h * 0.88f),
+            radius = maxDim * 0.65f,
+        )
+
+        // 4. Frosted glass translucent veil
+        val glassVeil = Brush.verticalGradient(
+            colors = if (isLight) {
+                listOf(
+                    Color.White.copy(alpha = 0.52f),
+                    Color.White.copy(alpha = 0.38f),
+                    Color.White.copy(alpha = 0.50f),
+                )
+            } else {
+                listOf(
+                    Color.White.copy(alpha = 0.035f),
+                    Color.Transparent,
+                    Color.Black.copy(alpha = 0.25f),
+                )
+            },
+        )
+
+        // 5. Specular refraction diagonal sheen
+        val glassSheen = Brush.linearGradient(
+            colors = listOf(
+                Color.White.copy(alpha = if (isLight) 0.18f else 0.045f),
+                Color.Transparent,
+                Color.White.copy(alpha = if (isLight) 0.10f else 0.020f),
+            ),
+            start = Offset.Zero,
+            end = Offset(w, h),
+        )
+
+        // 6. Micro-grain for frosted glass texture
+        val noiseCount = 48
+        val noiseAlpha = if (isLight) 0.018f else 0.028f
+
+        onDrawWithContent {
+            // Draw ambient material auras
+            drawRect(brush = primaryGlow)
+            drawRect(brush = tertiaryGlow)
+            drawRect(brush = lowerGlow)
+
+            // Draw frosted glass veil and refraction sheen
+            drawRect(brush = glassVeil)
+            drawRect(brush = glassSheen)
+
+            // Scatter fine noise particles for authentic frosted glass feel
+            repeat(noiseCount) { index ->
+                val x = ((index * 83 + 17) % 101) / 100f * w
+                val y = ((index * 47 + 29) % 97) / 96f * h
+                drawCircle(
+                    color = (if (isLight) Color.Black else Color.White).copy(
+                        alpha = if (index % 3 == 0) noiseAlpha else noiseAlpha * 0.45f,
+                    ),
+                    radius = 0.45f + ((index % 3) * 0.3f),
+                    center = Offset(x, y),
+                )
+            }
+
+            drawContent()
+        }
+    }
+}
+
+@Composable
 fun Modifier.frostSoulScreenBackground(ambient: Color = Color(0xFF334760)): Modifier {
     val base = FrostSoulTheme.colors.background
     val isLight = base.luminance() > 0.5f

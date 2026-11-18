@@ -81,6 +81,7 @@ val DisableBlurKey = booleanPreferencesKey("disableBlur")
 val BlurRadiusKey = floatPreferencesKey("blurRadius")
 /** Premium surface grain strength for the bottom navigation and mini-player glass. */
 val GlassGrainIntensityKey = floatPreferencesKey("glassGrainIntensity")
+val HomeLibraryGlassBackgroundKey = booleanPreferencesKey("homeLibraryGlassBackground")
 
 // Backdrop blur for detail pages
 val BackdropEnabledKey = booleanPreferencesKey("backdropEnabled")
