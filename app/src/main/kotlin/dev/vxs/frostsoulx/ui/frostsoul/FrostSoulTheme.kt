@@ -7,7 +7,9 @@
 
 package dev.vxs.frostsoulx.ui.frostsoul
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -19,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -33,6 +36,10 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.vxs.frostsoulx.constants.GlassGrainIntensityKey
+import dev.vxs.frostsoulx.models.MediaMetadata
+import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
+import dev.vxs.frostsoulx.utils.rememberPreference
 import kotlin.math.roundToInt
 
 @Immutable
@@ -523,33 +530,85 @@ fun Modifier.frostSoulCalmScreenBackground(): Modifier {
     }
 }
 
+@Immutable
+data class DynamicGlassTint(
+    val primary: Color,
+    val tertiary: Color,
+    val secondary: Color,
+)
+
 @Composable
-fun Modifier.frostSoulMaterialGlassBackground(enabled: Boolean = true): Modifier {
+fun rememberDynamicGlassTint(
+    mediaMetadata: MediaMetadata?,
+): DynamicGlassTint {
+    val artworkPalette = rememberFrostSoulPalette(mediaMetadata?.thumbnailUrl)
+    val colorScheme = MaterialTheme.colorScheme
+
+    val rawPrimary = artworkPalette.artworkPrimary.takeIf { it != Color.White && it != Color.Transparent }
+        ?: colorScheme.primary
+    val rawSecondary = artworkPalette.artworkSecondary.takeIf {
+        it != Color.White && it != Color.Transparent && it != Color(0xFF242424)
+    } ?: colorScheme.secondary
+    val rawTertiary = artworkPalette.artworkSecondary.takeIf {
+        it != Color.White && it != Color.Transparent && it != Color(0xFF242424)
+    } ?: colorScheme.tertiary
+
+    val animatedPrimary by animateColorAsState(
+        targetValue = rawPrimary,
+        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+        label = "GlassSongPrimary",
+    )
+    val animatedTertiary by animateColorAsState(
+        targetValue = rawTertiary,
+        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+        label = "GlassSongTertiary",
+    )
+    val animatedSecondary by animateColorAsState(
+        targetValue = rawSecondary,
+        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+        label = "GlassSongSecondary",
+    )
+
+    return remember(animatedPrimary, animatedTertiary, animatedSecondary) {
+        DynamicGlassTint(
+            primary = animatedPrimary,
+            tertiary = animatedTertiary,
+            secondary = animatedSecondary,
+        )
+    }
+}
+
+@Composable
+fun Modifier.frostSoulMaterialGlassBackground(
+    enabled: Boolean = true,
+    tintPrimary: Color = MaterialTheme.colorScheme.primary,
+    tintTertiary: Color = MaterialTheme.colorScheme.tertiary,
+    tintSecondary: Color = MaterialTheme.colorScheme.secondary,
+): Modifier {
     if (!enabled) {
         return this.frostSoulCalmScreenBackground()
     }
     val base = FrostSoulTheme.colors.background
     val isLight = base.luminance() > 0.5f
-    val materialPrimary = MaterialTheme.colorScheme.primary
-    val materialTertiary = MaterialTheme.colorScheme.tertiary
+    val (grainIntensity) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
 
     return background(base).drawWithCache {
         val w = size.width
         val h = size.height
         val maxDim = size.maxDimension
 
-        // 1. Top-right ambient Material 3 primary radial aura
+        // 1. Top-right ambient Material 3 dynamic primary radial aura
         val primaryGlow = Brush.radialGradient(
             colors = if (isLight) {
                 listOf(
-                    materialPrimary.copy(alpha = 0.16f),
-                    materialPrimary.copy(alpha = 0.05f),
+                    tintPrimary.copy(alpha = 0.22f),
+                    tintPrimary.copy(alpha = 0.08f),
                     Color.Transparent,
                 )
             } else {
                 listOf(
-                    materialPrimary.copy(alpha = 0.24f),
-                    materialPrimary.copy(alpha = 0.08f),
+                    tintPrimary.copy(alpha = 0.32f),
+                    tintPrimary.copy(alpha = 0.12f),
                     Color.Transparent,
                 )
             },
@@ -557,18 +616,18 @@ fun Modifier.frostSoulMaterialGlassBackground(enabled: Boolean = true): Modifier
             radius = maxDim * 0.85f,
         )
 
-        // 2. Mid-left ambient Material 3 tertiary radial aura
+        // 2. Mid-left ambient Material 3 dynamic tertiary radial aura
         val tertiaryGlow = Brush.radialGradient(
             colors = if (isLight) {
                 listOf(
-                    materialTertiary.copy(alpha = 0.12f),
-                    materialTertiary.copy(alpha = 0.04f),
+                    tintTertiary.copy(alpha = 0.18f),
+                    tintTertiary.copy(alpha = 0.06f),
                     Color.Transparent,
                 )
             } else {
                 listOf(
-                    materialTertiary.copy(alpha = 0.18f),
-                    materialTertiary.copy(alpha = 0.06f),
+                    tintTertiary.copy(alpha = 0.24f),
+                    tintTertiary.copy(alpha = 0.08f),
                     Color.Transparent,
                 )
             },
@@ -580,12 +639,12 @@ fun Modifier.frostSoulMaterialGlassBackground(enabled: Boolean = true): Modifier
         val lowerGlow = Brush.radialGradient(
             colors = if (isLight) {
                 listOf(
-                    materialPrimary.copy(alpha = 0.08f),
+                    tintSecondary.copy(alpha = 0.12f),
                     Color.Transparent,
                 )
             } else {
                 listOf(
-                    materialTertiary.copy(alpha = 0.12f),
+                    tintSecondary.copy(alpha = 0.16f),
                     Color.Transparent,
                 )
             },
@@ -593,7 +652,7 @@ fun Modifier.frostSoulMaterialGlassBackground(enabled: Boolean = true): Modifier
             radius = maxDim * 0.65f,
         )
 
-        // 4. Frosted glass translucent veil
+        // 4. Frosted glass translucent veil (ArchiveTune glass tone)
         val glassVeil = Brush.verticalGradient(
             colors = if (isLight) {
                 listOf(
@@ -610,7 +669,7 @@ fun Modifier.frostSoulMaterialGlassBackground(enabled: Boolean = true): Modifier
             },
         )
 
-        // 5. Specular refraction diagonal sheen
+        // 5. Specular refraction diagonal sheen (ArchiveTune glass lighting)
         val glassSheen = Brush.linearGradient(
             colors = listOf(
                 Color.White.copy(alpha = if (isLight) 0.18f else 0.045f),
@@ -621,12 +680,12 @@ fun Modifier.frostSoulMaterialGlassBackground(enabled: Boolean = true): Modifier
             end = Offset(w, h),
         )
 
-        // 6. Micro-grain for frosted glass texture
-        val noiseCount = 48
+        // 6. Micro-grain for authentic frosted glass texture
+        val noiseCount = (24f + grainIntensity.coerceIn(0f, 1f) * 60f).roundToInt()
         val noiseAlpha = if (isLight) 0.018f else 0.028f
 
         onDrawWithContent {
-            // Draw ambient material auras
+            // Draw ambient dynamic material auras
             drawRect(brush = primaryGlow)
             drawRect(brush = tertiaryGlow)
             drawRect(brush = lowerGlow)

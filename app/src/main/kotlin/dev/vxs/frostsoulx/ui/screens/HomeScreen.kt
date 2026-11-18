@@ -45,6 +45,7 @@ import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulMaterialGlassBackground
+import dev.vxs.frostsoulx.ui.frostsoul.rememberDynamicGlassTint
 import dev.vxs.frostsoulx.ui.frostsoul.FSLoading
 import dev.vxs.frostsoulx.utils.rememberPreference
 import dev.vxs.frostsoulx.viewmodels.HomeViewModel
@@ -116,13 +117,19 @@ fun HomeScreen(
     }
 
     val (glassBackgroundEnabled) = rememberPreference(HomeLibraryGlassBackgroundKey, defaultValue = true)
+    val dynamicGlassTint = rememberDynamicGlassTint(mediaMetadata)
 
     FrostSoulCalmTheme {
         Box(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .frostSoulMaterialGlassBackground(enabled = glassBackgroundEnabled)
+                    .frostSoulMaterialGlassBackground(
+                        enabled = glassBackgroundEnabled,
+                        tintPrimary = dynamicGlassTint.primary,
+                        tintTertiary = dynamicGlassTint.tertiary,
+                        tintSecondary = dynamicGlassTint.secondary,
+                    )
                     .then(
                         if (headerScrollConnection != null) Modifier.nestedScroll(headerScrollConnection) else Modifier,
                     ),

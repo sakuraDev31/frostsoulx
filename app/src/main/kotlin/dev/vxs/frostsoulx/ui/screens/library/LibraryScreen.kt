@@ -77,6 +77,7 @@ import dev.vxs.frostsoulx.constants.LibraryFilter
 import dev.vxs.frostsoulx.constants.ShowSpotifyPlaylistsKey
 import dev.vxs.frostsoulx.constants.ShowTagsInLibraryKey
 import dev.vxs.frostsoulx.db.entities.TagEntity
+import dev.vxs.frostsoulx.LocalPlayerConnection
 import dev.vxs.frostsoulx.ui.component.TagsManagementDialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.vxs.frostsoulx.constants.HomeLibraryGlassBackgroundKey
@@ -84,8 +85,10 @@ import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulCalmTheme
 import dev.vxs.frostsoulx.ui.frostsoul.FrostSoulTheme
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulCalmScreenBackground
 import dev.vxs.frostsoulx.ui.frostsoul.frostSoulMaterialGlassBackground
+import dev.vxs.frostsoulx.ui.frostsoul.rememberDynamicGlassTint
 import dev.vxs.frostsoulx.utils.rememberEnumPreference
 import dev.vxs.frostsoulx.utils.rememberPreference
+import kotlinx.coroutines.flow.MutableStateFlow
 
 internal val LibraryHeaderContentPadding = 12.dp
 internal val LibraryPullToRefreshIndicatorOffset = 0.dp
@@ -99,6 +102,9 @@ fun LibraryScreen(navController: NavController) {
     val (showTagsInLibrary) = rememberPreference(ShowTagsInLibraryKey, defaultValue = true)
     val (showSpotifyPlaylists) = rememberPreference(ShowSpotifyPlaylistsKey, defaultValue = false)
     val (glassBackgroundEnabled) = rememberPreference(HomeLibraryGlassBackgroundKey, defaultValue = true)
+    val playerConnection = LocalPlayerConnection.current
+    val mediaMetadata by (playerConnection?.mediaMetadata ?: MutableStateFlow(null)).collectAsStateWithLifecycle()
+    val dynamicGlassTint = rememberDynamicGlassTint(mediaMetadata)
     var showTagsManagementDialog by rememberSaveable { mutableStateOf(false) }
     val activeSelectedTagIds = if (showTagsInLibrary) selectedTagIds else emptySet()
     val libraryFilters =
@@ -139,7 +145,12 @@ fun LibraryScreen(navController: NavController) {
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .frostSoulMaterialGlassBackground(enabled = glassBackgroundEnabled),
+                    .frostSoulMaterialGlassBackground(
+                        enabled = glassBackgroundEnabled,
+                        tintPrimary = dynamicGlassTint.primary,
+                        tintTertiary = dynamicGlassTint.tertiary,
+                        tintSecondary = dynamicGlassTint.secondary,
+                    ),
         ) {
 
         Column(
