@@ -64,7 +64,7 @@ internal class PlayerArtworkTransition(val sheet: BottomSheetState, val immersiv
     var root by mutableStateOf<LayoutCoordinates?>(null)
     var enabled by mutableStateOf(true)
     val active: Boolean
-        get() = enabled && sheet.progress > 0f &&
+        get() = enabled && !sheet.isCollapsed && !sheet.isDismissed && sheet.progress > 0.01f &&
             sheet.progress < (if (immersive) ImmersiveArtworkAttachedProgress else 1f) &&
             root?.isAttached == true && source?.coordinates?.isAttached == true &&
             target?.coordinates?.isAttached == true &&
@@ -118,8 +118,8 @@ internal fun PlayerArtworkBottomSheet(
     immersive: Boolean = false,
 ) {
     val transition = remember(state, artworkKey, immersive) { PlayerArtworkTransition(state, immersive) }
-    LaunchedEffect(state.progress, transition.source, transition.target) {
-        if (!transition.active) {
+    LaunchedEffect(state.progress, state.isCollapsed, transition.source, transition.target) {
+        if (!transition.active || state.isCollapsed) {
             transition.source?.layer?.alpha = 1f
             transition.target?.layer?.alpha = 1f
         }

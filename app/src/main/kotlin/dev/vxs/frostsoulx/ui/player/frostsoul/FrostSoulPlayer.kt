@@ -725,7 +725,7 @@ internal fun FSMiniPlayer(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
             Box(
                 contentAlignment = Alignment.Center,
