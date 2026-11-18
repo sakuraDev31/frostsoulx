@@ -42,6 +42,7 @@ private fun observedStage(id: String, name: String, output: ImmersiveStageDiagno
 /** Transparent Media3 processor used only to observe a real PCM boundary. */
 class ImmersiveStageMeterAudioProcessor(private val stage: ImmersiveStageMeter) : AudioProcessor {
     private var format = AudioProcessor.AudioFormat.NOT_SET
+    private var buffer: ByteBuffer = EMPTY_BUFFER
     private var outputBuffer: ByteBuffer = EMPTY_BUFFER
     private var ended = false
 
@@ -55,10 +56,15 @@ class ImmersiveStageMeterAudioProcessor(private val stage: ImmersiveStageMeter) 
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        // Media3 drains processor output before reusing upstream buffers. A read-only view
-        // therefore preserves PCM byte-for-byte without four redundant direct-buffer copies.
-        outputBuffer = inputBuffer.slice().order(ByteOrder.nativeOrder())
-        inputBuffer.position(inputBuffer.limit())
+        val count = inputBuffer.remaining()
+        if (buffer.capacity() < count) {
+            buffer = ByteBuffer.allocateDirect(count).order(ByteOrder.nativeOrder())
+        } else {
+            buffer.clear()
+        }
+        buffer.put(inputBuffer)
+        buffer.flip()
+        outputBuffer = buffer
         if (ImmersiveAudioRuntime.diagnosticsRequested()) {
             stage.observe(outputBuffer.duplicate().order(ByteOrder.nativeOrder()))
         }
@@ -68,7 +74,7 @@ class ImmersiveStageMeterAudioProcessor(private val stage: ImmersiveStageMeter) 
     override fun getOutput(): ByteBuffer = outputBuffer.also { outputBuffer = EMPTY_BUFFER }
     override fun isEnded(): Boolean = ended && outputBuffer === EMPTY_BUFFER
     override fun flush() { outputBuffer = EMPTY_BUFFER; ended = false; stage.reset() }
-    override fun reset() { flush(); format = AudioProcessor.AudioFormat.NOT_SET; stage.reset() }
+    override fun reset() { flush(); format = AudioProcessor.AudioFormat.NOT_SET; buffer = EMPTY_BUFFER; stage.reset() }
 
     private companion object {
         val EMPTY_BUFFER = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
@@ -508,9 +514,9 @@ class ImmersiveAudioProcessor : AudioProcessor {
         return if (nativeHandle != 0L) format else AudioProcessor.AudioFormat.NOT_SET
     }
 
-    override fun isActive(): Boolean = nativeHandle != 0L && desired.enabled
+    override fun isActive(): Boolean = nativeHandle != 0L
     override fun getDurationAfterProcessorApplied(durationUs: Long): Long =
-        if (!isActive() || durationUs <= 0 || format.sampleRate <= 0) durationUs
+        if (!isActive() || !desired.enabled || durationUs <= 0 || format.sampleRate <= 0) durationUs
         else durationUs + algorithmicLatency * 1_000_000L / format.sampleRate
 
     override fun queueInput(inputBuffer: ByteBuffer) {

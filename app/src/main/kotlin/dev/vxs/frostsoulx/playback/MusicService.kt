@@ -6214,17 +6214,23 @@ class MusicService :
         // Factor in both individual band levels and treble boost across high frequency bands (>= 2000 Hz)
         // so that cumulative boost never exceeds unity gain when safeHeadroomEnabled is true.
         val maxBandBoostMb = (0 until bandCount).maxOfOrNull { band ->
-            val trebleBoostMb = if ((caps?.centerFreqHz?.getOrNull(band) ?: 0) >= 2000) settings.trebleGainMb else 0
+            val centerHz = caps?.centerFreqHz?.getOrNull(band) ?: (readAudioEffectValue("equalizer center frequency for band $band") {
+                eq.getCenterFreq(band.toShort())
+            }?.div(1000) ?: 0)
+            val trebleBoostMb = if (centerHz >= 2000) settings.trebleGainMb else 0
             ((levels.getOrNull(band) ?: 0) + trebleBoostMb).coerceAtLeast(0)
-        } ?: (levels.maxOrNull()?.coerceAtLeast(0) ?: 0)
+        } ?: maxOf(levels.maxOrNull()?.coerceAtLeast(0) ?: 0, settings.trebleGainMb.coerceAtLeast(0))
         val eqBoostMb = maxBandBoostMb
-        val bassBoostHeadroomMb = if (settings.enabled && settings.bassBoostEnabled) (settings.bassBoostStrength * 400 / 1000).coerceIn(0, 400) else 0
-        val virtualizerHeadroomMb = if (settings.enabled && settings.virtualizerEnabled) (settings.virtualizerStrength * 300 / 1000).coerceIn(0, 300) else 0
+        val bassBoostHeadroomMb = if (settings.enabled && settings.bassBoostEnabled) (settings.bassBoostStrength * 1000 / 1000).coerceIn(0, 1000) else 0
+        val virtualizerHeadroomMb = if (settings.enabled && settings.virtualizerEnabled) (settings.virtualizerStrength * 500 / 1000).coerceIn(0, 500) else 0
         val safeHeadroomEnabled = settings.autoHeadroomEnabled || settings.enabled
         val preampMb = if (safeHeadroomEnabled) -(eqBoostMb + bassBoostHeadroomMb + virtualizerHeadroomMb) else 0
 
         for (band in 0 until bandCount) {
-            val trebleBoostMb = if ((caps?.centerFreqHz?.getOrNull(band) ?: 0) >= 2000) settings.trebleGainMb else 0
+            val centerHz = caps?.centerFreqHz?.getOrNull(band) ?: (readAudioEffectValue("equalizer center frequency for band $band") {
+                eq.getCenterFreq(band.toShort())
+            }?.div(1000) ?: 0)
+            val trebleBoostMb = if (centerHz >= 2000) settings.trebleGainMb else 0
             val levelMb = ((levels.getOrNull(band) ?: 0) + trebleBoostMb + preampMb).coerceIn(minMb, maxMb)
             runCatching { eq.setBandLevel(band.toShort(), levelMb.toShort()) }
         }

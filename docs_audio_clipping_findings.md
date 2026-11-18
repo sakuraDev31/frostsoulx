@@ -10,8 +10,8 @@ The remaining clipping risk is cumulative gain: positive EQ bands, bass enhancem
 
 ## Current safeguards
 
-1. Keep the Media3 playback path free of the removed native processor.
-2. Apply automatic EQ headroom factoring in both band levels and treble gain when EQ is enabled, and prevent positive output gain from exceeding the safety ceiling.
+1. Keep the Media3 playback path free of the removed native processor, and isolate all transparent stage meters with dedicated internal direct buffers so upstream buffer recycling (Sonic/decoder) cannot mutate in-flight AudioTrack frames.
+2. Apply automatic EQ headroom factoring in band levels, fallback center frequencies, treble gain, and full-strength bass boost/virtualizer headroom when EQ is enabled, preventing positive output gain from exceeding unity headroom.
 3. Verify the audio-session rebind path reapplies effect enabled states and gain parameters after player or session changes.
 4. Treat any future audio engine as an isolated component until clipping and bypass behavior are verified with deterministic PCM tests.
 
