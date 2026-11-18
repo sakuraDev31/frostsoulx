@@ -365,6 +365,9 @@ class MusicService :
     @Inject
     lateinit var intelligenceTelemetryStore: IntelligenceTelemetryStore
 
+    @Inject
+    lateinit var downloadUtil: DownloadUtil
+
     private lateinit var audioManager: AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
     private var lastAudioFocusState = AudioManager.AUDIOFOCUS_NONE
@@ -8003,7 +8006,7 @@ class MusicService :
     }
 
     private fun isMediaFullyDownloaded(mediaId: String): Boolean {
-        if (downloadUtil.downloads.value[mediaId]?.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED) {
+        if (::downloadUtil.isInitialized && downloadUtil.downloads.value[mediaId]?.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED) {
             return true
         }
         val actualKey = findDownloadCacheKey(mediaId)

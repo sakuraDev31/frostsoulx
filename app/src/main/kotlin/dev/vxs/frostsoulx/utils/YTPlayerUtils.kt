@@ -771,7 +771,7 @@ object YTPlayerUtils {
                     val tokenResult = BotGuardTokenGenerator.mintToken(
                         videoId = videoId,
                         sessionId = currentSessionId,
-                        timeoutMs = tokenWaitMillis ?: PLAYBACK_TOKEN_WAIT_MS,
+                        maximumWaitMillis = tokenWaitMillis ?: PLAYBACK_TOKEN_WAIT_MS,
                     )
                     clientPoToken = tokenResult?.playerToken
                     tokenResult?.let {
