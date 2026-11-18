@@ -121,9 +121,9 @@ fun MiniPlayer(
             isPlaying = isPlaying,
             palette = palette,
             height = MiniPlayerHeight,
-            artworkSize = 50.dp,
+            artworkSize = 46.dp,
             peeked = false,
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(32.dp),
             interactionSource = interactionSource,
             onCardClick = {
                 onPeekChanged(false)

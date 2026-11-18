@@ -5,6 +5,9 @@ import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -36,12 +39,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,9 +66,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.edit
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.EqualizerBandLevelsMbKey
+import dev.vxs.frostsoulx.constants.EqualizerEnabledKey
+import dev.vxs.frostsoulx.constants.EqualizerSelectedProfileIdKey
+import dev.vxs.frostsoulx.playback.EqualizerJson
 import dev.vxs.frostsoulx.playback.ImmersiveControls
+import dev.vxs.frostsoulx.utils.dataStore
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -107,6 +120,40 @@ fun EqualizerTab(
         mutableStateListOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
     }
 
+    val preferences by context.dataStore.data.collectAsState(initial = null)
+    var isLoaded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(preferences) {
+        if (!isLoaded) {
+            val p = preferences ?: return@LaunchedEffect
+            val raw = p[EqualizerBandLevelsMbKey]
+            if (!raw.isNullOrBlank()) {
+                val levels = runCatching { EqualizerJson.json.decodeFromString<List<Int>>(raw) }.getOrNull()
+                if (levels != null && levels.isNotEmpty()) {
+                    levels.forEachIndexed { i, mb ->
+                        if (i < bandGains.size) bandGains[i] = (mb / 100f).coerceIn(-12f, 12f)
+                    }
+                }
+            }
+            val profile = p[EqualizerSelectedProfileIdKey]
+            if (!profile.isNullOrBlank()) {
+                selectedPreset = EqPreset.entries.firstOrNull { it.label.equals(profile, ignoreCase = true) } ?: EqPreset.CUSTOM
+            }
+            isLoaded = true
+        }
+    }
+
+    fun saveEq(preset: EqPreset) {
+        val levelsMb = bandGains.map { (it * 100f).roundToInt() }
+        scope.launch {
+            context.dataStore.edit { prefs ->
+                prefs[EqualizerBandLevelsMbKey] = EqualizerJson.json.encodeToString(levelsMb)
+                prefs[EqualizerEnabledKey] = true
+                prefs[EqualizerSelectedProfileIdKey] = if (preset == EqPreset.CUSTOM) "custom" else preset.label.lowercase()
+            }
+        }
+    }
+
     Column(
         modifier = modifier.fillMaxSize(),
     ) {
@@ -146,6 +193,7 @@ fun EqualizerTab(
                                                 if (i < bandGains.size) bandGains[i] = db
                                             }
                                         }
+                                        saveEq(preset)
                                     },
                                 shape = SpatialAudioTokens.CardShape,
                                 color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else SpatialAudioTokens.SurfaceContainerHigh,
@@ -193,10 +241,12 @@ fun EqualizerTab(
                                         val backup = bandGains.toList()
                                         for (i in bandGains.indices) bandGains[i] = 0f
                                         selectedPreset = EqPreset.FLAT
+                                        saveEq(EqPreset.FLAT)
                                         scope.launch {
                                             val res = snackbarHostState.showSnackbar("Equalizer reset · Undo", "Undo")
                                             if (res == SnackbarResult.ActionPerformed) {
                                                 backup.forEachIndexed { idx, v -> bandGains[idx] = v }
+                                                saveEq(selectedPreset)
                                             }
                                         }
                                     },
@@ -243,6 +293,7 @@ fun EqualizerTab(
                                     onValueChange = { newVal ->
                                         bandGains[index] = newVal
                                         selectedPreset = EqPreset.CUSTOM
+                                        saveEq(EqPreset.CUSTOM)
                                     },
                                 )
                             }
@@ -359,6 +410,9 @@ private fun VerticalBandSlider(
     val sliderHeight = 130.dp
     val sliderWidth = 32.dp
 
+    val updatedValueDb by rememberUpdatedState(valueDb)
+    val updatedOnValueChange by rememberUpdatedState(onValueChange)
+
     Column(
         modifier = modifier
             .semantics(mergeDescendants = true) {
@@ -370,27 +424,47 @@ private fun VerticalBandSlider(
         Box(
             modifier = Modifier
                 .size(width = sliderWidth, height = sliderHeight)
-                .pointerInput(valueDb) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            haptic.performHapticFeedback(resolvedHaptic)
-                            onValueChange(0f)
-                        },
-                    )
-                }
-                .pointerInput(valueDb) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        val deltaDb = (-dragAmount.y / 120f) * (maxDb - minDb)
-                        var next = (valueDb + deltaDb).coerceIn(minDb, maxDb)
-                        // Snap to 0 dB detent
-                        if (abs(next) < 0.35f) {
-                            if (valueDb != 0f) haptic.performHapticFeedback(resolvedHaptic)
-                            next = 0f
-                        } else if ((next == minDb && valueDb != minDb) || (next == maxDb && valueDb != maxDb)) {
-                            haptic.performHapticFeedback(resolvedHaptic)
+                .pointerInput(minDb, maxDb) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val thumbRadiusPx = 10.dp.toPx()
+                        val topY = thumbRadiusPx
+                        val bottomY = size.height - thumbRadiusPx
+                        val usableHeight = (bottomY - topY).coerceAtLeast(1f)
+                        var totalDragY = 0f
+                        var isDragging = false
+                        val span = maxDb - minDb
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (change.isConsumed) break
+                            if (!change.pressed) {
+                                if (!isDragging) {
+                                    val fraction = 1f - ((down.position.y - topY) / usableHeight).coerceIn(0f, 1f)
+                                    var targetDb = minDb + (fraction * span)
+                                    if (kotlin.math.abs(targetDb) < 0.4f) targetDb = 0f
+                                    haptic.performHapticFeedback(resolvedHaptic)
+                                    updatedOnValueChange(targetDb)
+                                }
+                                break
+                            }
+                            val dragY = change.position.y - change.previousPosition.y
+                            totalDragY += kotlin.math.abs(dragY)
+                            if (totalDragY > 4f) {
+                                isDragging = true
+                                change.consume()
+                                val deltaDb = (-dragY / usableHeight) * span
+                                var next = (updatedValueDb + deltaDb).coerceIn(minDb, maxDb)
+                                if (kotlin.math.abs(next) < 0.35f) {
+                                    if (updatedValueDb != 0f) haptic.performHapticFeedback(resolvedHaptic)
+                                    next = 0f
+                                } else if ((next == minDb && updatedValueDb != minDb) || (next == maxDb && updatedValueDb != maxDb)) {
+                                    haptic.performHapticFeedback(resolvedHaptic)
+                                }
+                                updatedOnValueChange(next)
+                            }
                         }
-                        onValueChange(next)
                     }
                 },
             contentAlignment = Alignment.Center,
@@ -462,6 +536,10 @@ private fun VerticalBandSlider(
             ),
             color = if (abs(valueDb) > 0.05f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
+            modifier = Modifier.clickable {
+                haptic.performHapticFeedback(resolvedHaptic)
+                onValueChange(0f)
+            },
         )
     }
 }

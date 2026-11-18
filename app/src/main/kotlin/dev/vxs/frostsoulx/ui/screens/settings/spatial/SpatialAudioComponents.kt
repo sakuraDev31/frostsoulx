@@ -42,6 +42,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -51,6 +53,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -514,6 +517,10 @@ fun RotaryKnob(
         HapticFeedbackType.TextHandleMove
     }
 
+    val currentVal by rememberUpdatedState(value)
+    val currentRange by rememberUpdatedState(range)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+
     val primaryColor = MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = SpatialAudioTokens.UnselectedTrackAlpha)
     val discColor = SpatialAudioTokens.SurfaceContainerHigh
@@ -531,29 +538,39 @@ fun RotaryKnob(
         Box(
             modifier = Modifier
                 .size(76.dp)
-                .pointerInput(value) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        val delta = -dragAmount.y / 240f
-                        val newNormalized = (normalized + delta).coerceIn(0f, 1f)
-                        val newValue = range.start + (newNormalized * (range.endInclusive - range.start))
-                        if ((newNormalized == 0f && normalized != 0f) || (newNormalized == 1f && normalized != 1f)) {
-                            haptic.performHapticFeedback(resolvedHaptic)
+                .pointerInput(range.start, range.endInclusive) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val span = currentRange.endInclusive - currentRange.start
+                        var dragAccumulator = 0f
+                        var isDragging = false
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (change.isConsumed) break
+                            if (!change.pressed) {
+                                if (!isDragging) {
+                                    exactText = String.format(java.util.Locale.US, "%.1f", currentVal)
+                                    showDialog = true
+                                }
+                                break
+                            }
+                            val dragY = change.position.y - change.previousPosition.y
+                            dragAccumulator += kotlin.math.abs(dragY)
+                            if (dragAccumulator > 6f) {
+                                isDragging = true
+                                change.consume()
+                                val delta = (-dragY / 200f) * span
+                                val next = (currentVal + delta).coerceIn(currentRange.start, currentRange.endInclusive)
+                                if ((next == currentRange.start && currentVal != currentRange.start) ||
+                                    (next == currentRange.endInclusive && currentVal != currentRange.endInclusive)) {
+                                    haptic.performHapticFeedback(resolvedHaptic)
+                                }
+                                currentOnValueChange(next)
+                            }
                         }
-                        onValueChange(newValue)
                     }
-                }
-                .pointerInput(value) {
-                    detectTapGestures(
-                        onTap = {
-                            exactText = String.format(java.util.Locale.US, "%.1f", value)
-                            showDialog = true
-                        },
-                        onDoubleTap = {
-                            haptic.performHapticFeedback(resolvedHaptic)
-                            onValueChange(defaultValue)
-                        },
-                    )
                 },
             contentAlignment = Alignment.Center,
         ) {

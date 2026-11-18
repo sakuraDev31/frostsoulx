@@ -613,8 +613,8 @@ internal fun FSMiniPlayer(
     val primaryTextColor = if (isLightTheme) themeColors.onSurface else FrostSoulOnSurface
     val mutedTextColor = themeColors.onSurfaceMuted
     // Keep the arc contrast stable; artwork-derived colors remain on the mini-player surface.
-    val progressColor = if (isLightTheme) Color.Black else Color.White
-    val progressTrackColor = progressColor.copy(alpha = 0.22f)
+    val progressColor = if (isLightTheme) Color.Black else palette.artworkPrimary
+    val progressTrackColor = (if (isLightTheme) Color.Black else Color.White).copy(alpha = 0.22f)
 
     val hazeState = LocalFrostSoulHazeState.current
     val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
@@ -702,18 +702,25 @@ internal fun FSMiniPlayer(
                                 shape = shape,
                             )
                     } else {
+                        val accentBorder = Brush.horizontalGradient(
+                            colors = listOf(
+                                palette.artworkPrimary.copy(alpha = 0.70f),
+                                palette.artworkSecondary.copy(alpha = 0.40f),
+                                palette.artworkPrimary.copy(alpha = 0.65f),
+                            ),
+                        )
                         Modifier
-                            .background(themeColors.surface)
+                            .background(Color(0xFF131316).copy(alpha = 0.94f))
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(
-                                        palette.artworkPrimary.copy(alpha = 0.26f),
-                                        palette.artworkSecondary.copy(alpha = 0.18f),
+                                        palette.artworkPrimary.copy(alpha = 0.22f),
+                                        palette.artworkSecondary.copy(alpha = 0.12f),
                                         Color.Transparent,
                                     ),
                                 ),
                             )
-                            .border(1.dp, themeColors.outline.copy(alpha = 0.65f), shape)
+                            .border(1.2.dp, accentBorder, shape)
                     },
                 )
                 .combinedClickable(
@@ -725,11 +732,11 @@ internal fun FSMiniPlayer(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier.fillMaxSize().padding(start = 6.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
         ) {
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.size(artworkSize + 10.dp),
+                modifier = Modifier.size(artworkSize + 8.dp),
             ) {
                 Canvas(modifier = Modifier.matchParentSize()) {
                     val strokeWidth = 1.5.dp.toPx()
@@ -810,7 +817,7 @@ internal fun FSMiniPlayer(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.size(artworkSize)
                         .playerArtwork(expanded = false)
-                        .clip(RoundedCornerShape(8.dp)).background(FrostSoulSurface),
+                        .clip(RoundedCornerShape(10.dp)).background(FrostSoulSurface),
                 ) {
                     AsyncImage(
                         model = track.artworkUrl,
@@ -828,17 +835,17 @@ internal fun FSMiniPlayer(
                     }
                 }
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 // Full song name: scrolls sideways on its own when it doesn't fit, stays still when it does.
                 Text(
                     text = track.title,
                     color = primaryTextColor,
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     softWrap = false,
                     modifier = Modifier
@@ -867,29 +874,38 @@ internal fun FSMiniPlayer(
                         text = track.artist,
                         color = mutedTextColor,
                         fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
-            Spacer(Modifier.width(10.dp))
-            FSIconButton(
-                painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                onClick = onTogglePlayPause,
-                active = false,
-                buttonSize = 48.dp,
-                iconSize = 24.dp,
-                showContainer = true,
-                dimBackdrop = false,
-                tintOverride = if (isLightTheme) Color.Black else Color.White,
-                modifier = Modifier.zIndex(1f),
-            )
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
+            // Play / Pause prominent filled accent circular button
+            val playButtonBg = if (isLightTheme) lightTintPrimary else palette.artworkPrimary
+            val playButtonIconTint = if (isLightTheme) Color.White else Color(0xFF16161A)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(40.dp)
+                    .zIndex(1f)
+                    .clip(CircleShape)
+                    .background(playButtonBg)
+                    .clickable(role = Role.Button, onClick = onTogglePlayPause),
+            ) {
+                Icon(
+                    painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = playButtonIconTint,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(Modifier.width(6.dp))
+            // Skip Next button (icon only)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(38.dp)
                     .zIndex(1f)
                     .clip(CircleShape)
                     .clickable(role = Role.Button, onClick = onSkipNext),
@@ -897,8 +913,8 @@ internal fun FSMiniPlayer(
                 Icon(
                     painter = painterResource(R.drawable.skip_next),
                     contentDescription = "Next track",
-                    tint = if (isLightTheme) Color.Black else Color.White,
-                    modifier = Modifier.size(28.dp),
+                    tint = primaryTextColor,
+                    modifier = Modifier.size(24.dp),
                 )
             }
         }
