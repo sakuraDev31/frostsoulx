@@ -24,6 +24,7 @@ import dev.vxs.frostsoulx.innertube.models.YouTubeClient.Companion.ANDROID_CREAT
 import dev.vxs.frostsoulx.innertube.models.YouTubeClient.Companion.ANDROID_MUSIC
 import dev.vxs.frostsoulx.innertube.models.YouTubeClient.Companion.ANDROID_TESTSUITE
 import dev.vxs.frostsoulx.innertube.models.YouTubeClient.Companion.ANDROID_UNPLUGGED
+import dev.vxs.frostsoulx.innertube.models.YouTubeClient.Companion.ANDROID_VR_NO_AUTH
 import dev.vxs.frostsoulx.innertube.models.YouTubeClient.Companion.IOS
 import dev.vxs.frostsoulx.innertube.models.YouTubeClient.Companion.IOS_MUSIC
 import dev.vxs.frostsoulx.innertube.models.YouTubeClient.Companion.IPADOS
@@ -125,8 +126,9 @@ object YTPlayerUtils {
      */
     private val STREAM_FALLBACK_CLIENTS: Array<YouTubeClient> =
         arrayOf(
-            WEB_REMIX,
+            ANDROID_VR_NO_AUTH,
             IOS,
+            WEB_REMIX,
             MOBILE,
             ANDROID_MUSIC,
             IOS_MUSIC,
@@ -140,6 +142,11 @@ object YTPlayerUtils {
             WEB,
             WEB_CREATOR,
         )
+
+    private const val PLAYBACK_TOKEN_WAIT_MS = 1_500L
+    private const val SIGNATURE_TIMESTAMP_CACHE_TTL_MS = 12 * 60 * 60 * 1000L // 12 hours
+    @Volatile
+    private var cachedSignatureTimestamp: Pair<Int, Long>? = null
 
     private data class CachedStreamUrl(
         val url: String,
@@ -171,6 +178,7 @@ object YTPlayerUtils {
         playbackDataCache.clear()
         failedStreamClientsUntil.clear()
         lastSuccessfulClientKey = null
+        cachedSignatureTimestamp = null
     }
 
     suspend fun recoverFromBadStreamPlayerResponse(videoId: String) {
@@ -363,16 +371,20 @@ object YTPlayerUtils {
         authState: PlaybackAuthState,
     ): YouTubeClient =
         when (preferredStreamClient) {
+            PlayerStreamClient.ANDROID_VR -> {
+                ANDROID_VR_NO_AUTH
+            }
+
             PlayerStreamClient.WEB_REMIX -> {
                 WEB_REMIX
             }
 
             PlayerStreamClient.ARCHIVETUNE_EXTRACTOR -> {
-                if (authState.hasPlaybackLoginContext) ANDROID_MUSIC else WEB_REMIX
+                if (authState.hasPlaybackLoginContext) ANDROID_MUSIC else ANDROID_VR_NO_AUTH
             }
 
             PlayerStreamClient.HI_RES_LOSSLESS -> {
-                WEB_REMIX
+                ANDROID_VR_NO_AUTH
             }
 
             PlayerStreamClient.IOS -> {
@@ -388,7 +400,7 @@ object YTPlayerUtils {
             }
 
             else -> {
-                WEB_REMIX
+                ANDROID_VR_NO_AUTH
             }
         }
 
@@ -444,10 +456,10 @@ object YTPlayerUtils {
         playlistId: String? = null,
         audioQuality: AudioQuality,
         connectivityManager: ConnectivityManager,
-        preferredStreamClient: PlayerStreamClient = PlayerStreamClient.WEB_REMIX,
+        preferredStreamClient: PlayerStreamClient = PlayerStreamClient.ANDROID_VR,
         // if provided, this preference overrides ConnectivityManager.isActiveNetworkMetered
         networkMetered: Boolean? = null,
-        tokenWaitMillis: Long? = null,
+        tokenWaitMillis: Long? = PLAYBACK_TOKEN_WAIT_MS,
     ): Result<PlaybackData> {
         val isMetered = networkMetered ?: connectivityManager.isActiveNetworkMetered
         val initialKey =
@@ -634,6 +646,7 @@ object YTPlayerUtils {
 
     private val downloadPreferredStreamClientAttempts: List<PlayerStreamClient> =
         listOf(
+            PlayerStreamClient.ANDROID_VR,
             PlayerStreamClient.IOS,
             PlayerStreamClient.ANDROID_MUSIC,
             PlayerStreamClient.WEB_REMIX,
@@ -672,8 +685,6 @@ object YTPlayerUtils {
         tokenWaitMillis: Long?,
     ): PlaybackData {
         Timber.tag(logTag).i("Fetching player response for videoId: $videoId, playlistId: $playlistId")
-        val signatureTimestamp = getSignatureTimestampOrNull(videoId)
-        Timber.tag(logTag).v("Signature timestamp: $signatureTimestamp")
 
         var authState = YouTube.currentPlaybackAuthState()
         val hasLoginCookie = authState.hasLoginCookie
@@ -705,99 +716,10 @@ object YTPlayerUtils {
         var streamUrl: String? = null
         var streamExpiresInSeconds: Int? = null
         var streamPlayerResponse: PlayerResponse? = null
+        var metadataPlayerResponse: PlayerResponse? = null
         var streamClientUsed: YouTubeClient? = null
         var didRepairAuthAfterBotDetection = false
         var didRetryWithoutRejectedLoginContext = false
-
-        val metadataClient = MAIN_CLIENT
-
-        Timber.tag(logTag).i("Fetching metadata response using client: ${metadataClient.clientName}")
-
-        var metadataPoToken: String? = null
-        if (metadataClient.useWebPoTokens && sessionId != null) {
-            try {
-                val tokenResult = tokenWaitMillis?.let {
-                    BotGuardTokenGenerator.mintToken(videoId, sessionId, it)
-                } ?: BotGuardTokenGenerator.mintToken(videoId, sessionId)
-                metadataPoToken = tokenResult?.playerToken
-                tokenResult?.let {
-                    YouTube.authState =
-                        YouTube.authState.copy(
-                            poTokenGvs = it.sessionToken,
-                            poTokenPlayer = it.playerToken,
-                            webClientPoTokenEnabled = true,
-                        )
-                }
-            } catch (e: Exception) {
-                Timber.tag(logTag).w(e, "PoToken generation failed for metadata request")
-            }
-        }
-
-        var metadataResult =
-            YouTube.player(
-                videoId = videoId,
-                playlistId = playlistId,
-                client = metadataClient,
-                signatureTimestamp = signatureTimestamp,
-                poToken = metadataPoToken,
-                setLogin = true,
-                authState = authState,
-            )
-        val metadataFailure = metadataResult.exceptionOrNull()
-        if (metadataFailure != null && canUseLoggedInPlayback && metadataFailure.isInvalidPlaybackLoginContextFailure()) {
-            Timber.tag(logTag).w(
-                metadataFailure,
-                "Logged-in playback context is stale for %s; retrying metadata with visitor playback",
-                videoId,
-            )
-            authState =
-                ensureVisitorDataReady(
-                    videoId = videoId,
-                    authState = authState.copy(dataSyncId = null).normalized(),
-                    forceRefresh = true,
-                    reason = "stale logged-in playback context",
-                )
-            canUseLoggedInPlayback = false
-            clearPlaybackAuthCaches()
-
-            val newSessionId = authState.visitorData
-            if (metadataClient.useWebPoTokens && newSessionId != null) {
-                try {
-                    val tokenResult = tokenWaitMillis?.let {
-                        BotGuardTokenGenerator.mintToken(videoId, newSessionId, it)
-                    } ?: BotGuardTokenGenerator.mintToken(videoId, newSessionId)
-                    metadataPoToken = tokenResult?.playerToken
-                    tokenResult?.let {
-                        YouTube.authState =
-                            YouTube.authState.copy(
-                                poTokenGvs = it.sessionToken,
-                                poTokenPlayer = it.playerToken,
-                                webClientPoTokenEnabled = true,
-                            )
-                    }
-                } catch (e: Exception) {
-                    Timber.tag(logTag).w(e, "PoToken generation failed for metadata retry request")
-                }
-            }
-
-            metadataResult =
-                YouTube.player(
-                    videoId = videoId,
-                    playlistId = playlistId,
-                    client = metadataClient,
-                    signatureTimestamp = signatureTimestamp,
-                    poToken = metadataPoToken,
-                    setLogin = true,
-                    authState = authState,
-                )
-        }
-        var metadataPlayerResponse = metadataResult.getPlaybackPlayerResponseOrThrow(videoId, authState)
-        var expectedDurationMs =
-            metadataPlayerResponse.videoDetails
-                ?.lengthSeconds
-                ?.toLongOrNull()
-                ?.takeIf { it > 0 }
-                ?.times(1000L)
 
         val streamClients =
             buildStreamClientOrder(preferredStreamClient, authState).filterNot { client ->
@@ -830,7 +752,7 @@ object YTPlayerUtils {
             streamPlayerResponse = null
 
             Timber.tag(logTag).v(
-                "Trying ${if (client == MAIN_CLIENT) "MAIN_CLIENT" else "fallback client"} ${index + 1}/${streamClients.size}: ${describeClient(
+                "Trying ${if (client == MAIN_CLIENT) "MAIN_CLIENT" else "client"} ${index + 1}/${streamClients.size}: ${describeClient(
                     client,
                 )}",
             )
@@ -842,21 +764,47 @@ object YTPlayerUtils {
                 continue
             }
 
-            streamPlayerResponse =
-                if (client == metadataClient) {
-                    metadataPlayerResponse
-                } else {
-                    Timber.tag(logTag).i("Fetching player response for fallback client: ${describeClient(client)}")
-                    YouTube
-                        .player(
-                            videoId = videoId,
-                            playlistId = playlistId,
-                            client = client,
-                            signatureTimestamp = signatureTimestamp,
-                            setLogin = requestUsesCookieAuthentication,
-                            authState = authState,
-                        ).getPlaybackPlayerResponseOrNull(videoId, authState)
+            var clientPoToken: String? = null
+            val currentSessionId = authState.visitorData
+            if (client.useWebPoTokens && currentSessionId != null) {
+                try {
+                    val tokenResult = BotGuardTokenGenerator.mintToken(
+                        videoId = videoId,
+                        sessionId = currentSessionId,
+                        timeoutMs = tokenWaitMillis ?: PLAYBACK_TOKEN_WAIT_MS,
+                    )
+                    clientPoToken = tokenResult?.playerToken
+                    tokenResult?.let {
+                        YouTube.authState =
+                            YouTube.authState.copy(
+                                poTokenGvs = it.sessionToken,
+                                poTokenPlayer = it.playerToken,
+                                webClientPoTokenEnabled = true,
+                            )
+                    }
+                } catch (e: Exception) {
+                    Timber.tag(logTag).w(e, "PoToken generation failed for client ${client.clientName}")
                 }
+            }
+
+            val clientSignatureTimestamp = if (client.useSignatureTimestamp) {
+                getSignatureTimestampOrNull(videoId)
+            } else {
+                null
+            }
+
+            Timber.tag(logTag).i("Fetching player response for client: ${describeClient(client)}")
+            streamPlayerResponse =
+                YouTube
+                    .player(
+                        videoId = videoId,
+                        playlistId = playlistId,
+                        client = client,
+                        signatureTimestamp = clientSignatureTimestamp,
+                        poToken = clientPoToken,
+                        setLogin = requestUsesCookieAuthentication,
+                        authState = authState,
+                    ).getPlaybackPlayerResponseOrNull(videoId, authState)
 
             if (streamPlayerResponse == null) continue
 
@@ -884,13 +832,24 @@ object YTPlayerUtils {
                             describeClient(client),
                             videoId,
                         )
+                        val retryPoToken = if (client.useWebPoTokens && authState.visitorData != null) {
+                            runCatching {
+                                BotGuardTokenGenerator.mintToken(
+                                    videoId,
+                                    authState.visitorData!!,
+                                    tokenWaitMillis ?: PLAYBACK_TOKEN_WAIT_MS,
+                                )?.playerToken
+                            }.getOrNull()
+                        } else null
+
                         streamPlayerResponse =
                             YouTube
                                 .player(
                                     videoId = videoId,
                                     playlistId = playlistId,
                                     client = client,
-                                    signatureTimestamp = signatureTimestamp,
+                                    signatureTimestamp = clientSignatureTimestamp,
+                                    poToken = retryPoToken,
                                     setLogin = false,
                                     authState = authState,
                                 ).getPlaybackPlayerResponseOrNull(videoId, authState)
@@ -927,13 +886,25 @@ object YTPlayerUtils {
                             describeClient(client),
                             videoId,
                         )
+                        val retrySigTs = if (client.useSignatureTimestamp) getSignatureTimestampOrNull(videoId) else null
+                        val retryPoToken = if (client.useWebPoTokens && authState.visitorData != null) {
+                            runCatching {
+                                BotGuardTokenGenerator.mintToken(
+                                    videoId,
+                                    authState.visitorData!!,
+                                    tokenWaitMillis ?: PLAYBACK_TOKEN_WAIT_MS,
+                                )?.playerToken
+                            }.getOrNull()
+                        } else null
+
                         streamPlayerResponse =
                             YouTube
                                 .player(
                                     videoId = videoId,
                                     playlistId = playlistId,
                                     client = client,
-                                    signatureTimestamp = signatureTimestamp,
+                                    signatureTimestamp = retrySigTs,
+                                    poToken = retryPoToken,
                                     setLogin = requestUsesCookieAuthentication,
                                     authState = authState,
                                 ).getPlaybackPlayerResponseOrNull(videoId, authState)
@@ -948,15 +919,7 @@ object YTPlayerUtils {
                 }
 
                 if (playabilityStatus.status == "OK") {
-                    if (client == metadataClient) {
-                        metadataPlayerResponse = streamPlayerResponse
-                        expectedDurationMs =
-                            metadataPlayerResponse.videoDetails
-                                ?.lengthSeconds
-                                ?.toLongOrNull()
-                                ?.takeIf { it > 0 }
-                                ?.times(1000L)
-                    }
+                    metadataPlayerResponse = streamPlayerResponse
                     Timber.tag(logTag).i(
                         "Recovered playback with %s after auth repair",
                         describeClient(client),
@@ -996,7 +959,16 @@ object YTPlayerUtils {
                     }
                     continue
                 }
+            } else {
+                metadataPlayerResponse = streamPlayerResponse
             }
+
+            val expectedDurationMs =
+                streamPlayerResponse.videoDetails
+                    ?.lengthSeconds
+                    ?.toLongOrNull()
+                    ?.takeIf { it > 0 }
+                    ?.times(1000L)
 
             val isMetered = networkMetered ?: connectivityManager.isActiveNetworkMetered
             val candidates =
@@ -1152,10 +1124,13 @@ object YTPlayerUtils {
                 authFingerprint = authState.fingerprint,
             )
 
+        val resolvedMetadata =
+            metadataPlayerResponse ?: streamPlayerResponse ?: throw BadStreamPlayerResponseException(videoId)
+
         return PlaybackData(
-            metadataPlayerResponse.playerConfig?.audioConfig,
-            metadataPlayerResponse.videoDetails,
-            metadataPlayerResponse.playbackTracking,
+            resolvedMetadata.playerConfig?.audioConfig,
+            resolvedMetadata.videoDetails,
+            resolvedMetadata.playbackTracking,
             format,
             streamUrl,
             streamExpiresInSeconds,
@@ -1180,7 +1155,7 @@ object YTPlayerUtils {
 
         if (MAIN_CLIENT.useWebPoTokens && sessionId != null) {
             try {
-                val tokenResult = BotGuardTokenGenerator.mintToken(videoId, sessionId)
+                val tokenResult = BotGuardTokenGenerator.mintToken(videoId, sessionId, PLAYBACK_TOKEN_WAIT_MS)
                 poToken = tokenResult?.playerToken
                 tokenResult?.let {
                     YouTube.authState =
@@ -1358,13 +1333,23 @@ object YTPlayerUtils {
     }
 
     /**
-     * Wrapper around the [NewPipeUtils.getSignatureTimestamp] function which reports exceptions
+     * Wrapper around the [NewPipeUtils.getSignatureTimestamp] function which reports exceptions and caches results.
      */
     private suspend fun getSignatureTimestampOrNull(videoId: String): Int? {
+        val now = System.currentTimeMillis()
+        cachedSignatureTimestamp?.let { (timestamp, expiresAt) ->
+            if (now < expiresAt) {
+                Timber.tag(logTag).v("Using cached signature timestamp: $timestamp")
+                return timestamp
+            }
+        }
         Timber.tag(logTag).i("Getting signature timestamp for videoId: $videoId")
         return NewPipeUtils
             .getSignatureTimestamp(videoId)
-            .onSuccess { Timber.tag(logTag).i("Signature timestamp obtained: $it") }
+            .onSuccess {
+                Timber.tag(logTag).i("Signature timestamp obtained: $it")
+                cachedSignatureTimestamp = it to (now + SIGNATURE_TIMESTAMP_CACHE_TTL_MS)
+            }
             .onFailure {
                 Timber.tag(logTag).e(it, "Failed to get signature timestamp")
                 reportException(it)
