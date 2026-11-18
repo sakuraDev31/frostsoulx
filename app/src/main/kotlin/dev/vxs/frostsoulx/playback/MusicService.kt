@@ -6898,8 +6898,7 @@ class MusicService :
         val mediaId = nextItem.mediaId.trim()
         if (mediaId.isBlank() || mediaId.isLocalMediaId() || nextItem.localConfiguration != null) return
 
-        val contentLength = downloadCache.getContentMetadata(mediaId).get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
-        if (contentLength > 0L && downloadCache.isCached(mediaId, 0L, contentLength)) return
+        if (isMediaFullyDownloaded(mediaId)) return
 
         nextStreamPreloadJob?.cancel()
         nextStreamPreloadJob = scope.launch(Dispatchers.IO) {
@@ -7273,19 +7272,13 @@ class MusicService :
         val currentMediaId = player.currentMediaItem?.mediaId ?: return
         val isLocalMedia = currentMediaId.isLocalMediaId()
 
-        val isFullyDownloadedMedia =
-            runCatching {
-                val contentLength =
-                    downloadCache
-                        .getContentMetadata(currentMediaId)
-                        .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
-                contentLength > 0L && downloadCache.isCached(currentMediaId, 0L, contentLength)
-            }.getOrDefault(false)
+        val isFullyDownloadedMedia = isMediaFullyDownloaded(currentMediaId)
 
         val hasAnyCachedData =
             isFullyDownloadedMedia ||
                 runCatching {
-                    downloadCache.getCachedSpans(currentMediaId).isNotEmpty() ||
+                    val actualKey = findDownloadCacheKey(currentMediaId)
+                    downloadCache.getCachedSpans(actualKey).isNotEmpty() ||
                         playerCache.getCachedSpans(currentMediaId).isNotEmpty()
                 }.getOrDefault(false)
 
@@ -7588,27 +7581,37 @@ class MusicService :
         storedFormat?.let { format ->
             audioNormalizationFactorCache[mediaId] = calculateAudioNormalizationFactor(format, normalizeAudio = true)
         }
+        val actualDownloadKey = findDownloadCacheKey(mediaId)
+        val isDownloadCompleted = isMediaFullyDownloaded(mediaId)
+
         val knownContentLength =
             contentLengthCache[mediaId] ?: storedFormat?.contentLength?.takeIf { it > 0L } ?: runCatching {
                 downloadCache
-                    .getContentMetadata(mediaId)
+                    .getContentMetadata(actualDownloadKey)
                     .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
             }.getOrNull()?.takeIf { it > 0L } ?: runCatching {
                 playerCache
                     .getContentMetadata(mediaId)
                     .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
-            }.getOrNull()?.takeIf { it > 0L }
+            }.getOrNull()?.takeIf { it > 0L } ?: runCatching {
+                val spans = downloadCache.getCachedSpans(actualDownloadKey)
+                if (spans.isNotEmpty()) spans.maxOf { it.position + it.length }.takeIf { it > 0L } else null
+            }.getOrNull()
 
         knownContentLength?.takeIf { it > 0L }?.let { contentLengthCache[mediaId] = it }
 
         if (allowCacheShortCircuit) {
             resolveCachedDataSpec(
                 dataSpec = dataSpec,
-                mediaId = mediaId,
+                mediaId = actualDownloadKey,
                 knownContentLength = knownContentLength,
             )?.let { cachedDataSpec ->
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
-                return cachedDataSpec
+                return if (actualDownloadKey != dataSpec.key) {
+                    cachedDataSpec.buildUpon().setKey(actualDownloadKey).build()
+                } else {
+                    cachedDataSpec
+                }
             }
         }
 
@@ -7621,13 +7624,23 @@ class MusicService :
                 }
             }
 
-        if (allowCacheShortCircuit && requiredCachedLength != null) {
-            val isFullyCached =
-                downloadCache.isCached(mediaId, dataSpec.position, requiredCachedLength) ||
+        if (allowCacheShortCircuit) {
+            val isFullyCached = isDownloadCompleted || (requiredCachedLength != null && (
+                downloadCache.isCached(actualDownloadKey, dataSpec.position, requiredCachedLength) ||
                     playerCache.isCached(mediaId, dataSpec.position, requiredCachedLength)
+            ))
             if (isFullyCached) {
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
-                return dataSpec
+                val resolved = if (actualDownloadKey != dataSpec.key) {
+                    dataSpec.buildUpon().setKey(actualDownloadKey).build()
+                } else {
+                    dataSpec
+                }
+                return if (requiredCachedLength != null && requiredCachedLength > 0L && dataSpec.length <= 0L) {
+                    resolved.subrange(0L, requiredCachedLength)
+                } else {
+                    resolved
+                }
             }
         }
 
@@ -7972,6 +7985,27 @@ class MusicService :
         return dataSpec.subrange(0L, requestedLength)
     }
 
+    private fun findDownloadCacheKey(mediaId: String): String {
+        if (downloadCache.keys.contains(mediaId)) return mediaId
+        val qualityPrefix = "$mediaId|quality="
+        return downloadCache.keys.firstOrNull { it.startsWith(qualityPrefix) } ?: mediaId
+    }
+
+    private fun isMediaFullyDownloaded(mediaId: String): Boolean {
+        if (downloadUtil.downloads.value[mediaId]?.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED) {
+            return true
+        }
+        val actualKey = findDownloadCacheKey(mediaId)
+        val contentLength = runCatching {
+            downloadCache.getContentMetadata(actualKey).get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
+        }.getOrDefault(-1L)
+        if (contentLength > 0L && downloadCache.isCached(actualKey, 0L, contentLength)) {
+            return true
+        }
+        val spans = runCatching { downloadCache.getCachedSpans(actualKey) }.getOrNull()
+        return spans != null && spans.isNotEmpty() && spans.any { it.position == 0L }
+    }
+
     private fun getContinuousCachedLength(
         mediaId: String,
         position: Long,
@@ -7979,9 +8013,10 @@ class MusicService :
     ): Long {
         val targetEnd = position.saturatingAdd(requestedLength)
         var cursor = position
+        val actualDownloadKey = findDownloadCacheKey(mediaId)
         val spans =
             (
-                runCatching { downloadCache.getCachedSpans(mediaId).toList() }.getOrNull().orEmpty() +
+                runCatching { downloadCache.getCachedSpans(actualDownloadKey).toList() }.getOrNull().orEmpty() +
                     runCatching { playerCache.getCachedSpans(mediaId).toList() }.getOrNull().orEmpty()
             ).asSequence()
                 .filter { span -> span.position.saturatingAdd(span.length) > position }

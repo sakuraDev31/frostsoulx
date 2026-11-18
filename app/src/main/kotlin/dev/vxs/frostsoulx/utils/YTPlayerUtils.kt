@@ -634,11 +634,11 @@ object YTPlayerUtils {
 
     private val downloadPreferredStreamClientAttempts: List<PlayerStreamClient> =
         listOf(
+            PlayerStreamClient.IOS,
+            PlayerStreamClient.ANDROID_MUSIC,
             PlayerStreamClient.WEB_REMIX,
             PlayerStreamClient.HI_RES_LOSSLESS,
-            PlayerStreamClient.IOS,
             PlayerStreamClient.TVHTML5,
-            PlayerStreamClient.ANDROID_MUSIC,
         )
 
     private suspend fun refreshIpRotationForBotDetection(

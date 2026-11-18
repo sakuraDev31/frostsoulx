@@ -133,9 +133,7 @@ class DownloadUtil
                         OkHttpDataSource.Factory(
                             mediaOkHttpClient,
                         ),
-                    ).setCacheWriteDataSinkFactory(
-                        CacheDataSink.Factory().setCache(playerCache).setBufferSize(DOWNLOAD_WRITE_BUFFER_SIZE),
-                    ),
+                    ).setCacheWriteDataSinkFactory(null),
             ) { dataSpec ->
                 val downloadKey = dataSpec.key ?: error("No media id")
                 val qualityMarker = "|quality="
