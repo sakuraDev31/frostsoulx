@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.map
 import dev.vxs.frostsoulx.R
 import dev.vxs.frostsoulx.constants.TogetherAllowGuestsToAddTracksKey
 import dev.vxs.frostsoulx.constants.TogetherAllowGuestsToControlPlaybackKey
+import dev.vxs.frostsoulx.constants.TogetherCustomBearerTokenKey
+import dev.vxs.frostsoulx.constants.TogetherCustomServerUrlKey
 import dev.vxs.frostsoulx.constants.TogetherDefaultPortKey
 import dev.vxs.frostsoulx.constants.TogetherDisplayNameKey
 import dev.vxs.frostsoulx.constants.TogetherLastJoinLinkKey
@@ -44,6 +46,8 @@ data class MusicTogetherPreferences(
     val requireHostApprovalToJoin: Boolean,
     val lastJoinLink: String,
     val welcomeShown: Boolean,
+    val serverUrl: String = "",
+    val bearerToken: String = "",
 )
 
 data class MusicTogetherSnapshot(
@@ -81,6 +85,8 @@ class MusicTogetherRepository
                         requireHostApprovalToJoin = preferences[TogetherRequireHostApprovalToJoinKey] ?: false,
                         lastJoinLink = preferences[TogetherLastJoinLinkKey] ?: "",
                         welcomeShown = preferences[TogetherWelcomeShownKey] ?: false,
+                        serverUrl = preferences[TogetherCustomServerUrlKey] ?: "",
+                        bearerToken = preferences[TogetherCustomBearerTokenKey] ?: "",
                     )
                 }.distinctUntilChanged()
 
@@ -160,6 +166,18 @@ class MusicTogetherRepository
         suspend fun setWelcomeShown(value: Boolean) {
             context.dataStore.edit { preferences ->
                 preferences[TogetherWelcomeShownKey] = value
+            }
+        }
+
+        suspend fun setServerUrl(url: String) {
+            context.dataStore.edit { preferences ->
+                preferences[TogetherCustomServerUrlKey] = url
+            }
+        }
+
+        suspend fun setBearerToken(token: String) {
+            context.dataStore.edit { preferences ->
+                preferences[TogetherCustomBearerTokenKey] = token
             }
         }
 

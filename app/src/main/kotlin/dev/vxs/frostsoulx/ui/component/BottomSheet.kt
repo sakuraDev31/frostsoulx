@@ -221,6 +221,8 @@ class BottomSheetState(
         get() = targetAnchor == EXPANDED_ANCHOR
 
     val progress by derivedStateOf {
+        if (isCollapsed) return@derivedStateOf 0f
+        if (isExpanded) return@derivedStateOf 1f
         val span = expandedBound - collapsedBound
         if (span <= 0.dp) 0f
         else ((value - collapsedBound) / span).coerceIn(0f, 1f)
@@ -241,6 +243,7 @@ class BottomSheetState(
     ) {
         val oldExpanded = expandedBound
         val oldCollapsed = collapsedBound
+        val oldDismissed = dismissedBound
 
         dismissedBound = newDismissed
         expandedBound = newExpanded
@@ -251,13 +254,30 @@ class BottomSheetState(
             upperBound = newExpanded,
         )
 
-        if (targetAnchor == EXPANDED_ANCHOR && (value == oldExpanded || isExpanded)) {
-            coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                animatable.snapTo(newExpanded)
+        if (targetAnchor == EXPANDED_ANCHOR) {
+            if (animationJob?.isActive == true) {
+                expand(if (animationsDisabled) snap() else BottomSheetSoftAnimationSpec)
+            } else if (value == oldExpanded || isExpanded || value > newExpanded) {
+                animationJob?.cancel()
+                coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    animatable.snapTo(newExpanded)
+                }
             }
-        } else if (targetAnchor == COLLAPSED_ANCHOR && (value == oldCollapsed || isCollapsed)) {
-            coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                animatable.snapTo(newCollapsed)
+        } else if (targetAnchor == COLLAPSED_ANCHOR) {
+            if (animationJob?.isActive == true) {
+                collapse(if (animationsDisabled) snap() else BottomSheetSoftAnimationSpec)
+            } else if (value == oldCollapsed || isCollapsed || abs(value.value - oldCollapsed.value) <= 2f || value <= newCollapsed) {
+                animationJob?.cancel()
+                coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    animatable.snapTo(newCollapsed)
+                }
+            }
+        } else if (targetAnchor == DISMISSED_ANCHOR) {
+            if (isDismissed || abs(value.value - oldDismissed.value) <= 2f) {
+                animationJob?.cancel()
+                coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    animatable.snapTo(newDismissed)
+                }
             }
         }
     }

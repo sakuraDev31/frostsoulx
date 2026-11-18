@@ -58,6 +58,11 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.collectAsState
+import dev.vxs.frostsoulx.LocalPlayerConnection
+import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
+import dev.vxs.frostsoulx.ui.screens.settings.spatial.ContrastGuard
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.carousel.HorizontalCenteredHeroCarousel
@@ -143,6 +148,22 @@ fun HomeCategoryChips(
     onChipSelected: (HomePage.Chip) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val playerConnection = LocalPlayerConnection.current
+    val mediaMetadata by (playerConnection?.mediaMetadata ?: MutableStateFlow(null)).collectAsState()
+    val artworkPalette = rememberFrostSoulPalette(mediaMetadata?.thumbnailUrl)
+    val rawDynamicAccent = artworkPalette.artworkPrimary.takeIf { it != androidx.compose.ui.graphics.Color.White && it != androidx.compose.ui.graphics.Color.Transparent }
+        ?: MaterialTheme.colorScheme.primary
+
+    val guardedAccent = remember(rawDynamicAccent) {
+        ContrastGuard.ensureGraphicContrast(rawDynamicAccent, androidx.compose.ui.graphics.Color(0xFF1E2024))
+    }
+
+    val dynamicAccent by animateColorAsState(
+        targetValue = guardedAccent,
+        animationSpec = androidx.compose.animation.core.tween(400),
+        label = "category_chips_dynamic_accent",
+    )
+
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier =
@@ -181,11 +202,16 @@ fun HomeCategoryChips(
                     FilterChipDefaults.filterChipColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f),
                         labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.94f),
-                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        selectedLeadingIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        selectedContainerColor = dynamicAccent.copy(alpha = 0.22f),
+                        selectedLabelColor = dynamicAccent,
+                        selectedLeadingIconColor = dynamicAccent,
                     ),
-                border = null,
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = selected,
+                    borderColor = if (selected) dynamicAccent else MaterialTheme.colorScheme.outlineVariant,
+                    borderWidth = if (selected) 1.5.dp else 1.dp,
+                ),
             )
         }
     }

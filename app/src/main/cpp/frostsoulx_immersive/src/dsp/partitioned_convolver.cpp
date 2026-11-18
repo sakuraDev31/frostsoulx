@@ -55,6 +55,15 @@ void ConvolutionTier::prepare(std::size_t blockSize, std::size_t maxTaps,
 void ConvolutionTier::loadIr(const float* ir, std::size_t taps) {
     if (!configured_) return;
 
+    // Retarget from the current convex filter, not the stale active filter.
+    if (fadeCounter_ > 0) {
+        const float t = 1.0f - static_cast<float>(fadeCounter_) / static_cast<float>(fadeBlocks_);
+        auto& a = irSpec_[activeBank_];
+        const auto& b = irSpec_[activeBank_ ^ 1];
+        for (std::size_t i = 0; i < a.size(); ++i) a[i] += t * (b[i] - a[i]);
+        irPartitions_[activeBank_] = std::max(irPartitions_[0], irPartitions_[1]);
+        fadeCounter_ = 0;
+    }
     const int target = activeBank_ ^ 1;
     std::fill(irSpec_[target].begin(), irSpec_[target].end(), 0.0f);
 
@@ -161,15 +170,14 @@ void ConvolutionTier::transformAndAccumulate() noexcept {
     fft_.inverse(accumB_.data(), timeB_.data());
     const float* validB = timeB_.data() + blockSize_;
 
-    // Equal-power crossfade, interpolated across the block so the transition is
+    // Unity-sum crossfade (IRs are correlated), interpolated across the block so the transition is
     // continuous at block boundaries as well as within them.
     const float t0 = 1.0f - static_cast<float>(fadeCounter_) / static_cast<float>(fadeBlocks_);
     const float t1 = 1.0f - static_cast<float>(fadeCounter_ - 1) / static_cast<float>(fadeBlocks_);
     const float inv = 1.0f / static_cast<float>(blockSize_);
     for (std::size_t i = 0; i < blockSize_; ++i) {
         const float t = t0 + (t1 - t0) * (static_cast<float>(i) * inv);
-        pending_[i] = validA[i] * std::cos(t * rt::kHalfPi) +
-                      validB[i] * std::sin(t * rt::kHalfPi);
+        pending_[i] = validA[i] + t * (validB[i] - validA[i]);
     }
 
     if (--fadeCounter_ == 0) {
@@ -322,48 +330,195 @@ void NonUniformConvolver::reset() noexcept {
 // MimoConvolver
 // ---------------------------------------------------------------------------
 
-bool MimoConvolver::prepare(std::size_t numInputs, std::size_t numOutputs,
+bool MimoConvolver::prepare(std::size_t inputs, std::size_t outputs,
                             const NonUniformConvolver::Config& cfg) {
     ready_ = false;
-    if (numInputs == 0 || numOutputs == 0) return false;
-
-    numInputs_ = numInputs;
-    numOutputs_ = numOutputs;
+    if (!inputs || !outputs || inputs > 32 || outputs > 32 ||
+        !rt::isPow2(cfg.headBlock) || cfg.headBlock < 16 || !cfg.maxTaps ||
+        !cfg.maxTiers || cfg.growth < 2 || !rt::isPow2(cfg.growth)) return false;
     cfg_ = cfg;
-
-    paths_.clear();
-    paths_.resize(numInputs * numOutputs);
-    for (auto& p : paths_) {
-        if (!p.prepare(cfg)) return false;
+    numInputs_ = inputs;
+    numOutputs_ = outputs;
+    tiers_.clear();
+    std::size_t block = cfg.headBlock, offset = 0;
+    for (std::size_t t = 0; t < cfg.maxTiers && offset < cfg.maxTaps; ++t) {
+        const std::size_t next = block * cfg.growth - cfg.headBlock;
+        const std::size_t end = t + 1 == cfg.maxTiers ? cfg.maxTaps : std::min(next, cfg.maxTaps);
+        Tier tier;
+        tier.block = block; tier.offset = offset; tier.length = end - offset;
+        tier.parts = (tier.length + block - 1) / block;
+        tier.fft.resize(2 * block); tier.controlFft.resize(2 * block);
+        tier.bins = tier.fft.spectrumFloats();
+        tier.window.assign(inputs * 2 * block, 0.0f);
+        tier.fdl.assign(inputs * tier.parts * tier.bins, 0.0f);
+        tier.accum.assign(tier.bins, 0.0f);
+        tier.time.assign(2 * block, 0.0f); tier.pad.assign(2 * block, 0.0f);
+        for (auto& bank : tier.spectra) bank.assign(inputs * outputs * tier.parts * tier.bins, 0.0f);
+        for (auto& parts : tier.irParts) parts.assign(inputs * outputs, 0);
+        for (auto& pending : tier.pending) pending.assign(outputs * block, 0.0f);
+        tier.emit = block;
+        tiers_.push_back(std::move(tier));
+        offset = end; block *= cfg.growth;
     }
-    scratch_.assign(cfg.headBlock, 0.0f);
+    staging_.assign(inputs * outputs * cfg.maxTaps, 0.0f);
+    mixA_.assign(outputs * cfg.headBlock, 0.0f);
+    mixB_.assign(outputs * cfg.headBlock, 0.0f);
+    for (auto& state : state_) state.store(0);
+    mailbox_.store(-1); active_ = incoming_ = -1;
+    fade_ = 0;
+    fadeLength_ = std::max<std::size_t>(1, cfg.crossfadeBlocks * cfg.headBlock);
     ready_ = true;
+    return true;
+}
+
+bool MimoConvolver::loadMatrix(const float* const* ir, std::size_t taps) {
+    if (!ready_ || !ir) return false;
+    int bank = -1;
+    for (int b = 0; b < 4; ++b) {
+        int free = 0;
+        if (state_[static_cast<std::size_t>(b)].compare_exchange_strong(free, 1)) { bank = b; break; }
+    }
+    if (bank < 0) return false;
+    taps = std::min(taps, cfg_.maxTaps);
+    for (auto& tier : tiers_) {
+        auto& spectra = tier.spectra[static_cast<std::size_t>(bank)];
+        std::fill(spectra.begin(), spectra.end(), 0.0f);
+        auto& used = tier.irParts[static_cast<std::size_t>(bank)];
+        std::fill(used.begin(), used.end(), 0);
+        for (std::size_t path = 0; path < numInputs_ * numOutputs_; ++path) {
+            if (!ir[path]) continue;
+            for (std::size_t p = 0; p < tier.parts; ++p) {
+                const std::size_t start = tier.offset + p * tier.block;
+                if (start >= taps || p * tier.block >= tier.length) break;
+                const std::size_t count = std::min({tier.block, taps - start, tier.length - p * tier.block});
+                std::fill(tier.pad.begin(), tier.pad.end(), 0.0f);
+                bool nonzero = false;
+                for (std::size_t n = 0; n < count; ++n) {
+                    const float x = ir[path][start + n];
+                    tier.pad[n] = std::isfinite(x) ? x : 0.0f;
+                    nonzero = nonzero || tier.pad[n] != 0.0f;
+                }
+                if (!nonzero) continue;
+                used[path] = p + 1;
+                tier.controlFft.forward(tier.pad.data(), spectra.data() + (path * tier.parts + p) * tier.bins);
+            }
+        }
+    }
+    state_[static_cast<std::size_t>(bank)].store(2, std::memory_order_release);
+    const int obsolete = mailbox_.exchange(bank, std::memory_order_acq_rel);
+    if (obsolete >= 0) state_[static_cast<std::size_t>(obsolete)].store(0, std::memory_order_release);
     return true;
 }
 
 void MimoConvolver::loadIr(std::size_t in, std::size_t out, const float* ir, std::size_t taps) {
     if (!ready_ || in >= numInputs_ || out >= numOutputs_) return;
-    path(in, out).loadIr(ir, taps);
+    float* dst = staging_.data() + (in * numOutputs_ + out) * cfg_.maxTaps;
+    std::fill(dst, dst + cfg_.maxTaps, 0.0f);
+    if (ir) std::copy_n(ir, std::min(taps, cfg_.maxTaps), dst);
+    const float* ptrs[1024];
+    for (std::size_t p = 0; p < numInputs_ * numOutputs_; ++p) ptrs[p] = staging_.data() + p * cfg_.maxTaps;
+    (void)loadMatrix(ptrs, cfg_.maxTaps);
+}
+
+void MimoConvolver::renderTier(Tier& tier, int bank, int slot) noexcept {
+    auto& pending = tier.pending[static_cast<std::size_t>(slot)];
+    const auto& spectra = tier.spectra[static_cast<std::size_t>(bank)];
+    const auto& used = tier.irParts[static_cast<std::size_t>(bank)];
+    for (std::size_t o = 0; o < numOutputs_; ++o) {
+        bool active = false;
+        for (std::size_t i = 0; i < numInputs_; ++i) active = active || used[i * numOutputs_ + o] != 0;
+        if (!active) { rt::vecClear(pending.data() + o * tier.block, tier.block); continue; }
+        rt::vecClear(tier.accum.data(), tier.bins);
+        for (std::size_t i = 0; i < numInputs_; ++i) {
+            for (std::size_t p = 0; p < used[i * numOutputs_ + o]; ++p) {
+                const std::size_t idx = (tier.write + tier.parts - 1 - p) % tier.parts;
+                const float* x = tier.fdl.data() + (i * tier.parts + idx) * tier.bins;
+                const float* h = spectra.data() + ((i * numOutputs_ + o) * tier.parts + p) * tier.bins;
+                rt::cplxMulAccumulate(tier.accum.data(), x, h, tier.bins / 2);
+            }
+        }
+        tier.fft.inverse(tier.accum.data(), tier.time.data());
+        rt::vecCopy(pending.data() + o * tier.block, tier.time.data() + tier.block, tier.block);
+    }
+}
+
+void MimoConvolver::adoptPending() noexcept {
+    if (incoming_ >= 0) return; // Coalesce rapid control updates without retarget clicks.
+    const int bank = mailbox_.exchange(-1, std::memory_order_acq_rel);
+    if (bank < 0) return;
+    state_[static_cast<std::size_t>(bank)].store(3, std::memory_order_release);
+    if (active_ < 0) { active_ = bank; return; }
+    incoming_ = bank;
+    fade_ = 0;
+    // Reconstruct the new tail for the current emission position from shared
+    // input history. Never start a new IR with an empty/delayed tail.
+    for (auto& tier : tiers_) renderTier(tier, incoming_, 1);
 }
 
 void MimoConvolver::processBlock(const float* const* in, float* const* out) noexcept {
     if (!ready_) return;
+    adoptPending();
     const std::size_t n = cfg_.headBlock;
-
-    for (std::size_t o = 0; o < numOutputs_; ++o) rt::vecClear(out[o], n);
-
-    for (std::size_t i = 0; i < numInputs_; ++i) {
-        for (std::size_t o = 0; o < numOutputs_; ++o) {
-            NonUniformConvolver& p = path(i, o);
-            if (p.activeTaps() == 0) continue;
-            p.processBlock(in[i], scratch_.data());
-            rt::vecAdd(out[o], scratch_.data(), n);
+    rt::vecClear(mixA_.data(), mixA_.size());
+    rt::vecClear(mixB_.data(), mixB_.size());
+    for (auto& tier : tiers_) {
+        for (std::size_t i = 0; i < numInputs_; ++i) {
+            float* window = tier.window.data() + i * 2 * tier.block;
+            for (std::size_t k = 0; k < n; ++k) window[tier.block + tier.fill + k] = std::isfinite(in[i][k]) ? in[i][k] : 0.0f;
         }
+        tier.fill += n;
+        if (tier.fill == tier.block) {
+            for (std::size_t i = 0; i < numInputs_; ++i) {
+                float* window = tier.window.data() + i * 2 * tier.block;
+                tier.fft.forward(window, tier.fdl.data() + (i * tier.parts + tier.write) * tier.bins);
+                rt::vecCopy(window, window + tier.block, tier.block);
+            }
+            tier.write = (tier.write + 1) % tier.parts;
+            if (active_ >= 0) renderTier(tier, active_, 0);
+            if (incoming_ >= 0) renderTier(tier, incoming_, 1);
+            tier.fill = 0; tier.emit = 0;
+        }
+        if (tier.emit + n <= tier.block) {
+            for (std::size_t o = 0; o < numOutputs_; ++o) {
+                rt::vecAdd(mixA_.data() + o * n, tier.pending[0].data() + o * tier.block + tier.emit, n);
+                if (incoming_ >= 0) rt::vecAdd(mixB_.data() + o * n, tier.pending[1].data() + o * tier.block + tier.emit, n);
+            }
+            tier.emit += n;
+        }
+    }
+    for (std::size_t k = 0; k < n; ++k) {
+        const float t = incoming_ < 0 ? 0.0f : (cfg_.crossfadeBlocks == 0 ? 1.0f :
+            std::min(1.0f, static_cast<float>(fade_ + k) / static_cast<float>(fadeLength_)));
+        for (std::size_t o = 0; o < numOutputs_; ++o) {
+            const float a = mixA_[o * n + k];
+            out[o][k] = a + t * (mixB_[o * n + k] - a);
+        }
+    }
+    if (incoming_ >= 0 && (fade_ += n) >= fadeLength_) {
+        state_[static_cast<std::size_t>(active_)].store(0, std::memory_order_release);
+        active_ = incoming_; incoming_ = -1;
+        for (auto& tier : tiers_) tier.pending[0].swap(tier.pending[1]);
     }
 }
 
 void MimoConvolver::reset() noexcept {
-    for (auto& p : paths_) p.reset();
+    // Lifecycle operation: serialize reset/prepare with both threads.
+    if (incoming_ >= 0) {
+        state_[static_cast<std::size_t>(active_)].store(0);
+        active_ = incoming_; incoming_ = -1;
+    }
+    const int latest = mailbox_.exchange(-1);
+    if (latest >= 0) {
+        if (active_ >= 0) state_[static_cast<std::size_t>(active_)].store(0);
+        active_ = latest; state_[static_cast<std::size_t>(active_)].store(3);
+    }
+    for (auto& tier : tiers_) {
+        rt::vecClear(tier.window.data(), tier.window.size());
+        rt::vecClear(tier.fdl.data(), tier.fdl.size());
+        for (auto& p : tier.pending) rt::vecClear(p.data(), p.size());
+        tier.write = tier.fill = 0; tier.emit = tier.block;
+    }
+    fade_ = 0;
 }
 
 } // namespace frostsoulx::dsp

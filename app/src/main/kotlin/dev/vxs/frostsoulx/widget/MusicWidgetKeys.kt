@@ -26,4 +26,12 @@ object MusicWidgetKeys {
     val GENRES = stringPreferencesKey("widget_genres")
     val RECOMMENDATIONS = stringPreferencesKey("widget_recommendations")
     val TOP_SONG_SUMMARY = stringPreferencesKey("widget_top_song_summary")
+
+    // Per-widget appearance settings (written by WidgetConfigActivity)
+    val WIDGET_THEME = intPreferencesKey("widget_theme")
+    val WIDGET_OPACITY = intPreferencesKey("widget_opacity")
+    val WIDGET_CUSTOM_BG = intPreferencesKey("widget_custom_bg")
+    val WIDGET_CUSTOM_FG = intPreferencesKey("widget_custom_fg")
+    val WIDGET_ART_CIRCLE = booleanPreferencesKey("widget_art_circle")
+    val WIDGET_SHOW_PROGRESS = booleanPreferencesKey("widget_show_progress")
 }

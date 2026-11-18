@@ -148,6 +148,7 @@ public:
     // -------------------------------------------------------------------------
     // Factory space profile presets (12 physical environments):
     // -------------------------------------------------------------------------
+    static SpaceProfile createAnechoic();
     static SpaceProfile createBathroom();
     static SpaceProfile createLivingRoom();
     static SpaceProfile createMediumHall();
@@ -157,13 +158,11 @@ public:
     static SpaceProfile createLongSubwayTunnel();
     static SpaceProfile createLongTunnel();
     static SpaceProfile createClosedCar();
-    static SpaceProfile createAnechoic();
     static SpaceProfile createOpenRoad();
     static SpaceProfile createCave();
     static SpaceProfile createStadium();
 
     enum class Preset {
-        Anechoic,
         Bathroom,
         LivingRoom,
         MediumHall,
@@ -175,7 +174,8 @@ public:
         ClosedCar,
         OpenRoad,
         Cave,
-        Stadium
+        Stadium,
+        Anechoic
     };
 
     static SpaceProfile createPreset(Preset preset);

@@ -226,6 +226,8 @@ val TogetherAllowGuestsToControlPlaybackKey = booleanPreferencesKey("together_al
 val TogetherRequireHostApprovalToJoinKey = booleanPreferencesKey("together_require_host_approval_to_join")
 val TogetherLastJoinLinkKey = stringPreferencesKey("together_last_join_link")
 val TogetherWelcomeShownKey = booleanPreferencesKey("together_welcome_shown")
+val TogetherCustomServerUrlKey = stringPreferencesKey("together_custom_server_url")
+val TogetherCustomBearerTokenKey = stringPreferencesKey("together_custom_bearer_token")
 
 // ListenBrainz scrobbling
 val ListenBrainzEnabledKey = booleanPreferencesKey("listenbrainz_enabled")
@@ -947,3 +949,18 @@ val StereoSurroundBassGainDbKey = floatPreferencesKey("stereoSurroundBassGainDb"
 val StereoSurroundTrebleGainDbKey = floatPreferencesKey("stereoSurroundTrebleGainDb")
 val StereoSurroundOutputGainDbKey = floatPreferencesKey("stereoSurroundOutputGainDb")
 val StereoSurroundSavedPresetsKey = stringPreferencesKey("stereoSurroundSavedPresets")
+val ConvolverIrPresetsKey = stringPreferencesKey("convolverIrPresets")
+val ConvolverActiveIrPresetKey = stringPreferencesKey("convolverActiveIrPreset")
+
+// New spatial controls. Existing stereoSurround keys deliberately preserve saved settings.
+val SpatialAzimuthKey = floatPreferencesKey("spatialAzimuth")
+val SpatialElevationKey = floatPreferencesKey("spatialElevation")
+val SpatialDistanceKey = floatPreferencesKey("spatialDistance")
+val SpatialBassWidthKey = floatPreferencesKey("spatialBassWidth")
+val SpatialOrbitEnabledKey = booleanPreferencesKey("spatialOrbitEnabled")
+
+// Spatial Effects Library UI State Keys
+val SpatialActiveEffectIdKey = stringPreferencesKey("spatialActiveEffectId")
+val SpatialFavoriteEffectIdsKey = stringSetPreferencesKey("spatialFavoriteEffectIds")
+val SpatialActiveTabKey = intPreferencesKey("spatialActiveTab")
+val SpatialMovingSoundSpeedKey = floatPreferencesKey("spatialMovingSoundSpeed")

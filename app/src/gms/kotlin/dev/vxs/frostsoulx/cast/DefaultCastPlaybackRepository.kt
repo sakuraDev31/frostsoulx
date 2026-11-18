@@ -448,17 +448,22 @@ private class LocalCastMediaServer(
             .build()
     }
 
+    @Synchronized
     fun stop() {
         servedItems.clear()
         servedArtwork.clear()
-        val currentEngine = engine ?: return
+        val currentEngine = engine
         engine = null
+        hostAddress = null
+        port = 0
+        if (currentEngine == null) return
         runCatching { currentEngine.stop(1000, 2000) }
             .onFailure { Timber.tag("Cast").w(it, "Unable to stop local Cast media server") }
     }
 
+    @Synchronized
     private fun ensureStarted(): String? {
-        hostAddress?.let { return it }
+        if (engine != null) hostAddress?.let { return it }
         val address = lanAddress() ?: return null
         val selectedPort = randomFreePort()
         val startedEngine =

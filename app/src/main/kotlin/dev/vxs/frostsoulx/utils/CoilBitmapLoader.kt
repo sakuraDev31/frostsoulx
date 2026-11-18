@@ -20,6 +20,7 @@ import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -41,11 +42,20 @@ class CoilBitmapLoader(
                     throw IllegalArgumentException("Empty image data")
                 }
 
-                BitmapFactory.decodeByteArray(data, 0, data.size)?.also { bitmap ->
+                require(data.size <= 32 * 1024 * 1024) { "Embedded artwork exceeds byte limit" }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = artworkSampleSize(bounds.outWidth, bounds.outHeight, NotificationArtworkSizePx)
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                BitmapFactory.decodeByteArray(data, 0, data.size, options)?.also { bitmap ->
                     return@future bitmap
                 }
 
                 throw IllegalStateException("Could not decode image data")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 reportException(e)
                 return@future createBitmap(64, 64)
@@ -121,4 +131,14 @@ class CoilBitmapLoader(
 private fun Bitmap.toOwnedMediaSessionBitmap(): Bitmap? {
     if (isRecycled) return null
     return copy(Bitmap.Config.ARGB_8888, false)?.takeUnless(Bitmap::isRecycled)
+}
+
+internal fun decodeSampledArtwork(file: java.io.File, maxDimension: Int): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = artworkSampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    return BitmapFactory.decodeFile(file.absolutePath, options)
 }

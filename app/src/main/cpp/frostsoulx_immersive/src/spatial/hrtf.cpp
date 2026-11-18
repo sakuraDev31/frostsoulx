@@ -199,10 +199,11 @@ bool HrtfDatabase::buildParametric(double sampleRate, std::size_t irTaps,
             const float dL = earPathExcessSeconds(cosLeft, params.headRadius) * fs;
             const float dR = earPathExcessSeconds(cosRight, params.headRadius) * fs;
 
-            // Elevation compresses the ITD (sources overhead are equidistant).
-            const float elFactor = std::cos(el);
-            const float delayL = basePad + dL * elFactor;
-            const float delayR = basePad + dR * elFactor;
+            // cosLeft/cosRight already contain cos(elevation). Multiplying
+            // the resulting path delays by cos(el) again halved the correct
+            // ITD at 60 degrees and distorted geometry-dependent positioning.
+            const float delayL = basePad + dL;
+            const float delayR = basePad + dR;
 
             float* L = hrir_.data() + ((ei * numAz_ + ai) * 2) * irTaps_;
             float* R = hrir_.data() + ((ei * numAz_ + ai) * 2 + 1) * irTaps_;

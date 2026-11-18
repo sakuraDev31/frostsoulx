@@ -1,4 +1,6 @@
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+<appwidget-provider
+    android:configure="dev.vxs.frostsoulx.widget.WidgetConfigActivity"
+    android:widgetFeatures="reconfigurable" xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="80dp"
     android:minHeight="80dp"
     android:targetCellWidth="2"

@@ -10,9 +10,12 @@
 package dev.vxs.frostsoulx
 
 import android.annotation.SuppressLint
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -131,6 +134,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -141,13 +145,18 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.vxs.frostsoulx.constants.AodAutoStartScreenOffKey
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastFirstOrNull
 import androidx.compose.ui.util.fastForEach
@@ -328,6 +337,8 @@ class MainActivity : ComponentActivity() {
     private var pendingAodModeRequest = false
     private var pendingAodModeJob: Job? = null
     private var aodModeLaunchRequestCount by mutableIntStateOf(0)
+    private var aodLockReceiver: BroadcastReceiver? = null
+    private var dismissAodAction: (() -> Unit)? = null
     private var pendingTogetherJoinLink: String? = null
     private var pendingBackupRestoreUri by mutableStateOf<Uri?>(null)
     private var latestVersionName by mutableStateOf(BuildConfig.VERSION_NAME)
@@ -395,6 +406,62 @@ class MainActivity : ComponentActivity() {
                     aodModeLaunchRequestCount++
                 }
             }
+    }
+
+    private fun registerAodLockReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        lifecycleScope.launch {
+                            val autoStartAod = runCatching {
+                                dataStore.data.map { it[AodAutoStartScreenOffKey] ?: true }.first()
+                            }.getOrDefault(true)
+                            val isPlaying = playerConnection?.player?.isPlaying == true
+                            val hasMedia = playerConnection?.player?.currentMediaItem != null ||
+                                playerConnection?.mediaMetadata?.value != null
+                            if (autoStartAod && (isPlaying || hasMedia)) {
+                                requestAodMode()
+                            }
+                        }
+                    }
+                    Intent.ACTION_USER_PRESENT -> {
+                        runOnUiThread {
+                            dismissAodToPlayer()
+                        }
+                    }
+                    Intent.ACTION_SCREEN_ON -> {
+                        val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                        if (km != null && !km.isKeyguardLocked) {
+                            runOnUiThread {
+                                dismissAodToPlayer()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        aodLockReceiver = receiver
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(receiver, filter)
+        }
+    }
+
+    private fun dismissAodToPlayer() {
+        dismissAodAction?.invoke() ?: run {
+            playerConnection?.let { conn ->
+                if (conn.aodModeEnabled.value) {
+                    conn.aodModeEnabled.value = false
+                }
+            }
+        }
     }
 
     private fun joinPendingTogetherIfReady() {
@@ -468,6 +535,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        aodLockReceiver?.let {
+            runCatching { unregisterReceiver(it) }
+            aodLockReceiver = null
+        }
 
         val shouldStopOnTaskClear =
             if (!isFinishing) {
@@ -505,6 +576,7 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        registerAodLockReceiver()
         OfflineRecommendationScheduler.enqueue(applicationContext)
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_LTR
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -852,6 +924,21 @@ class MainActivity : ComponentActivity() {
                     val aodModeEnabled by remember(playerConnection) {
                         playerConnection?.aodModeEnabled ?: MutableStateFlow(false)
                     }.collectAsStateWithLifecycle()
+
+                    DisposableEffect(playerBottomSheetState, playerConnection) {
+                        dismissAodAction = {
+                            val connection = playerConnection
+                            if (connection?.aodModeEnabled?.value == true) {
+                                connection.aodModeEnabled.value = false
+                                if (!playerBottomSheetState.isExpandedOrExpanding) {
+                                    playerBottomSheetState.expandSoft()
+                                }
+                            }
+                        }
+                        onDispose {
+                            dismissAodAction = null
+                        }
+                    }
 
                     LaunchedEffect(aodModeLaunchRequestCount, playerConnection) {
                         val launchRequestCount = aodModeLaunchRequestCount
@@ -1591,12 +1678,46 @@ class MainActivity : ComponentActivity() {
                                                                     .clip(CircleShape)
                                                                     .padding(end = 3.dp),
                                                         )
-                                                        Text(
-                                                            text = stringResource(R.string.app_name),
-                                                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
-                                                        )
+                                                        val appName = stringResource(R.string.app_name)
+                                                        val (brandNamePrefix, brandNameX) = remember(appName) {
+                                                            if (appName.endsWith("x", ignoreCase = true)) {
+                                                                val prefix = if (appName.equals("frostsoulx", ignoreCase = true)) "FrostSoul" else appName.dropLast(1)
+                                                                val suffix = if (appName.last().isLowerCase()) "x" else "X"
+                                                                prefix to suffix
+                                                            } else {
+                                                                appName to ""
+                                                            }
+                                                        }
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                        ) {
+                                                            Text(
+                                                                text = brandNamePrefix,
+                                                                style = MaterialTheme.typography.titleLarge.copy(
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                                ),
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                            )
+                                                            if (brandNameX.isNotEmpty()) {
+                                                                Text(
+                                                                    text = brandNameX,
+                                                                    style = MaterialTheme.typography.titleLarge.copy(
+                                                                        fontWeight = FontWeight.Black,
+                                                                        fontSize = 25.sp,
+                                                                        letterSpacing = 0.5.sp,
+                                                                        color = MaterialTheme.colorScheme.primary,
+                                                                    ),
+                                                                    modifier = Modifier
+                                                                        .padding(start = 1.dp)
+                                                                        .graphicsLayer {
+                                                                            rotationZ = 3.5f
+                                                                        },
+                                                                    maxLines = 1,
+                                                                )
+                                                            }
+                                                        }
                                                     }
                                                 },
                                                 actions = {
@@ -2495,14 +2616,15 @@ class MainActivity : ComponentActivity() {
         val coroutineScope = lifecycleScope
 
         val authority = uri.authority?.lowercase()
-        if (uri.scheme.equals("archivetune", ignoreCase = true) && authority == "together") {
+        val scheme = uri.scheme?.lowercase()
+        if ((scheme == "frostsoulx" || scheme == "archivetune") && authority == "together") {
             pendingTogetherJoinLink = uri.toString()
             startMusicServiceSafely()
             joinPendingTogetherIfReady()
             return
         }
 
-        if (uri.scheme.equals("archivetune", ignoreCase = true) && authority == "login") {
+        if ((scheme == "frostsoulx" || scheme == "archivetune") && authority == "login") {
             navController.navigate(buildLoginRoute(uri.getQueryParameter(LOGIN_URL_ARGUMENT)))
             return
         }

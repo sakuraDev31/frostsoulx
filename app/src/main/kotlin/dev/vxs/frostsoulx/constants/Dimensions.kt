@@ -26,7 +26,7 @@ val NavigationBarMaxWidth = 420.dp
 // The shell adds system-bar padding separately, so the content bar remains 58dp.
 val NavigationBarHeight = 58.dp
 // The reconstructed QQ-style collapsed row is 72dp; keep shell insets and sheet anchors aligned.
-val MiniPlayerHeight = 68.dp
+val MiniPlayerHeight = 64.dp
 val MiniPlayerPeekHeight = 106.dp
 val MiniPlayerBottomSpacing = 0.dp
 val QueuePeekHeight = 64.dp
@@ -54,12 +54,12 @@ val NavigationBarAnimationSpec =
 
 val BottomSheetAnimationSpec =
     spring<Dp>(
-        dampingRatio = 0.86f,
-        stiffness = Spring.StiffnessMediumLow,
+        dampingRatio = 0.82f,
+        stiffness = 900f,
     )
 
 val BottomSheetSoftAnimationSpec =
     spring<Dp>(
-        dampingRatio = 0.88f,
-        stiffness = 320f,
+        dampingRatio = 0.84f,
+        stiffness = 850f,
     )

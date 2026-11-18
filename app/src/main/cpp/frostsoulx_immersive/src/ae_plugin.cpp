@@ -70,17 +70,6 @@ frostsoulx::spatial::SpaceProfile::Preset spacePresetFromValue(float value) noex
     }
 }
 
-frostsoulx::SpatialBackend backendFromValue(float value) noexcept {
-    const int b = static_cast<int>(std::lround(value));
-    switch (b) {
-        case 1: return frostsoulx::SpatialBackend::SteamAudio;
-        case 2: return frostsoulx::SpatialBackend::Native;
-        case 3: return frostsoulx::SpatialBackend::FullConvolution;
-        case 0:
-        default: return frostsoulx::SpatialBackend::None;
-    }
-}
-
 frostsoulx::spatial::AcousticMaterial materialFromIndex(int index) noexcept {
     using namespace frostsoulx::spatial;
     switch (index) {
@@ -135,7 +124,7 @@ AE_EXPORT AeEngine* ae_create(int sample_rate, int channels) {
         return nullptr;
     }
 
-    // The plugin starts as a transparent native spatial engine. The host can
+    // The plugin starts as a unified spatial engine. The host can
     // then apply manifest parameters before the first audio callback.
     e->engine.setRoomSimulationPreset(frostsoulx::RoomSimulationPreset::Off);
     e->engine.setRoomMix(0.0f);
@@ -155,8 +144,12 @@ AE_EXPORT void ae_set_param(AeEngine* e, const char* id, float value) {
         e->engine.setEnabled(value >= 0.5f);
     } else if (std::strcmp(id, "spatial_blend") == 0) {
         e->engine.setSpatialBlend(value);
-    } else if (std::strcmp(id, "spatial_backend") == 0 || std::strcmp(id, "backend") == 0) {
-        e->engine.setSpatialBackendPreference(backendFromValue(value));
+    } else if (std::strcmp(id, "bass_gain") == 0) {
+        e->engine.setBassGain(value);
+    } else if (std::strcmp(id, "bass_width") == 0) {
+        e->engine.setBassWidth(value);
+    } else if (std::strcmp(id, "high_band_width") == 0) {
+        e->engine.setHighBandWidth(value);
     } else if (std::strcmp(id, "space_preset") == 0 || std::strcmp(id, "space") == 0) {
         e->engine.setSpacePreset(spacePresetFromValue(value));
     } else if (std::strcmp(id, "room_preset") == 0) {

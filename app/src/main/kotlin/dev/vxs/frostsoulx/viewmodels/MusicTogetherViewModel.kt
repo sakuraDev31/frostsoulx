@@ -88,6 +88,14 @@ sealed interface MusicTogetherDialogUiState {
         val initialValue: String,
     ) : MusicTogetherDialogUiState
 
+    data class ServerUrl(
+        val initialValue: String,
+    ) : MusicTogetherDialogUiState
+
+    data class BearerToken(
+        val initialValue: String,
+    ) : MusicTogetherDialogUiState
+
     data class Join(
         val initialValue: String,
         @StringRes val placeholderResId: Int,
@@ -151,6 +159,8 @@ data class MusicTogetherHostUiModel(
     val visible: Boolean,
     val startEnabled: Boolean,
     val loading: Boolean,
+    val serverUrl: String = "",
+    val hasBearerToken: Boolean = false,
 )
 
 @Immutable
@@ -369,6 +379,29 @@ class MusicTogetherViewModel
             val port = value.trim().toIntOrNull()?.takeIf { it in 1..65535 } ?: return
             viewModelScope.launch(Dispatchers.IO) {
                 updatePreferences.setPort(port)
+            }
+        }
+
+        fun openServerUrlDialog() {
+            val model = successModel() ?: return
+            dialog.value = MusicTogetherDialogUiState.ServerUrl(model.host.serverUrl)
+        }
+
+        fun submitServerUrl(value: String) {
+            val trimmed = value.trim()
+            viewModelScope.launch(Dispatchers.IO) {
+                updatePreferences.setServerUrl(trimmed)
+            }
+        }
+
+        fun openBearerTokenDialog() {
+            dialog.value = MusicTogetherDialogUiState.BearerToken("")
+        }
+
+        fun submitBearerToken(value: String) {
+            val trimmed = value.trim()
+            viewModelScope.launch(Dispatchers.IO) {
+                updatePreferences.setBearerToken(trimmed)
             }
         }
 
@@ -634,6 +667,8 @@ class MusicTogetherViewModel
                     visible = !isJoinedAsGuest,
                     startEnabled = !isCreatingSessionLoading && !isJoining && !isHosting && state !is TogetherSessionState.Joined,
                     loading = isCreatingSessionLoading,
+                    serverUrl = preferences.serverUrl,
+                    hasBearerToken = preferences.bearerToken.isNotBlank() || dev.vxs.frostsoulx.BuildConfig.TOGETHER_BEARER_TOKEN.isNotBlank(),
                 )
             val joinInput = preferences.lastJoinLink
             val canJoin =

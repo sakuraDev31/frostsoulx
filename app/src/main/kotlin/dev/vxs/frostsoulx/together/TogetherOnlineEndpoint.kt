@@ -14,6 +14,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
+import dev.vxs.frostsoulx.constants.TogetherCustomServerUrlKey
 import dev.vxs.frostsoulx.constants.TogetherOnlineEndpointCacheKey
 import dev.vxs.frostsoulx.constants.TogetherOnlineEndpointLastCheckedAtKey
 import dev.vxs.frostsoulx.utils.getAsync
@@ -39,6 +40,15 @@ object TogetherOnlineEndpoint {
         }
 
     suspend fun baseUrlOrNull(dataStore: DataStore<Preferences>): String? {
+        val customUrl = dataStore.getAsync(TogetherCustomServerUrlKey)?.trim().orEmpty()
+        if (customUrl.isNotBlank()) {
+            val uri = runCatching { URI(customUrl) }.getOrNull()
+            val scheme = uri?.scheme?.trim()?.lowercase()
+            if (scheme == "http" || scheme == "https") {
+                return customUrl.trimEnd('/')
+            }
+        }
+
         val now = System.currentTimeMillis()
         val cached = dataStore.getAsync(TogetherOnlineEndpointCacheKey)?.trim().orEmpty()
         val lastCheckedAt = dataStore.getAsync(TogetherOnlineEndpointLastCheckedAtKey, 0L)

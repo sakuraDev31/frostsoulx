@@ -342,7 +342,7 @@ fun LocalPlaylistScreen(
 
     var showRemoveDownloadDialog by remember { mutableStateOf(false) }
 
-    if (showRemoveDownloadDialog) {
+    if (showRemoveDownloadDialog && playlist != null) {
         DefaultDialog(
             onDismiss = { showRemoveDownloadDialog = false },
             content = {
@@ -350,7 +350,7 @@ fun LocalPlaylistScreen(
                     text =
                         stringResource(
                             R.string.remove_download_playlist_confirm,
-                            playlist?.playlist!!.name,
+                            playlist?.playlist?.name.orEmpty(),
                         ),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 18.dp),
@@ -386,7 +386,14 @@ fun LocalPlaylistScreen(
     }
 
     var showDeletePlaylistDialog by remember { mutableStateOf(false) }
-    if (showDeletePlaylistDialog) {
+    LaunchedEffect(playlist?.id) {
+        if (playlist == null) {
+            showEditDialog = false
+            showRemoveDownloadDialog = false
+            showDeletePlaylistDialog = false
+        }
+    }
+    if (showDeletePlaylistDialog && playlist != null) {
         DefaultDialog(
             onDismiss = { showDeletePlaylistDialog = false },
             content = {
@@ -394,7 +401,7 @@ fun LocalPlaylistScreen(
                     text =
                         stringResource(
                             R.string.delete_playlist_confirm,
-                            playlist?.playlist!!.name,
+                            playlist?.playlist?.name.orEmpty(),
                         ),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 18.dp),

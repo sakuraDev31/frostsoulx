@@ -53,11 +53,18 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.animation.animateColorAsState
+import dev.vxs.frostsoulx.LocalPlayerConnection
+import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
+import dev.vxs.frostsoulx.ui.screens.settings.spatial.ContrastGuard
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -617,10 +624,28 @@ fun FSNavigationBar(
     val (glassGrain) = rememberPreference(GlassGrainIntensityKey, defaultValue = 0.35f)
     val (glassBlurRadius) = rememberPreference(BlurRadiusKey, defaultValue = 32f)
     val homeSelected = selectedRoute == "home"
-    val selectedTint = if (pureBlack) Color.White else Color.Black
+
+    // Material 3 & artwork derived colors for navigation bar chips
+    val playerConnection = LocalPlayerConnection.current
+    val mediaMetadata by (playerConnection?.mediaMetadata ?: MutableStateFlow(null)).collectAsState()
+    val artworkPalette = rememberFrostSoulPalette(mediaMetadata?.thumbnailUrl)
+    val rawDynamicAccent = artworkPalette.artworkPrimary.takeIf { it != Color.White && it != Color.Transparent }
+        ?: MaterialTheme.colorScheme.primary
+
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
     val isLight = !pureBlack && colors.background.luminance() > 0.5f
     val navSurface = if (pureBlack) Color.Black else if (isLight) Color(0xFFF2F4F7) else Color.White
+
+    val selectedAccent = remember(rawDynamicAccent, navSurface, isLight, pureBlack) {
+        val targetSurface = if (pureBlack) Color.Black else navSurface
+        ContrastGuard.ensureGraphicContrast(rawDynamicAccent, targetSurface)
+    }
+
+    val selectedTint by animateColorAsState(
+        targetValue = selectedAccent,
+        animationSpec = tween(400),
+        label = "nav_selected_tint",
+    )
     val shadowModifier =
         Modifier.shadow(
             elevation = if (isLight) 8.dp else 10.dp,
@@ -668,8 +693,8 @@ fun FSNavigationBar(
                         .fillMaxSize()
                         .clip(itemShape)
                         .background(Brush.verticalGradient(listOf(
-                            if (selected) selectedTint.copy(alpha = 0.06f) else Color.Transparent,
-                            if (selected) selectedTint.copy(alpha = 0.18f) else Color.Transparent,
+                            if (selected) selectedTint.copy(alpha = 0.10f) else Color.Transparent,
+                            if (selected) selectedTint.copy(alpha = 0.22f) else Color.Transparent,
                         )))
                         .clickable(
                             indication = null,

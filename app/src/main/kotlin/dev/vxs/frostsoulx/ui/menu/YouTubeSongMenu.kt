@@ -30,7 +30,10 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -641,6 +644,7 @@ fun YouTubeSongMenu(
                                             downloadRequest,
                                             false,
                                         )
+                                        onDismiss()
                                     },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             )

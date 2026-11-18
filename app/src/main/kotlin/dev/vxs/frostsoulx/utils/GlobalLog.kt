@@ -7,6 +7,12 @@
 
 package dev.vxs.frostsoulx.utils
 
+import dev.vxs.frostsoulx.BuildConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
@@ -22,6 +28,10 @@ data class LogEntry(
 
 object GlobalLog {
     private const val MAX_ENTRIES = 500
+    @Volatile var verboseEnabled = BuildConfig.DEBUG
+    private val buffer = ArrayDeque<LogEntry>()
+    private var publicationPending = false
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
     val logs = _logs.asStateFlow()
 
@@ -33,16 +43,27 @@ object GlobalLog {
         message: String,
     ) {
         val entry = LogEntry(System.currentTimeMillis(), level, tag, message)
-        val new = (_logs.value + entry).takeLast(MAX_ENTRIES)
-        _logs.value = new
+        synchronized(buffer) {
+            if (buffer.size == MAX_ENTRIES) buffer.removeFirst()
+            buffer.addLast(entry)
+            if (publicationPending) return
+            publicationPending = true
+        }
+        scope.launch {
+            delay(100L)
+            synchronized(buffer) {
+                _logs.value = buffer.toList()
+                publicationPending = false
+            }
+        }
     }
 
     fun clear() {
-        _logs.value = emptyList()
+        synchronized(buffer) { buffer.clear(); _logs.value = emptyList() }
     }
 
     fun format(entry: LogEntry): String {
-        val ts = timeFormat.format(Date(entry.time))
+        val ts = synchronized(timeFormat) { timeFormat.format(Date(entry.time)) }
         val lvl =
             when (entry.level) {
                 android.util.Log.VERBOSE -> "V"
@@ -58,7 +79,9 @@ object GlobalLog {
 }
 
 /** Timber Tree that forwards logs to GlobalLog */
-class GlobalLogTree : Timber.DebugTree() {
+class GlobalLogTree : Timber.Tree() {
+    override fun isLoggable(tag: String?, priority: Int): Boolean =
+        GlobalLog.verboseEnabled || priority >= android.util.Log.WARN
     override fun log(
         priority: Int,
         tag: String?,

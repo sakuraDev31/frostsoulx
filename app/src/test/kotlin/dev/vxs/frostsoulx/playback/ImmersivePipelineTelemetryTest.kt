@@ -5,6 +5,54 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+class WavImpulseResponseTest {
+    private fun wav(channels: Int, frames: Int = 1, sample: Float = 0.25f): ByteArray {
+        val dataSize = channels * frames * 4
+        val buffer = java.nio.ByteBuffer.allocate(44 + dataSize).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        buffer.put("RIFF".toByteArray()).putInt(36 + dataSize).put("WAVEfmt ".toByteArray())
+        buffer.putInt(16).putShort(3.toShort()).putShort(channels.toShort())
+        buffer.putInt(48000).putInt(48000 * channels * 4).putShort((channels * 4).toShort()).putShort(32.toShort())
+        buffer.put("data".toByteArray()).putInt(dataSize)
+        repeat(frames) { repeat(channels) { channel -> buffer.putFloat(sample * (channel + 1)) } }
+        return buffer.array()
+    }
+
+    @Test
+    fun fourPathWavKeepsAllIndependentTransfers() {
+        val ir = WavImpulseResponse.decode(wav(4))
+        val paths = ir.resampledMatrix(48000, 32768)
+        for (channel in 0..3) assertEquals(0.25f * (channel + 1), paths[channel][0], 0f)
+        assertEquals(1, paths[0].size)
+    }
+
+    @Test
+    fun monoAndStereoWavKeepCrossTransfersSilent() {
+        for (channels in 1..2) {
+            val paths = WavImpulseResponse.decode(wav(channels)).resampledMatrix(48000, 32768)
+            assertEquals(0.25f, paths[0][0], 0f)
+            assertEquals(0f, paths[1][0], 0f)
+            assertEquals(0f, paths[2][0], 0f)
+            assertEquals(if (channels == 1) 0.25f else 0.5f, paths[3][0], 0f)
+        }
+    }
+
+    @Test
+    fun resamplingPreservesAllFourPathsAndCapsLength() {
+        val ir = WavImpulseResponse.decode(wav(4, frames = 4))
+        val paths = ir.resampledMatrix(96000, 6)
+        for (channel in 0..3) {
+            assertEquals(6, paths[channel].size)
+            assertEquals(0.25f * (channel + 1), paths[channel].last(), 0f)
+        }
+    }
+
+    @Test
+    fun rejectsNonFiniteTruncatedAndUnsupportedWavs() {
+        val invalid = listOf(wav(4, sample = Float.NaN), wav(3), wav(2).copyOf(45), wav(1, frames = 32769))
+        for (bytes in invalid) assertTrue(runCatching { WavImpulseResponse.decode(bytes) }.isFailure)
+    }
+}
+
 class ImmersivePipelineTelemetryTest {
     private fun measured(rms: Float = 0.25f) = ImmersiveStageDiagnostics(
         available = true,
@@ -84,5 +132,132 @@ class ImmersivePipelineTelemetryTest {
         assertTrue(report.contains("B1–B7 SIGNAL BOUNDARIES"))
         assertTrue(report.contains("B6 AudioTrack enqueue"))
         assertTrue(report.contains("B7 Physical device output"))
+    }
+
+    @Test
+    fun oldShortTelemetryPayloadDoesNotCrashNewFields() {
+        val values = DoubleArray(41)
+        values[38] = 384.0
+        val d = ImmersiveAudioDiagnostics.fromNative(values)
+        assertEquals(0f, d.brirRms, 0f)
+        assertEquals(0f, d.brirNormalizationGain, 0f)
+        assertEquals("Off / unavailable", d.backendLabel())
+    }
+
+    @Test
+    fun allPhysicalPresetIdsAreRetained() {
+        for (id in 0..12) assertEquals(id, ImmersiveRoomPreset.fromNative(id).nativeValue)
+    }
+
+    @Test
+    fun controlsClampInvalidTargetsToEngineRanges() {
+        val c = ImmersiveControls(azimuth = Float.NaN, elevation = 200f, distance = -3f,
+            bassGainDb = 12f, bassWidth = Float.POSITIVE_INFINITY, outputGainDb = 12f).sanitized()
+        assertEquals(0f, c.azimuth, 0f)
+        assertEquals(90f, c.elevation, 0f)
+        assertEquals(0.2f, c.distance, 0f)
+        assertEquals(6f, c.bassGainDb, 0f)
+        assertEquals(1f, c.bassWidth, 0f)
+        assertEquals(0f, c.outputGainDb, 0f)
+    }
+
+    @Test
+    fun legacyPresetMigrationAndFullControlRoundTrip() {
+        val legacy = ImmersiveAudioPreset.fromJson(org.json.JSONObject("""{"name":"Old studio","roomPreset":2}"""))!!
+        assertEquals(1f, legacy.toControls().distance, 0f)
+        assertEquals(0f, legacy.toControls().azimuth, 0f)
+        val controls = ImmersiveControls(enabled = true, azimuth = 65f, elevation = -25f,
+            distance = 2.4f, bassWidth = 0.7f, bassGainDb = 3f, outputGainDb = -4f,
+            roomPreset = ImmersiveRoomPreset.CAVE, carFader = -0.4f)
+        val decoded = ImmersiveAudioPreset.fromJson(ImmersiveAudioPreset.fromControls("Cave", controls.copy(orbitEnabled = true), "test-ir-id").toJson())!!
+        assertEquals(controls.copy(orbitEnabled = true), decoded.toControls())
+        assertEquals("test-ir-id", decoded.customIrPresetId)
+        assertEquals("", legacy.customIrPresetId)
+    }
+
+    @Test
+    fun unifiedEngineReportRetainsSafetyAndMatrixMetrics() {
+        val report = ImmersiveDiagnosticCapture(processorOn = true, durationSeconds = 1,
+            startedAtMillis = 0, samples = emptyList(), finalDiagnostics = ImmersiveAudioDiagnostics(
+                processorEnabled = true, activeBackend = 3, algorithmicLatencySamples = 210,
+                brirReady = true, brirRms = 0.1f,
+            )).toText("test", "test", "test", 384)
+        assertTrue(report.contains("FrostSoulX unified convolution"))
+        assertTrue(report.contains("Latency: 210 samples"))
+        assertTrue(report.contains("Transfer matrix RMS="))
+        assertTrue(report.contains("Safety detector peak="))
+    }
+}
+
+class PlaybackSafetyRegressionTest {
+    @Test
+    fun everyLegacyTelemetryLengthIsSafe() {
+        for (length in 0..61) {
+            val d = ImmersiveAudioDiagnostics.fromNative(DoubleArray(length))
+            assertEquals(0f, d.brirNormalizationGain, 0f)
+        }
+    }
+
+    @Test
+    fun idleDiagnosticsDoNotMeasureOrModifyPcm() {
+        ImmersiveAudioRuntime.detach()
+        val stage = ImmersiveStageMeter()
+        val processor = ImmersiveStageMeterAudioProcessor(stage)
+        processor.configure(androidx.media3.common.audio.AudioProcessor.AudioFormat(48000, 2, androidx.media3.common.C.ENCODING_PCM_16BIT))
+        val input = java.nio.ByteBuffer.allocateDirect(4).order(java.nio.ByteOrder.nativeOrder())
+        input.putShort(16384).putShort(-16384).flip()
+        processor.queueInput(input)
+        assertEquals(0, input.remaining())
+        assertFalse(stage.snapshot().available)
+        val output = processor.getOutput()
+        assertEquals(16384.toShort(), output.short)
+        assertEquals((-16384).toShort(), output.short)
+        assertEquals(0, processor.getOutput().remaining())
+        processor.queueEndOfStream()
+        assertTrue(processor.isEnded)
+    }
+
+    @Test
+    fun requestedDiagnosticsAggregateFiniteAndInvalidSamplesPerBlock() {
+        val stage = ImmersiveStageMeter()
+        val processor = ImmersiveStageMeterAudioProcessor(stage)
+        processor.configure(androidx.media3.common.audio.AudioProcessor.AudioFormat(48000, 2, androidx.media3.common.C.ENCODING_PCM_FLOAT))
+        val input = java.nio.ByteBuffer.allocateDirect(16).order(java.nio.ByteOrder.nativeOrder())
+        input.putFloat(0.5f).putFloat(-1f).putFloat(Float.NaN).putFloat(Float.POSITIVE_INFINITY).flip()
+        ImmersiveAudioRuntime.readDiagnostics()
+        try {
+            processor.queueInput(input)
+            val measurement = stage.snapshot()
+            assertEquals(2L, measurement.frames)
+            assertEquals(1f, measurement.peak, 0f)
+            assertEquals(1L, measurement.clippedSamples)
+            assertEquals(1L, measurement.nanCount)
+            assertEquals(1L, measurement.infCount)
+            assertEquals(kotlin.math.sqrt(1.25 / 4.0).toFloat(), measurement.rms, 0.0001f)
+            assertEquals(16, processor.getOutput().remaining())
+        } finally { ImmersiveAudioRuntime.detach() }
+    }
+
+    @Test
+    fun artworkSamplingBoundsLargeAndPanoramicAllocations() {
+        assertEquals(8, dev.vxs.frostsoulx.utils.artworkSampleSize(8000, 8000, 1080))
+        assertEquals(64, dev.vxs.frostsoulx.utils.artworkSampleSize(8000, 8000, 128))
+        assertEquals(1, dev.vxs.frostsoulx.utils.artworkSampleSize(640, 480, 1080))
+        assertEquals(256, dev.vxs.frostsoulx.utils.artworkSampleSize(256000, 1, 1080))
+    }
+
+    @Test
+    fun invalidArtworkBoundsAreRejectedBeforeDecode() {
+        for ((width, height) in listOf(0 to 10, -1 to 10, Int.MAX_VALUE to Int.MAX_VALUE)) {
+            assertTrue(runCatching { dev.vxs.frostsoulx.utils.artworkSampleSize(width, height, 128) }.isFailure)
+        }
+    }
+
+    @Test
+    fun streamCacheRequiresMatchingAccountAndEnoughLifetime() {
+        val cache = dev.vxs.frostsoulx.utils.AuthScopedCacheValue("https://example.test/audio", 12000, "account-a")
+        assertTrue(cache.isValidFor("account-a", nowMs = 10000, minimumRemainingMs = 1000))
+        assertFalse(cache.isValidFor("account-b", nowMs = 10000))
+        assertFalse(cache.isValidFor("account-a", nowMs = 11000, minimumRemainingMs = 1000))
     }
 }

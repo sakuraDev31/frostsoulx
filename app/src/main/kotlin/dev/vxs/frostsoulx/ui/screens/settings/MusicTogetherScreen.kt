@@ -405,6 +405,28 @@ private fun MusicTogetherDialogs(
             )
         }
 
+        is MusicTogetherDialogUiState.ServerUrl -> {
+            TextFieldDialog(
+                title = { Text(text = "Online Server URL") },
+                initialTextFieldValue = TextFieldValue(dialog.initialValue),
+                placeholder = { Text(text = "https://listentogether.miuka.moe") },
+                singleLine = true,
+                onDone = viewModel::submitServerUrl,
+                onDismiss = viewModel::dismissDialog,
+            )
+        }
+
+        is MusicTogetherDialogUiState.BearerToken -> {
+            TextFieldDialog(
+                title = { Text(text = "Together Bearer Token") },
+                initialTextFieldValue = TextFieldValue(dialog.initialValue),
+                placeholder = { Text(text = "Enter bearer token") },
+                singleLine = true,
+                onDone = viewModel::submitBearerToken,
+                onDismiss = viewModel::dismissDialog,
+            )
+        }
+
         is MusicTogetherDialogUiState.Join -> {
             TextFieldDialog(
                 title = { Text(text = stringResource(R.string.join_session)) },
@@ -720,6 +742,19 @@ private fun HostControlsCard(
                 titleResId = R.string.together_port,
                 subtitle = host.port.toString(),
                 onClick = viewModel::openPortDialog,
+            )
+        } else {
+            SettingsRow(
+                iconResId = R.drawable.link,
+                titleText = "Server URL",
+                subtitle = host.serverUrl.ifBlank { "Default Server" },
+                onClick = viewModel::openServerUrlDialog,
+            )
+            SettingsRow(
+                iconResId = R.drawable.lock,
+                titleText = "Bearer Token",
+                subtitle = if (host.hasBearerToken) "Configured (Tap to change)" else "Not set (Tap to set)",
+                onClick = viewModel::openBearerTokenDialog,
             )
         }
         ToggleRow(
@@ -1133,7 +1168,8 @@ private fun SectionCard(
 @Composable
 private fun SettingsRow(
     @androidx.annotation.DrawableRes iconResId: Int,
-    @StringRes titleResId: Int,
+    @StringRes titleResId: Int = 0,
+    titleText: String? = null,
     subtitle: String,
     subtitleMaxLines: Int = 1,
     onClick: (() -> Unit)? = null,
@@ -1141,7 +1177,7 @@ private fun SettingsRow(
     ListItem(
         headlineContent = {
             Text(
-                text = stringResource(titleResId),
+                text = titleText ?: if (titleResId != 0) stringResource(titleResId) else "",
                 fontWeight = FontWeight.SemiBold,
             )
         },

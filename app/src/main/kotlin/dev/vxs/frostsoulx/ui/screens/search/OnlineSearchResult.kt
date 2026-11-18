@@ -9,6 +9,9 @@ package dev.vxs.frostsoulx.ui.screens.search
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -79,7 +83,6 @@ import dev.vxs.frostsoulx.innertube.models.YTItem
 import dev.vxs.frostsoulx.innertube.pages.SearchSummary
 import dev.vxs.frostsoulx.models.toMediaMetadata
 import dev.vxs.frostsoulx.playback.queues.YouTubeQueue
-import dev.vxs.frostsoulx.ui.component.ChipsRow
 import dev.vxs.frostsoulx.ui.component.EmptyPlaceholder
 import dev.vxs.frostsoulx.ui.component.LocalMenuState
 import dev.vxs.frostsoulx.ui.component.YouTubeListItem
@@ -278,37 +281,53 @@ fun OnlineSearchResult(
                     .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top).add(WindowInsets(top = AppBarHeight)))
                     .fillMaxWidth(),
         ) {
-            ChipsRow(
-                chips =
-                    listOf(
-                        null to stringResource(R.string.filter_all),
-                        FILTER_SONG to stringResource(R.string.filter_songs),
-                        FILTER_VIDEO to stringResource(R.string.filter_videos),
-                        FILTER_ALBUM to stringResource(R.string.filter_albums),
-                        FILTER_ARTIST to stringResource(R.string.filter_artists),
-                        FILTER_COMMUNITY_PLAYLIST to stringResource(R.string.filter_community_playlists),
-                        FILTER_FEATURED_PLAYLIST to stringResource(R.string.filter_featured_playlists),
-                    ),
-                currentValue = searchFilter,
-                onValueUpdate = {
-                    if (viewModel.filter.value != it) {
-                        viewModel.filter.value = it
-                    }
-                    coroutineScope.launch {
-                        lazyListState.animateScrollToItem(0)
-                    }
-                },
-                icons =
-                    mapOf(
-                        null to R.drawable.search,
-                        FILTER_SONG to R.drawable.music_note,
-                        FILTER_VIDEO to R.drawable.slow_motion_video,
-                        FILTER_ALBUM to R.drawable.album,
-                        FILTER_ARTIST to R.drawable.person,
-                        FILTER_COMMUNITY_PLAYLIST to R.drawable.queue_music,
-                        FILTER_FEATURED_PLAYLIST to R.drawable.playlist_play,
-                    ),
+            val searchFilterChips = listOf(
+                null to stringResource(R.string.filter_all),
+                FILTER_SONG to stringResource(R.string.filter_songs),
+                FILTER_VIDEO to stringResource(R.string.filter_videos),
+                FILTER_ALBUM to stringResource(R.string.filter_albums),
+                FILTER_ARTIST to stringResource(R.string.filter_artists),
+                FILTER_COMMUNITY_PLAYLIST to stringResource(R.string.filter_community_playlists),
+                FILTER_FEATURED_PLAYLIST to stringResource(R.string.filter_featured_playlists),
             )
+            val searchFilterIcons = mapOf(
+                null to R.drawable.search, FILTER_SONG to R.drawable.music_note,
+                FILTER_VIDEO to R.drawable.slow_motion_video, FILTER_ALBUM to R.drawable.album,
+                FILTER_ARTIST to R.drawable.person, FILTER_COMMUNITY_PLAYLIST to R.drawable.queue_music,
+                FILTER_FEATURED_PLAYLIST to R.drawable.playlist_play,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
+                Spacer(Modifier.width(12.dp))
+                searchFilterChips.forEach { (filter, label) ->
+                    val selected = searchFilter == filter
+                    Surface(
+                        onClick = {
+                            if (viewModel.filter.value != filter) viewModel.filter.value = filter
+                            coroutineScope.launch { lazyListState.animateScrollToItem(0) }
+                        },
+                        shape = RoundedCornerShape(15.dp),
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow,
+                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
+                        modifier = Modifier.height(42.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 13.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(7.dp),
+                        ) {
+                            searchFilterIcons[filter]?.let { icon ->
+                                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(17.dp))
+                            }
+                            Text(text = label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        }
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+            }
         }
 
         LazyColumn(

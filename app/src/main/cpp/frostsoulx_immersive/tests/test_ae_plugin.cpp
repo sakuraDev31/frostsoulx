@@ -69,9 +69,10 @@ int main() {
     }
     check(true, "all 12 physical space presets applied successfully");
 
-    // 3. Verify spatial backend selection
-    ae_set_param(engine, "spatial_backend", 3.0f); // FullConvolution
-    check(true, "spatial_backend FullConvolution set");
+    // Independent band controls feed the one unified engine.
+    ae_set_param(engine, "bass_gain", 1.0f);
+    ae_set_param(engine, "bass_width", 0.8f);
+    ae_set_param(engine, "high_band_width", 1.2f);
 
     // 4. Verify 3D source and listener coordinates
     ae_set_param(engine, "source_x", 1.5f);
@@ -105,7 +106,6 @@ int main() {
 
     // 7. Test full convolution audio processing across arbitrary block sizes
     ae_set_param(engine, "space_preset", 4.0f); // ConcertHall
-    ae_set_param(engine, "spatial_backend", 3.0f); // FullConvolution
     ae_set_param(engine, "spatial_blend", 1.0f);
 
     bool sawEnergy = false;
