@@ -956,3 +956,9 @@ val SpatialElevationKey = floatPreferencesKey("spatialElevation")
 val SpatialDistanceKey = floatPreferencesKey("spatialDistance")
 val SpatialBassWidthKey = floatPreferencesKey("spatialBassWidth")
 val SpatialOrbitEnabledKey = booleanPreferencesKey("spatialOrbitEnabled")
+
+// Spatial Effects Library UI State Keys
+val SpatialActiveEffectIdKey = stringPreferencesKey("spatialActiveEffectId")
+val SpatialFavoriteEffectIdsKey = stringSetPreferencesKey("spatialFavoriteEffectIds")
+val SpatialActiveTabKey = intPreferencesKey("spatialActiveTab")
+val SpatialMovingSoundSpeedKey = floatPreferencesKey("spatialMovingSoundSpeed")

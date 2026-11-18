@@ -1179,4 +1179,21 @@
     <string name="taste_profile_error_message">We could not build your taste profile. Try again.</string>
     <string name="taste_profile_retry">Try again</string>
     <string name="taste_profile_footer">Your taste profile is computed on this device from your listening history and drives your Home recommendations.</string>
+
+    <!-- Spatial Audio / Effects Library Strings -->
+    <string name="spatial_audio_title">Spatial audio</string>
+    <string name="spatial_sound_space">Sound space</string>
+    <string name="spatial_moving_sound">Moving sound</string>
+    <string name="spatial_effect_strength">Effect strength</string>
+    <string name="spatial_echo">Echo</string>
+    <string name="spatial_left_right">Left / Right</string>
+    <string name="spatial_up_down">Up / Down</string>
+    <string name="spatial_bass_spread">Bass spread</string>
+    <string name="spatial_anti_distortion_margin">Anti-distortion margin</string>
+    <string name="spatial_bass_boost">Bass boost</string>
+    <string name="spatial_import_your_own_room">Import your own room</string>
+    <string name="spatial_engine_healthy">Audio engine: Healthy</string>
+    <string name="spatial_tab_effects">Effects</string>
+    <string name="spatial_tab_presets">My presets</string>
+    <string name="spatial_tab_equalizer">Equalizer</string>
 </resources>

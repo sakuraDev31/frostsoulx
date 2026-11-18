@@ -450,6 +450,15 @@ fun NavGraphBuilder.navigationBuilder(
     composable("settings/surround") {
         FrostSoulSettingsPage { SpatialAudioScreen(navController) }
     }
+    composable("settings/spatial") {
+        FrostSoulSettingsPage { SpatialAudioScreen(navController) }
+    }
+    composable("settings/fine_tuning") {
+        FrostSoulSettingsPage { SpatialAudioScreen(navController) }
+    }
+    composable("settings/diagnostics") {
+        FrostSoulSettingsPage { SpatialAudioScreen(navController) }
+    }
     composable("settings/lastfm") {
         FrostSoulSettingsPage { LastFMSettings(navController) }
     }
