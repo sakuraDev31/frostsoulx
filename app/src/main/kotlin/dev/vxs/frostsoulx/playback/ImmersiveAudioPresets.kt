@@ -25,6 +25,8 @@ data class ImmersiveAudioPreset(
     val bassGainDb: Float = 0f,
     val outputGainDb: Float = 0f,
     val customIrPresetId: String = "",
+    val basedOn: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("name", name.take(64))
@@ -48,6 +50,8 @@ data class ImmersiveAudioPreset(
         put("outputGainDb", safe.outputGainDb)
         put("quantumFrames", quantumFrames.coerceIn(96, 2048))
         put("customIrPresetId", customIrPresetId.take(64))
+        put("basedOn", basedOn.take(64))
+        put("createdAt", createdAt)
     }
 
     fun toControls(): ImmersiveControls = ImmersiveControls(
@@ -57,13 +61,20 @@ data class ImmersiveAudioPreset(
     ).sanitized()
 
     companion object {
-        fun fromControls(name: String, controls: ImmersiveControls, customIrPresetId: String = ""): ImmersiveAudioPreset {
+        fun fromControls(
+            name: String,
+            controls: ImmersiveControls,
+            customIrPresetId: String = "",
+            basedOn: String = "",
+            createdAt: Long = System.currentTimeMillis(),
+        ): ImmersiveAudioPreset {
             val c = controls.sanitized()
             return ImmersiveAudioPreset(
                 name.trim().take(64), c.enabled, c.intensity, c.roomPreset, c.roomMix,
                 c.reflectionAmount, c.reverbTimeSeconds, c.roomSize, c.dampening,
                 c.stereoWidth, c.quantumFrames, c.carFader, c.azimuth, c.elevation,
-                c.distance, c.orbitEnabled, c.bassWidth, c.bassGainDb, c.outputGainDb, customIrPresetId.take(64),
+                c.distance, c.orbitEnabled, c.bassWidth, c.bassGainDb, c.outputGainDb,
+                customIrPresetId.take(64), basedOn.take(64), createdAt,
             )
         }
         fun fromJson(value: JSONObject?): ImmersiveAudioPreset? {
@@ -90,6 +101,8 @@ data class ImmersiveAudioPreset(
                 outputGainDb = value.optDouble("outputGainDb", 0.0).toFloat(),
                 quantumFrames = value.optInt("quantumFrames", 384).coerceIn(96, 2048),
                 customIrPresetId = value.optString("customIrPresetId").take(64),
+                basedOn = value.optString("basedOn", ""),
+                createdAt = value.optLong("createdAt", System.currentTimeMillis()),
             )
         }
 
