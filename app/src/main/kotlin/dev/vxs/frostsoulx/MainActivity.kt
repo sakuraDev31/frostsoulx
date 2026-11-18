@@ -134,6 +134,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -1687,33 +1688,36 @@ class MainActivity : ComponentActivity() {
                                                                 appName to ""
                                                             }
                                                         }
-                                                        val brandAccent = MaterialTheme.colorScheme.primary
-                                                        val styledAppName = remember(brandNamePrefix, brandNameX, brandAccent) {
-                                                            buildAnnotatedString {
-                                                                append(brandNamePrefix)
-                                                                if (brandNameX.isNotEmpty()) {
-                                                                    withStyle(
-                                                                        SpanStyle(
-                                                                            color = brandAccent,
-                                                                            fontWeight = FontWeight.Black,
-                                                                            fontSize = 24.sp,
-                                                                            letterSpacing = 0.5.sp,
-                                                                        )
-                                                                    ) {
-                                                                        append(brandNameX)
-                                                                    }
-                                                                }
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                        ) {
+                                                            Text(
+                                                                text = brandNamePrefix,
+                                                                style = MaterialTheme.typography.titleLarge.copy(
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                                ),
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                            )
+                                                            if (brandNameX.isNotEmpty()) {
+                                                                Text(
+                                                                    text = brandNameX,
+                                                                    style = MaterialTheme.typography.titleLarge.copy(
+                                                                        fontWeight = FontWeight.Black,
+                                                                        fontSize = 25.sp,
+                                                                        letterSpacing = 0.5.sp,
+                                                                        color = MaterialTheme.colorScheme.primary,
+                                                                    ),
+                                                                    modifier = Modifier
+                                                                        .padding(start = 1.dp)
+                                                                        .graphicsLayer {
+                                                                            rotationZ = 3.5f
+                                                                        },
+                                                                    maxLines = 1,
+                                                                )
                                                             }
                                                         }
-                                                        Text(
-                                                            text = styledAppName,
-                                                            style = MaterialTheme.typography.titleLarge.copy(
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = MaterialTheme.colorScheme.onSurface,
-                                                            ),
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
-                                                        )
                                                     }
                                                 },
                                                 actions = {

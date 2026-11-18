@@ -405,6 +405,38 @@ fun EffectDetailPage(
                                 },
                             )
                         }
+
+                        // Anchor center vocals switch
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Anchor center vocals",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = "Keeps lead vocals clear and intimate in front of the 3D soundstage",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = currentControls.distance <= 1.0f && currentControls.stereoWidth <= 0.5f,
+                                onCheckedChange = { checked ->
+                                    onControlsChange(
+                                        currentControls.copy(
+                                            distance = if (checked) 0.9f else if (effect.defaultControls.distance > 0f) effect.defaultControls.distance else 1.5f,
+                                            stereoWidth = if (checked) 0.5f else effect.defaultControls.stereoWidth,
+                                            reflectionAmount = if (checked) minOf(currentControls.reflectionAmount, 0.25f) else effect.defaultControls.reflectionAmount,
+                                        ),
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
             }

@@ -56,6 +56,8 @@ import androidx.navigation.NavController
 import dev.vxs.frostsoulx.LocalPlayerAwareWindowInsets
 import dev.vxs.frostsoulx.LocalPlayerConnection
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.ConvolverActiveIrPresetKey
+import dev.vxs.frostsoulx.constants.ConvolverIrPresetsKey
 import dev.vxs.frostsoulx.constants.SpatialActiveEffectIdKey
 import dev.vxs.frostsoulx.constants.SpatialActiveTabKey
 import dev.vxs.frostsoulx.constants.SpatialAzimuthKey
@@ -162,7 +164,10 @@ fun SpatialAudioScreen(navController: NavController) {
         val newControls = effect.defaultControls.copy(enabled = true)
         updateControls(newControls)
         scope.launch {
-            context.dataStore.edit { it[SpatialActiveEffectIdKey] = effect.id }
+            context.dataStore.edit {
+                it[SpatialActiveEffectIdKey] = effect.id
+                it.remove(ConvolverActiveIrPresetKey)
+            }
             val result = snackbarHostState.showSnackbar(
                 message = "${effect.name} on · Undo",
                 actionLabel = "Undo",
@@ -355,6 +360,13 @@ fun SpatialAudioScreen(navController: NavController) {
                                         onApplyPreset = { preset ->
                                             updateControls(preset.toControls().copy(enabled = true))
                                             scope.launch {
+                                                context.dataStore.edit { prefs ->
+                                                    if (preset.customIrPresetId.isNotBlank()) {
+                                                        prefs[ConvolverActiveIrPresetKey] = preset.customIrPresetId
+                                                    } else {
+                                                        prefs.remove(ConvolverActiveIrPresetKey)
+                                                    }
+                                                }
                                                 snackbarHostState.showSnackbar("Preset \"${preset.name}\" applied")
                                             }
                                         },
@@ -381,10 +393,16 @@ fun SpatialAudioScreen(navController: NavController) {
                                             }
                                         },
                                         onDeletePreset = { index ->
+                                            val deleted = savedPresets.getOrNull(index)
                                             val updated = savedPresets.filterIndexed { idx, _ -> idx != index }
                                             scope.launch {
-                                                context.dataStore.edit {
-                                                    it[StereoSurroundSavedPresetsKey] = ImmersiveAudioPreset.encodeAll(updated)
+                                                context.dataStore.edit { prefs ->
+                                                    prefs[StereoSurroundSavedPresetsKey] = ImmersiveAudioPreset.encodeAll(updated)
+                                                    if (deleted != null && deleted.customIrPresetId.isNotBlank()) {
+                                                        if (prefs[ConvolverActiveIrPresetKey] == deleted.customIrPresetId) {
+                                                            prefs.remove(ConvolverActiveIrPresetKey)
+                                                        }
+                                                    }
                                                 }
                                             }
                                         },

@@ -1,6 +1,9 @@
 package dev.vxs.frostsoulx.ui.screens.settings.spatial
 
 import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,13 +48,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.edit
 import dev.vxs.frostsoulx.R
+import dev.vxs.frostsoulx.constants.ConvolverActiveIrPresetKey
+import dev.vxs.frostsoulx.constants.ConvolverIrPresetsKey
+import dev.vxs.frostsoulx.constants.StereoSurroundSavedPresetsKey
 import dev.vxs.frostsoulx.playback.ImmersiveAudioPreset
+import dev.vxs.frostsoulx.playback.ImmersiveAudioRuntime
 import dev.vxs.frostsoulx.playback.ImmersiveControls
+import dev.vxs.frostsoulx.playback.WavImpulseResponse
+import dev.vxs.frostsoulx.utils.dataStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 @Composable
 fun PresetsTab(
@@ -75,8 +91,46 @@ fun PresetsTab(
     var renameTargetIndex by remember { mutableStateOf<Int?>(null) }
     var renameTargetName by remember { mutableStateOf("") }
 
+    var showSaveIrDialog by remember { mutableStateOf(false) }
+    var pendingIrBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var pendingIrName by remember { mutableStateOf("") }
+
+    val irPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                runCatching {
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                            val output = java.io.ByteArrayOutputStream()
+                            val buffer = ByteArray(8192)
+                            while (true) {
+                                val count = stream.read(buffer)
+                                if (count < 0) break
+                                require(output.size() + count <= 32 * 1024 * 1024) { "IR WAV must be 32 MB or smaller" }
+                                output.write(buffer, 0, count)
+                            }
+                            output.toByteArray()
+                        } ?: error("Could not read selected file")
+                    }
+                    withContext(Dispatchers.Default) { WavImpulseResponse.decode(bytes) }
+                    val defaultName = runCatching {
+                        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                            if (cursor.moveToFirst()) cursor.getString(0)?.substringBeforeLast('.') else null
+                        }
+                    }.getOrNull().orEmpty().ifBlank { "Custom Space" }.take(64)
+
+                    pendingIrBytes = bytes
+                    pendingIrName = defaultName
+                    showSaveIrDialog = true
+                }.onFailure {
+                    snackbarHostState.showSnackbar(it.message ?: "Could not import WAV IR")
+                }
+            }
+        }
+    }
+
     if (presets.isEmpty()) {
-        // Empty state: one sentence plus a "Save current setup" button
+        // Empty state: one sentence plus action buttons
         Box(
             modifier = modifier
                 .fillMaxSize()
@@ -104,29 +158,55 @@ fun PresetsTab(
                 }
 
                 Text(
-                    text = "No saved presets yet. Adjust your sound space, then tap Save current setup.",
+                    text = "No saved presets yet. Adjust your sound space, import custom room IRs (.wav), or save your current setup.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
 
-                Button(
-                    onClick = {
-                        savePresetName = if (!activeEffectName.isNullOrBlank()) "$activeEffectName custom" else "My setup"
-                        showSaveDialog = true
-                    },
-                    shape = SpatialAudioTokens.PillShape,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp),
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = "Save current setup",
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                    )
+                    Button(
+                        onClick = {
+                            savePresetName = if (!activeEffectName.isNullOrBlank()) "$activeEffectName custom" else "My setup"
+                            showSaveDialog = true
+                        },
+                        shape = SpatialAudioTokens.PillShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                    ) {
+                        Text(
+                            text = "Save setup",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            irPickerLauncher.launch(arrayOf("audio/*", "application/octet-stream"))
+                        },
+                        shape = SpatialAudioTokens.PillShape,
+                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.snippet_folder),
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(modifier = Modifier.size(6.dp))
+                        Text(
+                            text = "Import IR (.wav)",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
             }
         }
@@ -141,7 +221,7 @@ fun PresetsTab(
             ),
             verticalArrangement = Arrangement.spacedBy(SpatialAudioTokens.RowGap),
         ) {
-            // Count header + Save button
+            // Count header + Save & Import buttons
             item(key = "presets_header") {
                 Row(
                     modifier = Modifier
@@ -156,24 +236,45 @@ fun PresetsTab(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
-                    TextButton(
-                        onClick = {
-                            savePresetName = if (!activeEffectName.isNullOrBlank()) "$activeEffectName custom" else "My setup"
-                            showSaveDialog = true
-                        },
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.add),
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(modifier = Modifier.size(4.dp))
-                        Text(
-                            text = "Save current setup",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            onClick = {
+                                irPickerLauncher.launch(arrayOf("audio/*", "application/octet-stream"))
+                            },
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.snippet_folder),
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(modifier = Modifier.size(4.dp))
+                            Text(
+                                text = "Import IR",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+
+                        TextButton(
+                            onClick = {
+                                savePresetName = if (!activeEffectName.isNullOrBlank()) "$activeEffectName custom" else "My setup"
+                                showSaveDialog = true
+                            },
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.add),
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(modifier = Modifier.size(4.dp))
+                            Text(
+                                text = "Save setup",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                 }
             }
@@ -234,13 +335,32 @@ fun PresetsTab(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            Text(
-                                text = preset.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(
+                                    text = preset.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                if (preset.customIrPresetId.isNotBlank()) {
+                                    Surface(
+                                        shape = SpatialAudioTokens.PillShape,
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                    ) {
+                                        Text(
+                                            text = "Custom IR",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        )
+                                    }
+                                }
+                            }
                             val subtitle = buildString {
                                 append(formattedDate)
                                 if (preset.basedOn.isNotBlank()) {
@@ -474,6 +594,70 @@ fun PresetsTab(
             },
             dismissButton = {
                 TextButton(onClick = { renameTargetIndex = null }) {
+                    Text("Cancel")
+                }
+            },
+            shape = SpatialAudioTokens.CardShape,
+            containerColor = SpatialAudioTokens.SurfaceContainerHigh,
+        )
+    }
+
+    // Save Custom IR Dialog
+    if (showSaveIrDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveIrDialog = false },
+            title = { Text("Save custom acoustic space") },
+            text = {
+                OutlinedTextField(
+                    value = pendingIrName,
+                    onValueChange = { pendingIrName = it.take(64) },
+                    label = { Text("Room / venue name") },
+                    singleLine = true,
+                    shape = SpatialAudioTokens.InputShape,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val bytes = pendingIrBytes
+                        val name = pendingIrName.trim()
+                        if (bytes != null && name.isNotBlank()) {
+                            val id = UUID.randomUUID().toString()
+                            val filename = "$id.wav"
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    File(File(context.filesDir, "convolver-ir").apply { mkdirs() }, filename).writeBytes(bytes)
+                                }
+                                val decoded = withContext(Dispatchers.Default) { WavImpulseResponse.decode(bytes) }
+                                ImmersiveAudioRuntime.setCustomIr(decoded)
+
+                                context.dataStore.edit { prefs ->
+                                    val raw = prefs[ConvolverIrPresetsKey] ?: "[]"
+                                    val array = JSONArray(raw)
+                                    array.put(JSONObject().put("id", id).put("name", name).put("file", filename))
+                                    prefs[ConvolverIrPresetsKey] = array.toString()
+                                    prefs[ConvolverActiveIrPresetKey] = id
+
+                                    val irPreset = ImmersiveAudioPreset.fromControls(
+                                        name = name,
+                                        controls = currentControls,
+                                        customIrPresetId = id,
+                                        basedOn = "Custom IR",
+                                    )
+                                    val updated = presets + irPreset
+                                    prefs[StereoSurroundSavedPresetsKey] = ImmersiveAudioPreset.encodeAll(updated)
+                                }
+                                snackbarHostState.showSnackbar("Imported and activated \"$name\"")
+                            }
+                        }
+                        showSaveIrDialog = false
+                    },
+                ) {
+                    Text("Save & Activate")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveIrDialog = false }) {
                     Text("Cancel")
                 }
             },
