@@ -1263,7 +1263,17 @@ class MusicService :
                             Intent.FLAG_ACTIVITY_SINGLE_TOP
                     }
                     try {
-                        startActivity(aodIntent)
+                        val pending = PendingIntent.getActivity(
+                            this@MusicService,
+                            0,
+                            aodIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                        )
+                        pending.send()
+                    } catch (_: Exception) {
+                        try {
+                            startActivity(aodIntent)
+                        } catch (_: Exception) {}
                     } finally {
                         if (aodLaunchWl?.isHeld == true) aodLaunchWl.release()
                     }

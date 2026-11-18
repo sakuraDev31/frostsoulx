@@ -66,11 +66,21 @@ object SpatialAudioTokens {
     val StrokeHairline: Dp = 1.dp
     val StrokeOutline: Dp = 1.5.dp
 
-    // ── Semantic Base Colors ──
-    val NearBlackSurface = Color(0xFF0E0E10) // Tone ~6 near-black
-    val SurfaceContainer = Color(0xFF161619)
-    val SurfaceContainerHigh = Color(0xFF202024)
-    val SurfaceContainerHighest = Color(0xFF2B2B30)
+    // ── Semantic Base Fallback Colors ──
+    val BaseNearBlackSurface = Color(0xFF0E0E10) // Tone ~6 near-black
+    val BaseSurfaceContainer = Color(0xFF161619)
+    val BaseSurfaceContainerHigh = Color(0xFF202024)
+    val BaseSurfaceContainerHighest = Color(0xFF2B2B30)
+
+    // ── Dynamic Semantic Colors (Material 3 & Artwork Derived) ──
+    val NearBlackSurface: Color
+        @Composable get() = MaterialTheme.colorScheme.surface
+    val SurfaceContainer: Color
+        @Composable get() = MaterialTheme.colorScheme.surfaceContainer
+    val SurfaceContainerHigh: Color
+        @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
+    val SurfaceContainerHighest: Color
+        @Composable get() = MaterialTheme.colorScheme.surfaceContainerHighest
 
     val UnselectedTrackAlpha = 0.24f
     val ConcentricRingAlpha = 0.24f
@@ -221,8 +231,19 @@ fun rememberSpatialColorScheme(artworkUrl: String?): ColorScheme {
             MaterialTheme.colorScheme.primary
         }
 
+    val rawSecondary = palette.artworkSecondary.takeIf { it != Color.White && it != Color.Transparent }
+        ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            dynamicDarkColorScheme(context).secondary
+        } else {
+            MaterialTheme.colorScheme.secondary
+        }
+
     val guardedPrimary = remember(rawPrimary) {
-        ContrastGuard.ensureGraphicContrast(rawPrimary, SpatialAudioTokens.NearBlackSurface)
+        ContrastGuard.ensureGraphicContrast(rawPrimary, SpatialAudioTokens.BaseNearBlackSurface)
+    }
+
+    val guardedSecondary = remember(rawSecondary) {
+        ContrastGuard.ensureGraphicContrast(rawSecondary, SpatialAudioTokens.BaseNearBlackSurface)
     }
 
     val animatedPrimary by animateColorAsState(
@@ -231,25 +252,88 @@ fun rememberSpatialColorScheme(artworkUrl: String?): ColorScheme {
         label = "SpatialPrimary",
     )
 
+    val animatedSecondary by animateColorAsState(
+        targetValue = guardedSecondary,
+        animationSpec = SpatialAudioTokens.ColorCrossfadeSpec,
+        label = "SpatialSecondary",
+    )
+
     val animatedPrimaryContainer by animateColorAsState(
         targetValue = animatedPrimary.copy(alpha = 0.22f),
         animationSpec = SpatialAudioTokens.ColorCrossfadeSpec,
         label = "SpatialPrimaryContainer",
     )
 
-    return remember(animatedPrimary, animatedPrimaryContainer) {
+    val animatedSecondaryContainer by animateColorAsState(
+        targetValue = animatedSecondary.copy(alpha = 0.20f),
+        animationSpec = SpatialAudioTokens.ColorCrossfadeSpec,
+        label = "SpatialSecondaryContainer",
+    )
+
+    // Dynamically derive tonal dark surfaces and outlines from artwork primary
+    val surfaceArgb = remember(guardedPrimary) {
+        ColorUtils.blendARGB(SpatialAudioTokens.BaseNearBlackSurface.toArgb(), guardedPrimary.toArgb(), 0.05f)
+    }
+    val surfaceContainerArgb = remember(guardedPrimary) {
+        ColorUtils.blendARGB(SpatialAudioTokens.BaseSurfaceContainer.toArgb(), guardedPrimary.toArgb(), 0.10f)
+    }
+    val surfaceContainerHighArgb = remember(guardedPrimary) {
+        ColorUtils.blendARGB(SpatialAudioTokens.BaseSurfaceContainerHigh.toArgb(), guardedPrimary.toArgb(), 0.15f)
+    }
+    val surfaceContainerHighestArgb = remember(guardedPrimary) {
+        ColorUtils.blendARGB(SpatialAudioTokens.BaseSurfaceContainerHighest.toArgb(), guardedPrimary.toArgb(), 0.20f)
+    }
+    val surfaceContainerLowArgb = remember(guardedPrimary) {
+        ColorUtils.blendARGB(0xFF101115.toInt(), guardedPrimary.toArgb(), 0.07f)
+    }
+    val outlineArgb = remember(guardedPrimary) {
+        ColorUtils.blendARGB(0xFF383840.toInt(), guardedPrimary.toArgb(), 0.22f)
+    }
+    val outlineVariantArgb = remember(guardedPrimary) {
+        ColorUtils.blendARGB(0xFF26262C.toInt(), guardedPrimary.toArgb(), 0.16f)
+    }
+
+    val animatedSurface by animateColorAsState(Color(surfaceArgb), SpatialAudioTokens.ColorCrossfadeSpec, label = "SpatialSurface")
+    val animatedSurfaceContainer by animateColorAsState(Color(surfaceContainerArgb), SpatialAudioTokens.ColorCrossfadeSpec, label = "SpatialSurfaceContainer")
+    val animatedSurfaceContainerHigh by animateColorAsState(Color(surfaceContainerHighArgb), SpatialAudioTokens.ColorCrossfadeSpec, label = "SpatialSurfaceContainerHigh")
+    val animatedSurfaceContainerHighest by animateColorAsState(Color(surfaceContainerHighestArgb), SpatialAudioTokens.ColorCrossfadeSpec, label = "SpatialSurfaceContainerHighest")
+    val animatedSurfaceContainerLow by animateColorAsState(Color(surfaceContainerLowArgb), SpatialAudioTokens.ColorCrossfadeSpec, label = "SpatialSurfaceContainerLow")
+    val animatedOutline by animateColorAsState(Color(outlineArgb), SpatialAudioTokens.ColorCrossfadeSpec, label = "SpatialOutline")
+    val animatedOutlineVariant by animateColorAsState(Color(outlineVariantArgb), SpatialAudioTokens.ColorCrossfadeSpec, label = "SpatialOutlineVariant")
+
+    return remember(
+        animatedPrimary,
+        animatedSecondary,
+        animatedPrimaryContainer,
+        animatedSecondaryContainer,
+        animatedSurface,
+        animatedSurfaceContainer,
+        animatedSurfaceContainerHigh,
+        animatedSurfaceContainerHighest,
+        animatedSurfaceContainerLow,
+        animatedOutline,
+        animatedOutlineVariant,
+    ) {
         darkColorScheme(
             primary = animatedPrimary,
             onPrimary = Color.Black,
             primaryContainer = animatedPrimaryContainer,
             onPrimaryContainer = Color.White,
-            surface = SpatialAudioTokens.NearBlackSurface,
+            secondary = animatedSecondary,
+            onSecondary = Color.Black,
+            secondaryContainer = animatedSecondaryContainer,
+            onSecondaryContainer = Color.White,
+            surface = animatedSurface,
             onSurface = Color(0xFFF1F1F4),
-            surfaceVariant = SpatialAudioTokens.SurfaceContainer,
+            surfaceVariant = animatedSurfaceContainer,
             onSurfaceVariant = Color(0xFF9E9EA8),
-            outline = Color(0xFF383840),
-            outlineVariant = Color(0xFF26262C),
-            background = SpatialAudioTokens.NearBlackSurface,
+            surfaceContainer = animatedSurfaceContainer,
+            surfaceContainerHigh = animatedSurfaceContainerHigh,
+            surfaceContainerHighest = animatedSurfaceContainerHighest,
+            surfaceContainerLow = animatedSurfaceContainerLow,
+            outline = animatedOutline,
+            outlineVariant = animatedOutlineVariant,
+            background = animatedSurface,
             onBackground = Color(0xFFF1F1F4),
         )
     }

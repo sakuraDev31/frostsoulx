@@ -58,6 +58,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.collectAsState
+import dev.vxs.frostsoulx.LocalPlayerConnection
+import dev.vxs.frostsoulx.ui.player.frostsoul.rememberFrostSoulPalette
+import dev.vxs.frostsoulx.ui.screens.settings.spatial.ContrastGuard
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1731,6 +1739,23 @@ private fun FrostSoulHomeTabs(
 ) {
     if (chips.isEmpty()) return
 
+    val playerConnection = LocalPlayerConnection.current
+    val mediaMetadata by (playerConnection?.mediaMetadata ?: MutableStateFlow(null)).collectAsState()
+    val artworkPalette = rememberFrostSoulPalette(mediaMetadata?.thumbnailUrl)
+    val rawDynamicAccent = artworkPalette.artworkPrimary.takeIf { it != Color.White && it != Color.Transparent }
+        ?: MaterialTheme.colorScheme.primary
+
+    val isDark = FrostSoulTheme.colors.background.luminance() < 0.5f
+    val guardedAccent = remember(rawDynamicAccent, isDark) {
+        ContrastGuard.ensureGraphicContrast(rawDynamicAccent, FrostSoulTheme.colors.background)
+    }
+
+    val dynamicAccent by animateColorAsState(
+        targetValue = guardedAccent,
+        animationSpec = tween(400),
+        label = "home_tabs_dynamic_accent",
+    )
+
     val labels = listOf(stringResource(R.string.home_for_you)) + chips.map { it.title }
     val selectedIndex = selectedChip?.endpoint?.let { endpoint ->
         chips.indexOfFirst { it.endpoint == endpoint } + 1
@@ -1766,7 +1791,7 @@ private fun FrostSoulHomeTabs(
             ) {
                 Text(
                     text = label,
-                    color = if (selected) FrostSoulTheme.colors.onSurface else FrostSoulTheme.colors.onSurfaceMuted,
+                    color = if (selected) dynamicAccent else FrostSoulTheme.colors.onSurfaceMuted,
                     style = FrostSoulTheme.typography.body.copy(
                         fontSize = 16.sp,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
@@ -1779,9 +1804,9 @@ private fun FrostSoulHomeTabs(
                     modifier = Modifier
                         .padding(top = 8.dp)
                         .width(animatedUnderlineWidth)
-                        .height(2.dp)
+                        .height(2.5.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(FrostSoulTheme.colors.onSurface),
+                        .background(dynamicAccent),
                 )
             }
         }
